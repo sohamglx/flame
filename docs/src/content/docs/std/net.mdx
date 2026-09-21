@@ -7,11 +7,6 @@ import { Aside } from '@astrojs/starlight/components';
 
 The `net` module in Flame provides a full-featured, asynchronous networking toolkit. It is modular, meaning you can import only the specific networking components you need, minimizing compilation overhead for embedded or lightweight projects.
 
-<Aside type="danger" title="Important Requirement">
-Because the networking toolkit is completely asynchronous and uses standard Rust runtimes like Tokio behind the scenes, you **must** use the `@Application` annotation if you wish to run asynchronous network code in a compiled AOT application. See the [Application Entry Point](/language-basics/application) documentation.
-
-All network I/O functions require the `await` keyword.
-</Aside>
 
 ## Core Networking
 

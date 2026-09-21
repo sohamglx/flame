@@ -1,6 +1,7 @@
 use crate::vm::Value;
 use enigo::{Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 use std::collections::HashMap;
+use std::process::Command;
 
 fn parse_key(name: &str) -> Result<Key, String> {
     let name = name.trim_matches('"').to_lowercase();
@@ -53,11 +54,171 @@ fn parse_key(name: &str) -> Result<Key, String> {
     })
 }
 
+fn open_target(target: &str, extra_args: &[String]) -> bool {
+    // If extra args were explicitly passed: run target directly with those args
+    if !extra_args.is_empty() {
+        if Command::new(target)
+            .args(extra_args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .is_ok()
+        {
+            return true;
+        }
+        #[cfg(target_os = "windows")]
+        {
+            if Command::new("cmd")
+                .args(["/C", target])
+                .args(extra_args)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .is_ok()
+            {
+                return true;
+            }
+        }
+    }
+
+    // Special handling for browser internal URL schemes like brave://, chrome://, edge://
+    let lower_target = target.to_lowercase();
+    if lower_target.starts_with("brave://") {
+        for candidate in ["brave", "brave-browser", "brave-bin"] {
+            if Command::new(candidate)
+                .arg(target)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .is_ok()
+            {
+                return true;
+            }
+        }
+    } else if lower_target.starts_with("chrome://") || lower_target.starts_with("chromium://") {
+        for candidate in ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"] {
+            if Command::new(candidate)
+                .arg(target)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .is_ok()
+            {
+                return true;
+            }
+        }
+    } else if lower_target.starts_with("edge://") {
+        for candidate in ["msedge", "microsoft-edge", "microsoft-edge-stable"] {
+            if Command::new(candidate)
+                .arg(target)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .is_ok()
+            {
+                return true;
+            }
+        }
+    }
+
+    // Standard cross-platform opener for URLs (http, https, file, etc.) and file paths
+    #[cfg(target_os = "linux")]
+    {
+        if Command::new("xdg-open")
+            .arg(target)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .is_ok()
+        {
+            return true;
+        }
+        if Command::new("gio")
+            .args(["open", target])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .is_ok()
+        {
+            return true;
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if Command::new("open")
+            .arg(target)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .is_ok()
+        {
+            return true;
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if Command::new("cmd")
+            .args(["/C", "start", "", target])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .is_ok()
+        {
+            return true;
+        }
+    }
+
+    // Finally, if target was an application name (e.g. "code", "firefox", "gedit")
+    if Command::new(target)
+        .args(extra_args)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .is_ok()
+    {
+        return true;
+    }
+
+    false
+}
+
 pub fn init() -> HashMap<String, Value> {
     let mut m = HashMap::new();
 
     let mut mouse = HashMap::new();
     let mut keyboard = HashMap::new();
+
+    m.insert(
+        "open".into(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("desktop.open expects at least 1 argument (target, [args])".to_string());
+            }
+            let target = match &args[0] {
+                Value::String(s) => s.trim_matches('"').to_string(),
+                v => v.to_string().trim_matches('"').to_string(),
+            };
+            let extra_args: Vec<String> = if args.len() > 1 {
+                match &args[1] {
+                    Value::Tuple(arr) => arr
+                        .iter()
+                        .map(|v| match v {
+                            Value::String(s) => s.trim_matches('"').to_string(),
+                            other => other.to_string().trim_matches('"').to_string(),
+                        })
+                        .collect(),
+                    _ => Vec::new(),
+                }
+            } else {
+                Vec::new()
+            };
+
+            let success = open_target(&target, &extra_args);
+            Ok(Value::Bool(success))
+        }),
+    );
 
     // ---------------- Mouse ----------------
 

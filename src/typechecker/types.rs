@@ -46,6 +46,7 @@ pub struct ParamInfo {
     pub ty: Type,
     pub is_ref: bool,
     pub is_mut: bool,
+    pub has_default: bool,
 }
 
 #[derive(Debug, Clone)]

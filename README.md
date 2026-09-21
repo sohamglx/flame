@@ -20,7 +20,7 @@ Flame is a statically typed, compiled programming language with **application-sp
 ## Why Flame?
 Flame is designed to sit between high-level developer experience and native systems programming.
 
-Write expressive Flame code while enjoying seamless access to native Rust crates, native plugins, hardware APIs, and an application-specific runtime compiled into an optimized native executable.
+Write expressive Flame code while enjoying seamless access to native Rust crates, native plugins, and an application-specific runtime compiled into an optimized native executable.
 
 ---
 

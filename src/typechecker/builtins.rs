@@ -16,6 +16,7 @@ impl TypeChecker {
                     ty: Type::Unknown,
                     is_ref: false,
                     is_mut: false,
+                    has_default: false,
                 }],
                 hover_doc: Some("Prints a value to standard output without a newline.".to_string()),
                 return_type: Type::Nil,
@@ -30,6 +31,7 @@ impl TypeChecker {
                     ty: Type::Unknown,
                     is_ref: false,
                     is_mut: false,
+                    has_default: false,
                 }],
                 hover_doc: Some("Prints a value to standard error without a newline.".to_string()),
                 return_type: Type::Nil,
@@ -44,6 +46,7 @@ impl TypeChecker {
                     ty: Type::Unknown,
                     is_ref: false,
                     is_mut: false,
+                    has_default: false,
                 }],
                 hover_doc: Some(
                     "Prints a value to standard output, followed by a newline.".to_string(),
@@ -60,6 +63,7 @@ impl TypeChecker {
                     ty: Type::Unknown,
                     is_ref: false,
                     is_mut: false,
+                    has_default: false,
                 }],
                 hover_doc: Some(
                     "Terminates the program immediately with an error message.".to_string(),
@@ -76,6 +80,7 @@ impl TypeChecker {
                     ty: Type::Bool,
                     is_ref: false,
                     is_mut: false,
+                    has_default: false,
                 }],
                 hover_doc: Some("Asserts that a condition is true. Panics if false.".to_string()),
                 return_type: Type::Nil,
@@ -90,6 +95,7 @@ impl TypeChecker {
                     ty: Type::Unknown,
                     is_ref: false,
                     is_mut: false,
+                    has_default: false,
                 }],
                 hover_doc: Some("Creates a new native Rust server handle.".to_string()),
                 return_type: Type::Named("ServerHandle".to_string()),
@@ -104,6 +110,7 @@ impl TypeChecker {
                     ty: Type::String,
                     is_ref: false,
                     is_mut: false,
+                    has_default: false,
                 }],
                 hover_doc: Some(
                     "Prompts the user for input from standard input and returns the read string."
@@ -122,18 +129,21 @@ impl TypeChecker {
                         ty: Type::Unknown,
                         is_ref: false,
                         is_mut: false,
+                    has_default: false,
                     },
                     ParamInfo {
                         name: "expected".to_string(),
                         ty: Type::Unknown,
                         is_ref: false,
                         is_mut: false,
+                    has_default: false,
                     },
                     ParamInfo {
                         name: "msg".to_string(),
                         ty: Type::String,
                         is_ref: false,
                         is_mut: false,
+                    has_default: false,
                     },
                 ],
                 hover_doc: Some("Asserts that two values are equal. Panics with the provided message if they are not.".to_string()),
@@ -150,18 +160,21 @@ impl TypeChecker {
                         ty: Type::Unknown,
                         is_ref: false,
                         is_mut: false,
+                    has_default: false,
                     },
                     ParamInfo {
                         name: "expected".to_string(),
                         ty: Type::Unknown,
                         is_ref: false,
                         is_mut: false,
+                    has_default: false,
                     },
                     ParamInfo {
                         name: "msg".to_string(),
                         ty: Type::String,
                         is_ref: false,
                         is_mut: false,
+                    has_default: false,
                     },
                 ],
                 hover_doc: Some("Asserts that two values are not equal. Panics with the provided message if they are.".to_string()),
@@ -178,12 +191,14 @@ impl TypeChecker {
                         ty: Type::Bool,
                         is_ref: false,
                         is_mut: false,
+                    has_default: false,
                     },
                     ParamInfo {
                         name: "msg".to_string(),
                         ty: Type::String,
                         is_ref: false,
                         is_mut: false,
+                    has_default: false,
                     },
                 ],
                 hover_doc: Some("Asserts that a boolean condition is true. Panics with the provided message if false.".to_string()),
@@ -200,12 +215,14 @@ impl TypeChecker {
                         ty: Type::Bool,
                         is_ref: false,
                         is_mut: false,
+                    has_default: false,
                     },
                     ParamInfo {
                         name: "msg".to_string(),
                         ty: Type::String,
                         is_ref: false,
                         is_mut: false,
+                    has_default: false,
                     },
                 ],
                 hover_doc: Some("Asserts that a boolean condition is false. Panics with the provided message if true.".to_string()),
@@ -290,7 +307,7 @@ impl TypeChecker {
                 let ts_ty = Type::Formula(ts_map, HashMap::new());
 
                 map.insert("now".to_string(), Type::Function(vec![], Box::new(ts_ty)));
-                if let Some(doc) = crate::std_docs::get_std_function_doc("std.time", "now") {
+                if let Some(doc) = crate::blaze::get_std_function_doc("std.time", "now") {
                     docs.insert("now".to_string(), doc.to_string());
                 }
 
@@ -319,7 +336,7 @@ impl TypeChecker {
                     Type::Quantity(HashMap::from([("kg".to_string(), 1)])),
                 );
 
-                if let Some(doc) = crate::std_docs::get_std_function_doc("std.unit", "Equation") {
+                if let Some(doc) = crate::blaze::get_std_function_doc("std.unit", "Equation") {
                     docs.insert("Equation".to_string(), doc.to_string());
                 }
                 docs.insert(
@@ -373,7 +390,7 @@ impl TypeChecker {
                     "pi", "e", "inf", "abs", "sin", "cos", "sqrt", "pow", "min", "max",
                     "round", "floor", "ceil",
                 ] {
-                    if let Some(doc) = crate::std_docs::get_std_function_doc("std.math", name) {
+                    if let Some(doc) = crate::blaze::get_std_function_doc("std.math", name) {
                         docs.insert(name.to_string(), doc.to_string());
                     }
                 }
@@ -401,14 +418,14 @@ impl TypeChecker {
                     "get".to_string(),
                     Type::Function(vec![Type::String], Box::new(resp_ty.clone())),
                 );
-                if let Some(doc) = crate::std_docs::get_std_function_doc("std.http", "get") {
+                if let Some(doc) = crate::blaze::get_std_function_doc("std.http", "get") {
                     docs.insert("get".to_string(), doc.to_string());
                 }
                 map.insert(
                     "post".to_string(),
                     Type::Function(vec![Type::String, Type::Unknown], Box::new(resp_ty.clone())),
                 );
-                if let Some(doc) = crate::std_docs::get_std_function_doc("std.http", "post") {
+                if let Some(doc) = crate::blaze::get_std_function_doc("std.http", "post") {
                     docs.insert("post".to_string(), doc.to_string());
                 }
                 Type::Formula(map, docs)
@@ -444,7 +461,7 @@ impl TypeChecker {
                     Type::Function(vec![Type::Unknown], Box::new(Type::Unknown)),
                 );
                 for name in ["parse", "stringify", "fromJson", "fromByte", "fromBytes"] {
-                    if let Some(doc) = crate::std_docs::get_std_function_doc("std.json", name) {
+                    if let Some(doc) = crate::blaze::get_std_function_doc("std.json", name) {
                         docs.insert(name.to_string(), doc.to_string());
                     }
                 }
@@ -463,7 +480,7 @@ impl TypeChecker {
                 map.insert("channel".to_string(), Type::Function(vec![], Box::new(Type::Tuple(vec![Type::Named("Sender".to_string()), Type::Named("Receiver".to_string())]))));
 
                 for name in ["sleep", "yield", "yieldNow", "yield_now", "id", "spawn", "channel"] {
-                    if let Some(doc) = crate::std_docs::get_std_function_doc("std.thread", name) {
+                    if let Some(doc) = crate::blaze::get_std_function_doc("std.thread", name) {
                         docs.insert(name.to_string(), doc.to_string());
                     }
                 }
@@ -485,7 +502,7 @@ impl TypeChecker {
                 map.insert("readDir".to_string(), Type::Function(vec![Type::String], Box::new(Type::Vector(Box::new(Type::String)))));
 
                 for name in ["read", "write", "append", "readBytes", "writeBytes", "appendBytes", "exists", "remove", "readDir"] {
-                    if let Some(doc) = crate::std_docs::get_std_function_doc("std.fs", name) {
+                    if let Some(doc) = crate::blaze::get_std_function_doc("std.fs", name) {
                         docs.insert(name.to_string(), doc.to_string());
                     }
                 }
@@ -511,7 +528,7 @@ impl TypeChecker {
                 map.insert("writeByteAt".to_string(), Type::Function(vec![Type::String, Type::Int, Type::Unknown], Box::new(Type::Nil)));
 
                 for name in ["fromByte", "fromBytes", "toString", "toHex", "toInt", "readBytes", "writeBytes", "appendBytes", "readByte", "writeByte", "appendByte", "readByteAt", "writeByteAt"] {
-                    if let Some(doc) = crate::std_docs::get_std_function_doc("std.byte", name) {
+                    if let Some(doc) = crate::blaze::get_std_function_doc("std.byte", name) {
                         docs.insert(name.to_string(), doc.to_string());
                     }
                 }
@@ -527,10 +544,10 @@ impl TypeChecker {
 
                 socket_map.insert("connect".to_string(), Type::Function(vec![Type::String], Box::new(Type::Named("ClientSocket".to_string()))));
                 socket_map.insert("listen".to_string(), Type::Function(vec![Type::String], Box::new(Type::Named("Server".to_string()))));
-                if let Some(doc) = crate::std_docs::get_std_function_doc("std.net.ws", "connect") {
+                if let Some(doc) = crate::blaze::get_std_function_doc("std.net.ws", "connect") {
                     socket_docs.insert("connect".to_string(), doc.to_string());
                 }
-                if let Some(doc) = crate::std_docs::get_std_function_doc("std.net.ws", "listen") {
+                if let Some(doc) = crate::blaze::get_std_function_doc("std.net.ws", "listen") {
                     socket_docs.insert("listen".to_string(), doc.to_string());
                 }
 
@@ -571,7 +588,7 @@ impl TypeChecker {
                 );
 
                 for name in ["connect", "listen"] {
-                    if let Some(doc) = crate::std_docs::get_std_function_doc("std.net.ws", name) {
+                    if let Some(doc) = crate::blaze::get_std_function_doc("std.net.ws", name) {
                         docs.insert(name.to_string(), doc.to_string());
                     }
                 }

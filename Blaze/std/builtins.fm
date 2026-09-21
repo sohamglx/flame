@@ -43,10 +43,6 @@ export fn typeof(value: Unknown) -> String {
 export fn range(start: Int, end: Int, step: Int = 1) -> [Int] {
 }
 
-@Docs("Suspends current thread execution for the specified milliseconds.\n\n**Example:**\n```flame\nsleep(1000)\n```")
-export fn sleep(ms: Int) {
-}
-
 @Docs("Generates mock object data for testing. Supported schemas: `\"user\"`, `\"post\"`, `\"product\"`.\n\n**Example:**\n```flame\nlet user = mockData(\"user\")\n```")
 export fn mockData(schema: String = "default") -> Formula {
 }

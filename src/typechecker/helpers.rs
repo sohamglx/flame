@@ -13,14 +13,26 @@ impl TypeChecker {
         span: &Span,
         name: &str,
     ) {
-        if name != "print" && name != "eprint" && args.len() != params.len() {
+        let min_args = params.iter().filter(|p| !p.has_default).count();
+        let max_args = params.len();
+        if name != "print" && name != "eprint" && (args.len() < min_args || args.len() > max_args) {
             self.error(
-                format!(
-                    "function '{}' expects {} argument(s), got {}",
-                    name,
-                    params.len(),
-                    args.len()
-                ),
+                if min_args == max_args {
+                    format!(
+                        "function '{}' expects {} argument(s), got {}",
+                        name,
+                        params.len(),
+                        args.len()
+                    )
+                } else {
+                    format!(
+                        "function '{}' expects between {} and {} arguments, got {}",
+                        name,
+                        min_args,
+                        max_args,
+                        args.len()
+                    )
+                },
                 span.clone(),
                 None,
                 None,
@@ -709,6 +721,7 @@ impl TypeChecker {
                     ty: self.parse_type_name(&p.type_name),
                     is_ref: p.is_ref,
                     is_mut: p.is_mut,
+                    has_default: p.default_val.is_some() || p.type_name.ends_with('?'),
                 })
                 .collect(),
             hover_doc: doc,

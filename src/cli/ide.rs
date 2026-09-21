@@ -1,14 +1,14 @@
-use crate::{embedded, ide, lexer, package_manager};
-use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
-use regex::Regex;
-use serde::Serialize;
 use crate::diagnostics::Diagnostic;
 use crate::lexer::Lexer;
 use crate::parser::{Parser, Stmt};
 use crate::typechecker::TypeChecker;
 use crate::utils::{clean_table_borders, find_manifest_root, parse_manifest_section};
+use crate::{ide, lexer, package_manager};
+use regex::Regex;
+use serde::Serialize;
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize)]
 pub struct JsonDiagnostic {
@@ -494,7 +494,12 @@ pub fn analyze_file_for_json(
                     annotations,
                     ..
                 } => Some((name, params, return_type.as_deref(), true, annotations)),
-                crate::parser::Stmt::StructDecl { name, fields, annotations, .. } => {
+                crate::parser::Stmt::StructDecl {
+                    name,
+                    fields,
+                    annotations,
+                    ..
+                } => {
                     let mut struct_doc = None;
                     for ann in annotations {
                         if ann.name == "Docs" {
@@ -507,9 +512,17 @@ pub fn analyze_file_for_json(
                     let mut method_details = Vec::new();
                     for other_stmt in &all_decls {
                         let impl_cand = match other_stmt {
-                            crate::parser::Stmt::ImplDecl { target_type, methods, .. } => Some((target_type, methods)),
+                            crate::parser::Stmt::ImplDecl {
+                                target_type,
+                                methods,
+                                ..
+                            } => Some((target_type, methods)),
                             crate::parser::Stmt::ExportDecl(inner, _) => match &**inner {
-                                crate::parser::Stmt::ImplDecl { target_type, methods, .. } => Some((target_type, methods)),
+                                crate::parser::Stmt::ImplDecl {
+                                    target_type,
+                                    methods,
+                                    ..
+                                } => Some((target_type, methods)),
                                 _ => None,
                             },
                             _ => None,
@@ -547,13 +560,20 @@ pub fn analyze_file_for_json(
                                         if !struct_methods.contains(m_name) {
                                             struct_methods.push(m_name.clone());
                                         }
-                                        if !method_details.iter().any(|existing: &ide::ScannedMethod| existing.name == *m_name) {
+                                        if !method_details.iter().any(
+                                            |existing: &ide::ScannedMethod| {
+                                                existing.name == *m_name
+                                            },
+                                        ) {
                                             method_details.push(ide::ScannedMethod {
                                                 name: m_name.clone(),
                                                 signature: sig,
                                                 doc: m_doc,
                                                 return_type: return_type.clone(),
-                                                params: params.iter().map(|p| (p.name.clone(), p.type_name.clone())).collect(),
+                                                params: params
+                                                    .iter()
+                                                    .map(|p| (p.name.clone(), p.type_name.clone()))
+                                                    .collect(),
                                             });
                                         }
                                     }
@@ -589,7 +609,12 @@ pub fn analyze_file_for_json(
                 }
                 _ => None,
             },
-            crate::parser::Stmt::StructDecl { name, fields, annotations, .. } => {
+            crate::parser::Stmt::StructDecl {
+                name,
+                fields,
+                annotations,
+                ..
+            } => {
                 let mut struct_doc = None;
                 for ann in annotations {
                     if ann.name == "Docs" {
@@ -602,9 +627,17 @@ pub fn analyze_file_for_json(
                 let mut method_details = Vec::new();
                 for other_stmt in &all_decls {
                     let impl_cand = match other_stmt {
-                        crate::parser::Stmt::ImplDecl { target_type, methods, .. } => Some((target_type, methods)),
+                        crate::parser::Stmt::ImplDecl {
+                            target_type,
+                            methods,
+                            ..
+                        } => Some((target_type, methods)),
                         crate::parser::Stmt::ExportDecl(inner, _) => match &**inner {
-                            crate::parser::Stmt::ImplDecl { target_type, methods, .. } => Some((target_type, methods)),
+                            crate::parser::Stmt::ImplDecl {
+                                target_type,
+                                methods,
+                                ..
+                            } => Some((target_type, methods)),
                             _ => None,
                         },
                         _ => None,
@@ -642,13 +675,18 @@ pub fn analyze_file_for_json(
                                     if !struct_methods.contains(m_name) {
                                         struct_methods.push(m_name.clone());
                                     }
-                                    if !method_details.iter().any(|existing: &ide::ScannedMethod| existing.name == *m_name) {
+                                    if !method_details.iter().any(
+                                        |existing: &ide::ScannedMethod| existing.name == *m_name,
+                                    ) {
                                         method_details.push(ide::ScannedMethod {
                                             name: m_name.clone(),
                                             signature: sig,
                                             doc: m_doc,
                                             return_type: return_type.clone(),
-                                            params: params.iter().map(|p| (p.name.clone(), p.type_name.clone())).collect(),
+                                            params: params
+                                                .iter()
+                                                .map(|p| (p.name.clone(), p.type_name.clone()))
+                                                .collect(),
                                         });
                                     }
                                 }
@@ -713,36 +751,52 @@ pub fn analyze_file_for_json(
                 )
             };
 
-            let doc_text = doc_str.clone().unwrap_or(sig.clone());
+            let is_local_file_decl = parsed_stmts.iter().any(|s| match s {
+                crate::parser::Stmt::FuncDecl { name: n, .. } => n == name,
+                crate::parser::Stmt::ExportDecl(inner, _) => match &**inner {
+                    crate::parser::Stmt::FuncDecl { name: n, .. } => n == name,
+                    _ => false,
+                },
+                _ => false,
+            });
 
-            if let Some(existing) = scanned_vars.iter_mut().find(|v| v.name == *name) {
-                existing.typ = Some(sig.clone());
-                if doc_str.is_some() {
-                    existing.doc = doc_str.clone();
+            // Only register local user functions or annotations in scanned_vars and bare completions.
+            // Functions from imported modules (e.g. std.window, std.desktop) must only be accessed via their module namespace!
+            if is_annotation || is_local_file_decl {
+                let doc_text = doc_str.clone().unwrap_or(sig.clone());
+                if let Some(existing) = scanned_vars.iter_mut().find(|v| v.name == *name) {
+                    existing.typ = Some(sig.clone());
+                    if doc_str.is_some() {
+                        existing.doc = doc_str.clone();
+                    }
+                } else {
+                    scanned_vars.push(ide::ScannedVar {
+                        name: name.clone(),
+                        typ: Some(sig.clone()),
+                        doc: doc_str.clone(),
+                    });
                 }
-            } else {
-                scanned_vars.push(ide::ScannedVar {
-                    name: name.clone(),
-                    typ: Some(sig.clone()),
-                    doc: doc_str.clone(),
+                let (actual_label, sort_text) = if is_annotation {
+                    (format!("@{}", name), Some("1_".to_string()))
+                } else {
+                    (name.clone(), Some("1_".to_string()))
+                };
+                completions.push(JsonCompletion {
+                    sort_text,
+                    label: actual_label,
+                    kind: if is_annotation {
+                        "annotation".to_string()
+                    } else {
+                        "function".to_string()
+                    },
+                    detail: if is_annotation {
+                        "annotation".to_string()
+                    } else {
+                        "function".to_string()
+                    },
+                    documentation: Some(doc_text),
                 });
             }
-            let (actual_label, sort_text) = if is_annotation {
-                (format!("@{}", name), Some("1_".to_string()))
-            } else {
-                (name.clone(), Some("1_".to_string()))
-            };
-            completions.push(JsonCompletion {
-                sort_text,
-                label: actual_label,
-                kind: if is_annotation {
-                    "annotation".to_string()
-                } else {
-                    "function".to_string()
-                },
-                detail: "imported module declaration".to_string(),
-                documentation: Some(doc_text),
-            });
         }
     }
 
@@ -822,6 +876,7 @@ pub fn analyze_file_for_json(
                 let inferred_name = match &vinfo.ty {
                     crate::typechecker::Type::Named(n) => Some(n.clone()),
                     crate::typechecker::Type::Struct(n) => Some(n.clone()),
+                    crate::typechecker::Type::Enum(n) => Some(n.clone()),
                     _ => None,
                 };
                 if let Some(name) = inferred_name {
@@ -902,7 +957,9 @@ pub fn analyze_file_for_json(
                         }
                         if exact_ast_hover.is_none() && !word_under_cursor.is_empty() {
                             let sig = format!("fn {}{}", word_under_cursor, &ty_str[2..]);
-                            let doc = if let Some(var) = scanned_vars.iter().find(|v| v.name == word_under_cursor) {
+                            let doc = if let Some(var) =
+                                scanned_vars.iter().find(|v| v.name == word_under_cursor)
+                            {
                                 if let Some(d) = &var.doc {
                                     format!("```flame\n{}\n```\n\n{}", sig, d)
                                 } else {
@@ -918,8 +975,13 @@ pub fn analyze_file_for_json(
                         }
                     } else if !word_under_cursor.is_empty() {
                         let sig = format!("{}: {}", word_under_cursor, ty_str);
-                        let struct_doc = scanned_structs.iter().find(|s| s.name == *ty_str).and_then(|s| s.doc.clone());
-                        let doc = if let Some(var) = scanned_vars.iter().find(|v| v.name == word_under_cursor) {
+                        let struct_doc = scanned_structs
+                            .iter()
+                            .find(|s| s.name == *ty_str)
+                            .and_then(|s| s.doc.clone());
+                        let doc = if let Some(var) =
+                            scanned_vars.iter().find(|v| v.name == word_under_cursor)
+                        {
                             if let Some(d) = &var.doc {
                                 format!("```flame\nlet {}\n```\n\n{}", sig, d)
                             } else if let Some(sdoc) = &struct_doc {
@@ -948,33 +1010,34 @@ pub fn analyze_file_for_json(
         if let Some(var) = scanned_vars.iter().find(|v| v.name == word_under_cursor) {
             if let Some(t) = &var.typ {
                 if t != "Unknown" {
-                    let (code_block, doc_body) =
-                        if t.starts_with("import:") {
-                            let imported = &t["import:".len()..];
-                            (
-                                format!("import {} as {}", imported, word_under_cursor),
-                                var.doc.clone().unwrap_or_else(|| format!("Imported module `{}`", imported)),
-                            )
-                        } else if t.starts_with("fn ") || t.starts_with("annotation ") {
-                            (
-                                t.clone(),
-                                var.doc.clone().unwrap_or_default(),
-                            )
-                        } else if let Some(mod_name) = native_modules.iter().find(|m| {
-                            load_meta_from_project(&manifest_dir, m)
-                                .map_or(false, |meta| meta.structs.iter().any(|s| s.name == *t))
-                        }) {
-                            (
-                                format!("{}: {}", word_under_cursor, t),
-                                format!("Struct type from native module '{}'", mod_name),
-                            )
-                        } else {
-                            let struct_doc = scanned_structs.iter().find(|s| s.name == *t).and_then(|s| s.doc.clone());
-                            (
-                                format!("{}: {}", word_under_cursor, t),
-                                var.doc.clone().or(struct_doc).unwrap_or_default(),
-                            )
-                        };
+                    let (code_block, doc_body) = if t.starts_with("import:") {
+                        let imported = &t["import:".len()..];
+                        (
+                            format!("import {} as {}", imported, word_under_cursor),
+                            var.doc
+                                .clone()
+                                .unwrap_or_else(|| format!("Imported module `{}`", imported)),
+                        )
+                    } else if t.starts_with("fn ") || t.starts_with("annotation ") {
+                        (t.clone(), var.doc.clone().unwrap_or_default())
+                    } else if let Some(mod_name) = native_modules.iter().find(|m| {
+                        load_meta_from_project(&manifest_dir, m)
+                            .map_or(false, |meta| meta.structs.iter().any(|s| s.name == *t))
+                    }) {
+                        (
+                            format!("{}: {}", word_under_cursor, t),
+                            format!("Struct type from native module '{}'", mod_name),
+                        )
+                    } else {
+                        let struct_doc = scanned_structs
+                            .iter()
+                            .find(|s| s.name == *t)
+                            .and_then(|s| s.doc.clone());
+                        (
+                            format!("{}: {}", word_under_cursor, t),
+                            var.doc.clone().or(struct_doc).unwrap_or_default(),
+                        )
+                    };
                     let documentation = if doc_body.is_empty() {
                         format!("```flame\nlet {}\n```", code_block)
                     } else if doc_body.starts_with("```") {
@@ -1003,16 +1066,23 @@ pub fn analyze_file_for_json(
         .unwrap();
         for cap in import_as_re.captures_iter(&content) {
             let full_path = cap[1].to_string();
-            let alias = cap.get(2).map(|m| m.as_str().to_string()).unwrap_or_else(|| {
-                full_path.rsplit('.').next().unwrap_or(&full_path).to_string()
-            });
+            let alias = cap
+                .get(2)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_else(|| {
+                    full_path
+                        .rsplit('.')
+                        .next()
+                        .unwrap_or(&full_path)
+                        .to_string()
+                });
             alias_map.insert(alias, full_path);
         }
 
         let target_path = alias_map.get(&namespace).cloned();
-        let effective_mod = target_path.as_ref().map(|t| {
-            t.rsplit('.').next().unwrap_or(t.as_str()).to_string()
-        });
+        let effective_mod = target_path
+            .as_ref()
+            .map(|t| t.rsplit('.').next().unwrap_or(t.as_str()).to_string());
 
         let mut lookup_namespaces = vec![namespace.clone()];
         if let Some(ref em) = effective_mod {
@@ -1048,7 +1118,9 @@ pub fn analyze_file_for_json(
                         let doc = docs.get(&word_under_cursor).cloned();
                         hover_found = Some(JsonHover {
                             label: format!("{namespace}.{word_under_cursor}()"),
-                            documentation: doc.or_else(|| Some(format!("Function {namespace}.{word_under_cursor}"))),
+                            documentation: doc.or_else(|| {
+                                Some(format!("Function {namespace}.{word_under_cursor}"))
+                            }),
                         });
                     }
                     resolved_as_var = true;
@@ -1061,185 +1133,496 @@ pub fn analyze_file_for_json(
             if let Some(var) = scanned_vars.iter().find(|v| v.name == namespace) {
                 if let Some(typ) = &var.typ {
                     if typ != "Unknown" && !typ.starts_with("import:") {
-                    let mut provided = false;
-                    for s in &scanned_structs {
-                        if s.name == *typ {
-                            for (field_name, field_type) in &s.fields {
-                                if member_prefix
-                                    .as_deref()
-                                    .map_or(true, |p| field_name.starts_with(p))
-                                {
-                                    completions.push(JsonCompletion {
-                                        sort_text: Some("0_".to_string()),
-                                        label: field_name.clone(),
-                                        kind: "property".to_string(),
-                                        detail: format!("{}: {}", field_name, field_type),
-                                        documentation: Some(format!("```flame\n{}.{}: {}\n```\nField of `{}`", typ, field_name, field_type, typ)),
-                                    });
-                                }
-                            }
-                            for m in &s.method_details {
-                                if member_prefix
-                                    .as_deref()
-                                    .map_or(true, |p| m.name.starts_with(p))
-                                {
-                                    let doc = if let Some(d) = &m.doc {
-                                        Some(format!("```flame\n{}\n```\n\n{}", m.signature, d))
-                                    } else {
-                                        Some(format!("```flame\n{}\n```", m.signature))
-                                    };
-                                    completions.push(JsonCompletion {
-                                        sort_text: Some("1_".to_string()),
-                                        label: m.name.clone(),
-                                        kind: "method".to_string(),
-                                        detail: m.signature.clone(),
-                                        documentation: doc,
-                                    });
-                                }
-                            }
-                            if s.method_details.is_empty() {
-                                for func_name in &s.methods {
+                        let mut provided = false;
+                        for s in &scanned_structs {
+                            if s.name == *typ {
+                                for (field_name, field_type) in &s.fields {
                                     if member_prefix
                                         .as_deref()
-                                        .map_or(true, |p| func_name.starts_with(p))
+                                        .map_or(true, |p| field_name.starts_with(p))
+                                    {
+                                        completions.push(JsonCompletion {
+                                            sort_text: Some("0_".to_string()),
+                                            label: field_name.clone(),
+                                            kind: "property".to_string(),
+                                            detail: format!("{}: {}", field_name, field_type),
+                                            documentation: Some(format!(
+                                                "```flame\n{}.{}: {}\n```\nField of `{}`",
+                                                typ, field_name, field_type, typ
+                                            )),
+                                        });
+                                    }
+                                }
+                                for m in &s.method_details {
+                                    if member_prefix
+                                        .as_deref()
+                                        .map_or(true, |p| m.name.starts_with(p))
+                                    {
+                                        let doc = if let Some(d) = &m.doc {
+                                            Some(format!("```flame\n{}\n```\n\n{}", m.signature, d))
+                                        } else {
+                                            Some(format!("```flame\n{}\n```", m.signature))
+                                        };
+                                        completions.push(JsonCompletion {
+                                            sort_text: Some("1_".to_string()),
+                                            label: m.name.clone(),
+                                            kind: "method".to_string(),
+                                            detail: m.signature.clone(),
+                                            documentation: doc,
+                                        });
+                                    }
+                                }
+                                if s.method_details.is_empty() {
+                                    for func_name in &s.methods {
+                                        if member_prefix
+                                            .as_deref()
+                                            .map_or(true, |p| func_name.starts_with(p))
+                                        {
+                                            completions.push(JsonCompletion {
+                                                sort_text: Some("1_".to_string()),
+                                                label: func_name.clone(),
+                                                kind: "method".to_string(),
+                                                detail: format!("struct {}", typ),
+                                                documentation: None,
+                                            });
+                                        }
+                                    }
+                                }
+                                provided = true;
+                            }
+                        }
+                        if !provided {
+                            if typ.starts_with('[') || typ.starts_with("Vec<") {
+                                let array_methods = [
+                                    ("len", "Returns the number of elements in the array"),
+                                    ("isEmpty", "Returns true if the array contains no elements"),
+                                    ("push", "Appends an element to the end of the array"),
+                                    ("pop", "Removes and returns the last element of the array"),
+                                    (
+                                        "map",
+                                        "Transforms each element of the array using the given function",
+                                    ),
+                                    (
+                                        "filter",
+                                        "Returns a new array with elements that satisfy the predicate",
+                                    ),
+                                    ("concat", "Concatenates this array with another array"),
+                                    ("reverse", "Reverses the order of elements in the array"),
+                                    ("slice", "Returns a sub-slice of elements (start, len)"),
+                                    ("join", "Joins string elements with the given separator"),
+                                    ("get", "Returns the element at the specified index"),
+                                ];
+                                for (m_name, m_doc) in array_methods {
+                                    if member_prefix
+                                        .as_deref()
+                                        .map_or(true, |p| m_name.starts_with(p))
                                     {
                                         completions.push(JsonCompletion {
                                             sort_text: Some("1_".to_string()),
-                                            label: func_name.clone(),
+                                            label: m_name.to_string(),
                                             kind: "method".to_string(),
-                                            detail: format!("struct {}", typ),
-                                            documentation: None,
+                                            detail: format!("Array method"),
+                                            documentation: Some(m_doc.to_string()),
                                         });
                                     }
                                 }
+                                provided = true;
+                            } else if typ == "String" {
+                                let string_methods = [
+                                    ("len", "Returns the length of the string in bytes"),
+                                    ("isEmpty", "Returns true if the string is empty"),
+                                    ("pushStr", "Appends another string slice to this string"),
+                                    ("toUpperCase", "Returns an uppercase copy of the string"),
+                                    ("toLowerCase", "Returns a lowercase copy of the string"),
+                                    (
+                                        "trim",
+                                        "Returns a copy with leading and trailing whitespace removed",
+                                    ),
+                                    ("split", "Splits the string by the specified delimiter"),
+                                    (
+                                        "contains",
+                                        "Returns true if the string contains the specified substring",
+                                    ),
+                                    (
+                                        "startsWith",
+                                        "Returns true if the string starts with the specified prefix",
+                                    ),
+                                    (
+                                        "endsWith",
+                                        "Returns true if the string ends with the specified suffix",
+                                    ),
+                                    (
+                                        "replace",
+                                        "Replaces occurrences of pattern with replacement",
+                                    ),
+                                    ("repeat", "Repeats the string n times"),
+                                    ("lines", "Returns an array of lines in the string"),
+                                    ("toByte", "Converts the string into a Byte or byte array"),
+                                    ("toInt", "Parses the string into an integer"),
+                                    (
+                                        "tryInt",
+                                        "Attempts to parse into an integer, returning nil on failure",
+                                    ),
+                                    ("toFloat", "Parses the string into a float"),
+                                    (
+                                        "tryFloat",
+                                        "Attempts to parse into a float, returning nil on failure",
+                                    ),
+                                    ("toBool", "Parses the string into a boolean"),
+                                    (
+                                        "tryBool",
+                                        "Attempts to parse into a boolean, returning nil on failure",
+                                    ),
+                                ];
+                                for (m_name, m_doc) in string_methods {
+                                    if member_prefix
+                                        .as_deref()
+                                        .map_or(true, |p| m_name.starts_with(p))
+                                    {
+                                        completions.push(JsonCompletion {
+                                            sort_text: Some("1_".to_string()),
+                                            label: m_name.to_string(),
+                                            kind: "method".to_string(),
+                                            detail: format!("String method"),
+                                            documentation: Some(m_doc.to_string()),
+                                        });
+                                    }
+                                }
+                                provided = true;
+                            } else if typ == "Bytes" {
+                                let bytes_methods = [
+                                    ("len", "Returns the total number of bytes"),
+                                    ("isEmpty", "Returns true if byte buffer is empty"),
+                                    (
+                                        "slice",
+                                        "Returns a sub-slice of the byte buffer (start, len)",
+                                    ),
+                                    ("toHex", "Encodes byte buffer into hexadecimal string"),
+                                    ("toBase64", "Encodes byte buffer into Base64 string"),
+                                    ("toString", "Decodes byte buffer into UTF-8 string"),
+                                    ("toUtf8", "Decodes byte buffer into UTF-8 string"),
+                                    ("get", "Reads a single byte value at the index"),
+                                ];
+                                for (m_name, m_doc) in bytes_methods {
+                                    if member_prefix
+                                        .as_deref()
+                                        .map_or(true, |p| m_name.starts_with(p))
+                                    {
+                                        completions.push(JsonCompletion {
+                                            sort_text: Some("1_".to_string()),
+                                            label: m_name.to_string(),
+                                            kind: "method".to_string(),
+                                            detail: format!("Bytes method"),
+                                            documentation: Some(m_doc.to_string()),
+                                        });
+                                    }
+                                }
+                                provided = true;
+                            } else if typ == "Sender" {
+                                let sender_methods = [
+                                    ("send", "Sends a message value through the channel"),
+                                    ("close", "Closes the channel sender"),
+                                ];
+                                for (m_name, m_doc) in sender_methods {
+                                    if member_prefix
+                                        .as_deref()
+                                        .map_or(true, |p| m_name.starts_with(p))
+                                    {
+                                        completions.push(JsonCompletion {
+                                            sort_text: Some("1_".to_string()),
+                                            label: m_name.to_string(),
+                                            kind: "method".to_string(),
+                                            detail: format!("Sender method"),
+                                            documentation: Some(m_doc.to_string()),
+                                        });
+                                    }
+                                }
+                                provided = true;
+                            } else if typ == "Receiver" {
+                                let receiver_methods = [
+                                    (
+                                        "recv",
+                                        "Blocks until a message is received from the channel",
+                                    ),
+                                    (
+                                        "tryRecv",
+                                        "Non-blocking attempt to receive a message from the channel",
+                                    ),
+                                ];
+                                for (m_name, m_doc) in receiver_methods {
+                                    if member_prefix
+                                        .as_deref()
+                                        .map_or(true, |p| m_name.starts_with(p))
+                                    {
+                                        completions.push(JsonCompletion {
+                                            sort_text: Some("1_".to_string()),
+                                            label: m_name.to_string(),
+                                            kind: "method".to_string(),
+                                            detail: format!("Receiver method"),
+                                            documentation: Some(m_doc.to_string()),
+                                        });
+                                    }
+                                }
+                                provided = true;
                             }
-                            provided = true;
                         }
-                    }
-                    if !provided {
-                        for mod_name in &native_modules {
-                            if let Some(meta) = load_meta_from_project(&manifest_dir, mod_name) {
-                                if let Some(struct_meta) =
-                                    meta.structs.iter().find(|s| s.name == *typ)
+                        if !provided {
+                            if let Some(tc) = &tc_opt {
+                                if let Some((_, s)) = tc
+                                    .structs
+                                    .iter()
+                                    .find(|(k, _)| *k == typ || k.ends_with(&format!(".{}", typ)))
                                 {
-                                    for func in &struct_meta.methods {
+                                    for (f_name, f_ty) in &s.fields {
                                         if member_prefix
                                             .as_deref()
-                                            .map_or(true, |p| func.flame_name.starts_with(p))
+                                            .map_or(true, |p| f_name.starts_with(p))
                                         {
                                             completions.push(JsonCompletion {
-                                                sort_text: None,
-                                                label: func.flame_name.clone(),
-                                                kind: "method".to_string(),
-                                                detail: format!("native {}.{}", mod_name, typ),
-                                                documentation: func.docs.clone(),
+                                                sort_text: Some("0_".to_string()),
+                                                label: f_name.clone(),
+                                                kind: "property".to_string(),
+                                                detail: format!("{}: {:?}", f_name, f_ty),
+                                                documentation: Some(format!(
+                                                    "```flame\n{}.{}: {:?}\n```\nField of `{}`",
+                                                    typ, f_name, f_ty, typ
+                                                )),
                                             });
+                                        }
+                                    }
+                                    if let Some(methods) = tc.methods.get(typ).or_else(|| {
+                                        tc.methods
+                                            .iter()
+                                            .find(|(k, _)| {
+                                                *k == typ || k.ends_with(&format!(".{}", typ))
+                                            })
+                                            .map(|(_, v)| v)
+                                    }) {
+                                        for (m_name, sig) in methods {
+                                            if member_prefix
+                                                .as_deref()
+                                                .map_or(true, |p| m_name.starts_with(p))
+                                            {
+                                                let params_str = sig
+                                                    .params
+                                                    .iter()
+                                                    .map(|p| format!("{}: {:?}", p.name, p.ty))
+                                                    .collect::<Vec<_>>()
+                                                    .join(", ");
+                                                let return_str = if sig.return_type
+                                                    == crate::typechecker::Type::Nil
+                                                {
+                                                    "".to_string()
+                                                } else {
+                                                    format!(" -> {:?}", sig.return_type)
+                                                };
+                                                let fallback = format!(
+                                                    "fn {}({}){}",
+                                                    m_name, params_str, return_str
+                                                );
+                                                completions.push(JsonCompletion {
+                                                    sort_text: Some("1_".to_string()),
+                                                    label: m_name.clone(),
+                                                    kind: "method".to_string(),
+                                                    detail: fallback.clone(),
+                                                    documentation: sig.hover_doc.clone().or(Some(
+                                                        format!("```flame\n{}\n```", fallback),
+                                                    )),
+                                                });
+                                            }
                                         }
                                     }
                                     provided = true;
-                                    break;
                                 }
                             }
                         }
-                    }
-                    if provided {
-                        resolved_as_var = true;
-
-                        if !word_under_cursor.is_empty() {
-                            if let Some(tc) = &tc_opt {
-                                if let Some(methods) = tc.methods.get(typ) {
-                                    if let Some((_, sig)) = methods.iter().find(|(name, _)| *name == &word_under_cursor) {
-                                        let params_str = sig.params.iter().map(|p| format!("{}: {:?}", p.name, p.ty)).collect::<Vec<_>>().join(", ");
-                                        let return_str = if sig.return_type == crate::typechecker::Type::Nil { "".to_string() } else { format!(" -> {:?}", sig.return_type) };
-                                        let fallback = format!("```flame\nfn {}({}){}\n```", word_under_cursor, params_str, return_str);
-                                        let doc = if let Some(d) = &sig.hover_doc {
-                                            format!("{}\n\n{}", fallback, d)
-                                        } else {
-                                            fallback
-                                        };
-                                        hover_found = Some(JsonHover {
-                                            label: format!("{}::{}()", typ, word_under_cursor),
-                                            documentation: Some(doc)
-                                        });
+                        if !provided {
+                            for mod_name in &native_modules {
+                                if let Some(meta) = load_meta_from_project(&manifest_dir, mod_name)
+                                {
+                                    if let Some(struct_meta) =
+                                        meta.structs.iter().find(|s| s.name == *typ)
+                                    {
+                                        for func in &struct_meta.methods {
+                                            if member_prefix
+                                                .as_deref()
+                                                .map_or(true, |p| func.flame_name.starts_with(p))
+                                            {
+                                                completions.push(JsonCompletion {
+                                                    sort_text: None,
+                                                    label: func.flame_name.clone(),
+                                                    kind: "method".to_string(),
+                                                    detail: format!("native {}.{}", mod_name, typ),
+                                                    documentation: func.docs.clone(),
+                                                });
+                                            }
+                                        }
+                                        provided = true;
+                                        break;
                                     }
                                 }
                             }
-                            
-                            if hover_found.is_none() {
-                                for s in &scanned_structs {
-                                    if s.name == *typ {
-                                        if let Some(m) = s.method_details.iter().find(|m| m.name == word_under_cursor) {
-                                            let doc = if let Some(d) = &m.doc {
-                                                format!("```flame\n{}\n```\n\n{}", m.signature, d)
+                        }
+                        if provided {
+                            // Append universal methods
+                            for (u_name, u_doc) in [
+                                ("type", "Returns the type name of the value"),
+                                (
+                                    "toString",
+                                    "Converts the value to its string representation",
+                                ),
+                                ("toJson", "Serializes the value to a JSON string"),
+                            ] {
+                                if member_prefix
+                                    .as_deref()
+                                    .map_or(true, |p| u_name.starts_with(p))
+                                {
+                                    completions.push(JsonCompletion {
+                                        sort_text: Some("3_".to_string()),
+                                        label: u_name.to_string(),
+                                        kind: "method".to_string(),
+                                        detail: format!("universal method"),
+                                        documentation: Some(u_doc.to_string()),
+                                    });
+                                }
+                            }
+                            resolved_as_var = true;
+
+                            if !word_under_cursor.is_empty() {
+                                if let Some(tc) = &tc_opt {
+                                    if let Some(methods) = tc.methods.get(typ) {
+                                        if let Some((_, sig)) = methods
+                                            .iter()
+                                            .find(|(name, _)| *name == &word_under_cursor)
+                                        {
+                                            let params_str = sig
+                                                .params
+                                                .iter()
+                                                .map(|p| format!("{}: {:?}", p.name, p.ty))
+                                                .collect::<Vec<_>>()
+                                                .join(", ");
+                                            let return_str = if sig.return_type
+                                                == crate::typechecker::Type::Nil
+                                            {
+                                                "".to_string()
                                             } else {
-                                                format!("```flame\n{}\n```", m.signature)
+                                                format!(" -> {:?}", sig.return_type)
+                                            };
+                                            let fallback = format!(
+                                                "```flame\nfn {}({}){}\n```",
+                                                word_under_cursor, params_str, return_str
+                                            );
+                                            let doc = if let Some(d) = &sig.hover_doc {
+                                                format!("{}\n\n{}", fallback, d)
+                                            } else {
+                                                fallback
                                             };
                                             hover_found = Some(JsonHover {
-                                                label: format!("{}::{}()", typ, m.name),
+                                                label: format!("{}::{}()", typ, word_under_cursor),
                                                 documentation: Some(doc),
                                             });
-                                            break;
-                                        }
-                                        if let Some((field_name, field_type)) = s.fields.iter().find(|(f, _)| f == &word_under_cursor) {
-                                            hover_found = Some(JsonHover {
-                                                label: format!("{}.{}: {}", typ, field_name, field_type),
-                                                documentation: Some(format!("```flame\n{}.{}: {}\n```\nField of `{}`", typ, field_name, field_type, typ)),
-                                            });
-                                            break;
-                                        }
-                                        if let Some(func_name) =
-                                            s.methods.iter().find(|&f| f == &word_under_cursor)
-                                        {
-                                            let sig = format!("fn {}(...)", func_name);
-                                            hover_found = Some(JsonHover {
-                                                label: format!("{}::{}()", typ, func_name),
-                                                documentation: Some(format!(
-                                                    "```flame\n{}\n```",
-                                                    sig
-                                                )),
-                                            });
-                                            break;
                                         }
                                     }
                                 }
-                            }
-                            if hover_found.is_none() {
-                                for mod_name in &native_modules {
-                                    if let Some(meta) =
-                                        load_meta_from_project(&manifest_dir, mod_name)
-                                    {
-                                        if let Some(struct_meta) =
-                                            meta.structs.iter().find(|s| s.name == *typ)
-                                        {
-                                            if let Some(function) = struct_meta
-                                                .methods
+
+                                if hover_found.is_none() {
+                                    for s in &scanned_structs {
+                                        if s.name == *typ {
+                                            if let Some(m) = s
+                                                .method_details
                                                 .iter()
-                                                .find(|f| f.flame_name == word_under_cursor)
+                                                .find(|m| m.name == word_under_cursor)
                                             {
-                                                let params_str = function
-                                                    .params
-                                                    .iter()
-                                                    .map(|p| format!("{}: {}", p.name, p.type_name))
-                                                    .collect::<Vec<_>>()
-                                                    .join(", ");
-                                                let sig = format!(
-                                                    "fn {}({}) -> {}",
-                                                    function.flame_name,
-                                                    params_str,
-                                                    function.return_type
-                                                );
+                                                let doc = if let Some(d) = &m.doc {
+                                                    format!(
+                                                        "```flame\n{}\n```\n\n{}",
+                                                        m.signature, d
+                                                    )
+                                                } else {
+                                                    format!("```flame\n{}\n```", m.signature)
+                                                };
+                                                hover_found = Some(JsonHover {
+                                                    label: format!("{}::{}()", typ, m.name),
+                                                    documentation: Some(doc),
+                                                });
+                                                break;
+                                            }
+                                            if let Some((field_name, field_type)) = s
+                                                .fields
+                                                .iter()
+                                                .find(|(f, _)| f == &word_under_cursor)
+                                            {
                                                 hover_found = Some(JsonHover {
                                                     label: format!(
-                                                        "{}.{}",
-                                                        typ, function.flame_name
+                                                        "{}.{}: {}",
+                                                        typ, field_name, field_type
                                                     ),
                                                     documentation: Some(format!(
-                                                        "```flame\n{}\n```\n{}",
-                                                        sig,
-                                                        function.docs.clone().unwrap_or_default()
+                                                        "```flame\n{}.{}: {}\n```\nField of `{}`",
+                                                        typ, field_name, field_type, typ
                                                     )),
                                                 });
                                                 break;
+                                            }
+                                            if let Some(func_name) =
+                                                s.methods.iter().find(|&f| f == &word_under_cursor)
+                                            {
+                                                let sig = format!("fn {}(...)", func_name);
+                                                hover_found = Some(JsonHover {
+                                                    label: format!("{}::{}()", typ, func_name),
+                                                    documentation: Some(format!(
+                                                        "```flame\n{}\n```",
+                                                        sig
+                                                    )),
+                                                });
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                if hover_found.is_none() {
+                                    for mod_name in &native_modules {
+                                        if let Some(meta) =
+                                            load_meta_from_project(&manifest_dir, mod_name)
+                                        {
+                                            if let Some(struct_meta) =
+                                                meta.structs.iter().find(|s| s.name == *typ)
+                                            {
+                                                if let Some(function) = struct_meta
+                                                    .methods
+                                                    .iter()
+                                                    .find(|f| f.flame_name == word_under_cursor)
+                                                {
+                                                    let params_str = function
+                                                        .params
+                                                        .iter()
+                                                        .map(|p| {
+                                                            format!("{}: {}", p.name, p.type_name)
+                                                        })
+                                                        .collect::<Vec<_>>()
+                                                        .join(", ");
+                                                    let sig = format!(
+                                                        "fn {}({}) -> {}",
+                                                        function.flame_name,
+                                                        params_str,
+                                                        function.return_type
+                                                    );
+                                                    hover_found = Some(JsonHover {
+                                                        label: format!(
+                                                            "{}.{}",
+                                                            typ, function.flame_name
+                                                        ),
+                                                        documentation: Some(format!(
+                                                            "```flame\n{}\n```\n{}",
+                                                            sig,
+                                                            function
+                                                                .docs
+                                                                .clone()
+                                                                .unwrap_or_default()
+                                                        )),
+                                                    });
+                                                    break;
+                                                }
                                             }
                                         }
                                     }
@@ -1250,7 +1633,6 @@ pub fn analyze_file_for_json(
                 }
             }
         }
-    }
 
         if !resolved_as_var {
             let meta_match = lookup_namespaces.iter().find_map(|ns| {
@@ -1400,7 +1782,10 @@ pub fn analyze_file_for_json(
                         }
                     }
                 }
-            } else if let Some((_def_ns, def)) = lookup_namespaces.iter().find_map(|ns| ide::get_native_module_def(ns).map(|d| (ns.to_string(), d))) {
+            } else if let Some((_def_ns, def)) = lookup_namespaces
+                .iter()
+                .find_map(|ns| ide::get_native_module_def(ns).map(|d| (ns.to_string(), d)))
+            {
                 for func in &def.functions {
                     if member_prefix
                         .as_deref()
@@ -1488,17 +1873,31 @@ pub fn analyze_file_for_json(
                     }
                 }
             } else if let Some(tc) = &tc_opt {
-                let found_enum = lookup_namespaces.iter().find_map(|ns| tc.enums.get(ns).map(|e| (ns.to_string(), e)));
+                let found_enum = lookup_namespaces
+                    .iter()
+                    .find_map(|ns| tc.enums.get(ns).map(|e| (ns.to_string(), e)));
                 let found_methods = lookup_namespaces.iter().find_map(|ns| {
-                    tc.methods.iter().find(|(k, _)| *k == ns || k.ends_with(&format!(".{}", ns))).map(|(_, v)| v)
+                    tc.methods
+                        .iter()
+                        .find(|(k, _)| *k == ns || k.ends_with(&format!(".{}", ns)))
+                        .map(|(_, v)| v)
                 });
                 if found_enum.is_some() || found_methods.is_some() {
                     if let Some((_, enum_info)) = found_enum {
                         if !word_under_cursor.is_empty() {
-                            if let Some((variant_name, variant_info)) = enum_info.variants.iter().find(|(n, _)| *n == &word_under_cursor) {
+                            if let Some((variant_name, variant_info)) = enum_info
+                                .variants
+                                .iter()
+                                .find(|(n, _)| *n == &word_under_cursor)
+                            {
                                 hover_found = Some(JsonHover {
                                     label: format!("{}::{}", namespace, variant_name),
-                                    documentation: variant_info.hover_doc.clone().or_else(|| Some(format!("```flame\n{}::{} variant\n```", namespace, variant_name)))
+                                    documentation: variant_info.hover_doc.clone().or_else(|| {
+                                        Some(format!(
+                                            "```flame\n{}::{} variant\n```",
+                                            namespace, variant_name
+                                        ))
+                                    }),
                                 });
                             }
                         }
@@ -1506,37 +1905,64 @@ pub fn analyze_file_for_json(
                     if let Some(methods) = found_methods {
                         for (method_name, sig) in methods {
                             if sig.is_static {
-                                if member_prefix.as_deref().map_or(true, |p| method_name.starts_with(p)) {
+                                if member_prefix
+                                    .as_deref()
+                                    .map_or(true, |p| method_name.starts_with(p))
+                                {
                                     completions.push(JsonCompletion {
                                         sort_text: None,
                                         label: method_name.clone(),
                                         kind: "function".to_string(),
                                         detail: format!("{} method", namespace),
-                                        documentation: sig.hover_doc.clone()
+                                        documentation: sig.hover_doc.clone(),
                                     });
                                 }
                             }
                             if !word_under_cursor.is_empty() && method_name == &word_under_cursor {
-                                let params_str = sig.params.iter().map(|p| format!("{}: {:?}", p.name, p.ty)).collect::<Vec<_>>().join(", ");
-                                let return_str = if sig.return_type == crate::typechecker::Type::Nil { "".to_string() } else { format!(" -> {:?}", sig.return_type) };
-                                let fallback_doc = format!("```flame\nfn {}({}){}\n```", method_name, params_str, return_str);
-                                let final_doc = if let Some(doc) = &sig.hover_doc { format!("{}\n\n{}", fallback_doc, doc) } else { fallback_doc };
+                                let params_str = sig
+                                    .params
+                                    .iter()
+                                    .map(|p| format!("{}: {:?}", p.name, p.ty))
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                let return_str = if sig.return_type == crate::typechecker::Type::Nil
+                                {
+                                    "".to_string()
+                                } else {
+                                    format!(" -> {:?}", sig.return_type)
+                                };
+                                let fallback_doc = format!(
+                                    "```flame\nfn {}({}){}\n```",
+                                    method_name, params_str, return_str
+                                );
+                                let final_doc = if let Some(doc) = &sig.hover_doc {
+                                    format!("{}\n\n{}", fallback_doc, doc)
+                                } else {
+                                    fallback_doc
+                                };
                                 hover_found = Some(JsonHover {
                                     label: format!("{}::{}()", namespace, method_name),
-                                    documentation: Some(final_doc)
+                                    documentation: Some(final_doc),
                                 });
                             }
                         }
                     }
-                } else if let Some((std_ns, std_methods)) = lookup_namespaces.iter().find_map(|ns| ide::get_std_module_methods(ns).map(|m| (ns.to_string(), m))) {
+                } else if let Some((std_ns, std_methods)) = lookup_namespaces
+                    .iter()
+                    .find_map(|ns| ide::get_std_module_methods(ns).map(|m| (ns.to_string(), m)))
+                {
                     for method in &std_methods {
                         if member_prefix
                             .as_deref()
                             .map_or(true, |prefix| method.starts_with(prefix))
                         {
-                            let doc = crate::std_docs::get_std_function_doc(&std_ns, method)
-                                .or_else(|| effective_mod.as_ref().and_then(|em| crate::std_docs::get_std_function_doc(em, method)))
-                                .or_else(|| crate::std_docs::get_std_function_doc(&namespace, method));
+                            let doc = crate::blaze::get_std_function_doc(&std_ns, method)
+                                .or_else(|| {
+                                    effective_mod.as_ref().and_then(|em| {
+                                        crate::blaze::get_std_function_doc(em, method)
+                                    })
+                                })
+                                .or_else(|| crate::blaze::get_std_function_doc(&namespace, method));
                             completions.push(JsonCompletion {
                                 sort_text: None,
                                 label: method.clone(),
@@ -1548,9 +1974,15 @@ pub fn analyze_file_for_json(
                     }
 
                     if !word_under_cursor.is_empty() && std_methods.contains(&word_under_cursor) {
-                        let doc = crate::std_docs::get_std_function_doc(&std_ns, &word_under_cursor)
-                            .or_else(|| effective_mod.as_ref().and_then(|em| crate::std_docs::get_std_function_doc(em, &word_under_cursor)))
-                            .or_else(|| crate::std_docs::get_std_function_doc(&namespace, &word_under_cursor));
+                        let doc = crate::blaze::get_std_function_doc(&std_ns, &word_under_cursor)
+                            .or_else(|| {
+                                effective_mod.as_ref().and_then(|em| {
+                                    crate::blaze::get_std_function_doc(em, &word_under_cursor)
+                                })
+                            })
+                            .or_else(|| {
+                                crate::blaze::get_std_function_doc(&namespace, &word_under_cursor)
+                            });
                         if let Some(doc) = doc {
                             hover_found = Some(JsonHover {
                                 label: format!("{namespace}.{word_under_cursor}()"),
@@ -1566,15 +1998,22 @@ pub fn analyze_file_for_json(
                         }
                     }
                 }
-            } else if let Some((std_ns, std_methods)) = lookup_namespaces.iter().find_map(|ns| ide::get_std_module_methods(ns).map(|m| (ns.to_string(), m))) {
+            } else if let Some((std_ns, std_methods)) = lookup_namespaces
+                .iter()
+                .find_map(|ns| ide::get_std_module_methods(ns).map(|m| (ns.to_string(), m)))
+            {
                 for method in &std_methods {
                     if member_prefix
                         .as_deref()
                         .map_or(true, |prefix| method.starts_with(prefix))
                     {
-                        let doc = crate::std_docs::get_std_function_doc(&std_ns, method)
-                            .or_else(|| effective_mod.as_ref().and_then(|em| crate::std_docs::get_std_function_doc(em, method)))
-                            .or_else(|| crate::std_docs::get_std_function_doc(&namespace, method));
+                        let doc = crate::blaze::get_std_function_doc(&std_ns, method)
+                            .or_else(|| {
+                                effective_mod
+                                    .as_ref()
+                                    .and_then(|em| crate::blaze::get_std_function_doc(em, method))
+                            })
+                            .or_else(|| crate::blaze::get_std_function_doc(&namespace, method));
                         completions.push(JsonCompletion {
                             sort_text: None,
                             label: method.clone(),
@@ -1586,9 +2025,15 @@ pub fn analyze_file_for_json(
                 }
 
                 if !word_under_cursor.is_empty() && std_methods.contains(&word_under_cursor) {
-                    let doc = crate::std_docs::get_std_function_doc(&std_ns, &word_under_cursor)
-                        .or_else(|| effective_mod.as_ref().and_then(|em| crate::std_docs::get_std_function_doc(em, &word_under_cursor)))
-                        .or_else(|| crate::std_docs::get_std_function_doc(&namespace, &word_under_cursor));
+                    let doc = crate::blaze::get_std_function_doc(&std_ns, &word_under_cursor)
+                        .or_else(|| {
+                            effective_mod.as_ref().and_then(|em| {
+                                crate::blaze::get_std_function_doc(em, &word_under_cursor)
+                            })
+                        })
+                        .or_else(|| {
+                            crate::blaze::get_std_function_doc(&namespace, &word_under_cursor)
+                        });
                     if let Some(doc) = doc {
                         hover_found = Some(JsonHover {
                             label: format!("{namespace}.{word_under_cursor}()"),
@@ -1603,7 +2048,9 @@ pub fn analyze_file_for_json(
                         });
                     }
                 }
-            } else if let Some((_loc_ns, local_stmts)) = lookup_namespaces.iter().find_map(|ns| load_local_module_declarations(&manifest_dir, file, ns).map(|s| (ns.to_string(), s))) {
+            } else if let Some((_loc_ns, local_stmts)) = lookup_namespaces.iter().find_map(|ns| {
+                load_local_module_declarations(&manifest_dir, file, ns).map(|s| (ns.to_string(), s))
+            }) {
                 let mut provided_completions = false;
 
                 for stmt in &local_stmts {
@@ -2008,7 +2455,7 @@ pub fn analyze_file_for_json(
                                     .map_or(true, |p| method.starts_with(p))
                                 {
                                     let doc =
-                                        crate::std_docs::get_std_function_doc(&namespace, &method);
+                                        crate::blaze::get_std_function_doc(&namespace, &method);
                                     completions.push(JsonCompletion {
                                         sort_text: Some("4_".to_string()),
                                         label: method.clone(),
@@ -2020,10 +2467,10 @@ pub fn analyze_file_for_json(
                                 }
                                 if !word_under_cursor.is_empty() && method == word_under_cursor {
                                     let doc =
-                                        crate::std_docs::get_std_function_doc(&namespace, &method);
+                                        crate::blaze::get_std_function_doc(&namespace, &method);
                                     hover_found = Some(JsonHover {
                                         label: format!("std.{}::{}()", namespace, method),
-                                        documentation: doc.map(|d| d.to_string()), // std_docs already provides good markdown
+                                        documentation: doc.map(|d| d.to_string()), // std docs dynamically parsed from Blaze/std
                                     });
                                 }
                             }
@@ -2227,6 +2674,23 @@ pub fn analyze_file_for_json(
                                 }
                             }
                         }
+                        if let Some(enum_info) = tc.enums.get(t) {
+                            for (variant_name, _) in &enum_info.variants {
+                                if member_prefix
+                                    .as_deref()
+                                    .map_or(true, |prefix| variant_name.starts_with(prefix))
+                                {
+                                    completions.push(JsonCompletion {
+                                        sort_text: Some("1_".to_string()),
+                                        label: variant_name.clone(),
+                                        kind: "enumMember".to_string(),
+                                        detail: format!("{} variant", t),
+                                        documentation: None,
+                                    });
+                                    provided_completions = true;
+                                }
+                            }
+                        }
                     }
 
                     // Also check native types like ThreadHandler or FlameServer across all modules
@@ -2352,7 +2816,10 @@ pub fn analyze_file_for_json(
                                 ),
                             ];
                             for (name, detail, doc) in sender_methods {
-                                if member_prefix.as_deref().map_or(true, |p| name.starts_with(p)) {
+                                if member_prefix
+                                    .as_deref()
+                                    .map_or(true, |p| name.starts_with(p))
+                                {
                                     completions.push(JsonCompletion {
                                         sort_text: Some("0_".to_string()),
                                         label: name.to_string(),
@@ -2382,7 +2849,10 @@ pub fn analyze_file_for_json(
                                 ),
                             ];
                             for (name, detail, doc) in receiver_methods {
-                                if member_prefix.as_deref().map_or(true, |p| name.starts_with(p)) {
+                                if member_prefix
+                                    .as_deref()
+                                    .map_or(true, |p| name.starts_with(p))
+                                {
                                     completions.push(JsonCompletion {
                                         sort_text: Some("0_".to_string()),
                                         label: name.to_string(),
@@ -2427,156 +2897,22 @@ pub fn analyze_file_for_json(
                     }
                 }
 
-                if !provided_completions {
+                if !provided_completions
+                    && !list_std_modules(&manifest_dir).contains(&namespace)
+                    && !native_modules.contains(&namespace)
+                    && !alias_map.contains_key(&namespace)
+                {
                     // Fallback for primitive and collection methods
-                    let mut builtin_methods = vec![
+                    let builtin_methods = vec![
                         ("type", "Returns the type of the value as a string"),
                         ("toString", "Converts the value to a string representation"),
-                        (
-                            "toInt",
-                            "Converts the value to an integer, throws error if invalid",
-                        ),
-                        (
-                            "tryInt",
-                            "Converts the value to an integer, returns nil if invalid",
-                        ),
-                        (
-                            "toFloat",
-                            "Converts the value to a floating point number, throws error if invalid",
-                        ),
-                        (
-                            "tryFloat",
-                            "Converts the value to a floating point number, returns nil if invalid",
-                        ),
-                        (
-                            "toBool",
-                            "Converts the value to its truthy boolean representation",
-                        ),
-                        (
-                            "tryBool",
-                            "Converts the value to its truthy boolean representation",
-                        ),
-                        (
-                            "toByte",
-                            "Converts a String or Int into a binary Byte or Byte array.",
-                        ),
-                        (
-                            "toUtf8",
-                            "Decodes a Byte array into a UTF-8 String. Panics if invalid UTF-8.",
-                        ),
-                        (
-                            "tryUtf8",
-                            "Attempts to decode a Byte array into a UTF-8 String. Returns nil if invalid.",
-                        ),
-                        (
-                            "index",
-                            "Extracts the value at the given key/index (requires 1 argument)",
-                        ),
                         ("toJson", "Serializes a struct or object into a JSON string"),
                         (
                             "len",
-                            "Returns the length in bytes (String) or elements (Vec)",
+                            "Returns the length in bytes (String) or elements (Array)",
                         ),
-                        ("pushStr", "Appends a string slice (String)"),
-                        ("toUpperCase", "Returns uppercase string (String)"),
-                        ("toLowerCase", "Returns lowercase string (String)"),
-                        ("trim", "Returns trimmed string (String)"),
-                        ("new", "Creates a new instance (Vec, HashMap)"),
-                        ("push", "Appends an element (Vec)"),
-                        ("pop", "Removes and returns the last element (Vec)"),
-                        ("isEmpty", "Returns true if empty (Vec, HashMap)"),
-                        ("insert", "Inserts a key-value pair (HashMap)"),
-                        ("get", "Gets a value by key (HashMap)"),
-                        ("remove", "Removes a key (HashMap)"),
-                        (
-                            "send",
-                            "Sends a message value through a channel sender (Sender).\n\nExample:\n```flame\ntx.send(\"hello\")\n```",
-                        ),
-                        (
-                            "recv",
-                            "Blocks until a message is received from a channel receiver (Receiver).\n\nExample:\n```flame\nlet msg = rx.recv()\n```",
-                        ),
-                        (
-                            "tryRecv",
-                            "Non-blocking attempt to receive a message from a channel receiver (Receiver). Returns nil if empty.\n\nExample:\n```flame\nlet msg = rx.tryRecv()\n```",
-                        ),
-                        (
-                            "map",
-                            "Transforms each element of the collection using the provided closure and returns a new collection.\n\nExample:\n```flame\narr.map((x) { return x * 2 })\n```",
-                        ),
-                        (
-                            "filter",
-                            "Returns a new collection containing only the elements for which the provided closure returns true.\n\nExample:\n```flame\narr.filter((x) { return x > 0 })\n```",
-                        ),
-                        (
-                            "mode",
-                            "Configures digital pin direction. Values: `\"OUTPUT\"`, `\"INPUT\"`, `\"INPUT_PULLUP\"`, `\"PWM\"` (Hardware Pin)",
-                        ),
-                        (
-                            "high",
-                            "Drives digital pin voltage to logical HIGH (Hardware Pin)",
-                        ),
-                        (
-                            "low",
-                            "Drives digital pin voltage to logical LOW (Hardware Pin)",
-                        ),
-                        (
-                            "toggle",
-                            "Flips digital pin voltage to opposite state (Hardware Pin)",
-                        ),
-                        (
-                            "read",
-                            "Reads digital/analog logic level or ADC raw value (Hardware Pin/ADC)",
-                        ),
-                        (
-                            "angle",
-                            "Sets absolute target rotation angle in degrees (Hardware Servo)",
-                        ),
-                        (
-                            "speed",
-                            "Sets throttle output as percentage (Hardware Motor)",
-                        ),
-                        (
-                            "forward",
-                            "Sets directional polarization to forward (Hardware Motor)",
-                        ),
-                        (
-                            "reverse",
-                            "Sets directional polarization to reverse (Hardware Motor)",
-                        ),
-                        (
-                            "stop",
-                            "Electro-dynamically brakes shaft to halt (Hardware Motor/Servo)",
-                        ),
+                        ("isEmpty", "Returns true if empty"),
                     ];
-
-                    if content.contains("import std.math") {
-                        builtin_methods.extend(vec![
-                        ("abs", "Returns the absolute value (Math)"),
-                        ("floor", "Returns the largest integer less than or equal to a number (Math)"),
-                        ("ceil", "Returns the smallest integer greater than or equal to a number (Math)"),
-                        ("round", "Returns the nearest integer to a number (Math)"),
-                        ("sqrt", "Returns the square root of a number (Math)"),
-                        ("pow", "Returns the base to the exponent power (Math)"),
-                        ("min", "Returns the smaller of two numbers (Math)"),
-                        ("max", "Returns the larger of two numbers (Math)"),
-                        ("clamp", "Clamps a number within the inclusive range specified (Math)"),
-                    ]);
-                    }
-
-                    if content.contains("import std.byte") {
-                        builtin_methods.extend(vec![
-                            (
-                                "toHex",
-                                "Returns the hexadecimal string representation (Bytes)",
-                            ),
-                            (
-                                "toBase64",
-                                "Returns the Base64 string representation (Bytes)",
-                            ),
-                            ("concat", "Concatenates another byte array (Bytes)"),
-                        ]);
-                    }
 
                     for (method, doc) in &builtin_methods {
                         if member_prefix
@@ -2616,7 +2952,7 @@ pub fn analyze_file_for_json(
         ));
 
         if !word_under_cursor.is_empty() {
-            if let Some(doc) = crate::std_docs::get_std_module_doc(&word_under_cursor) {
+            if let Some(doc) = crate::blaze::get_std_module_doc(&word_under_cursor) {
                 hover_found = Some(JsonHover {
                     label: word_under_cursor.clone(),
                     documentation: Some(format!(
@@ -2730,45 +3066,99 @@ pub fn analyze_file_for_json(
             && !word_under_cursor.is_empty()
         {
             if let Some(tc) = &tc_opt {
-                if let Some(s) = tc.structs.iter().find(|(k, _)| k == &&word_under_cursor || k.ends_with(&format!(".{}", word_under_cursor))).map(|(_, v)| v) {
+                if let Some(s) = tc
+                    .structs
+                    .iter()
+                    .find(|(k, _)| {
+                        k == &&word_under_cursor || k.ends_with(&format!(".{}", word_under_cursor))
+                    })
+                    .map(|(_, v)| v)
+                {
                     let doc = s.hover_doc.clone().unwrap_or_default();
                     let final_doc = format!("```flame\nstruct {}\n```\n{}", word_under_cursor, doc);
                     hover_found = Some(JsonHover {
                         label: word_under_cursor.clone(),
-                        documentation: Some(final_doc)
+                        documentation: Some(final_doc),
                     });
-                } else if let Some(e) = tc.enums.iter().find(|(k, _)| k == &&word_under_cursor || k.ends_with(&format!(".{}", word_under_cursor))).map(|(_, v)| v) {
+                } else if let Some(e) = tc
+                    .enums
+                    .iter()
+                    .find(|(k, _)| {
+                        k == &&word_under_cursor || k.ends_with(&format!(".{}", word_under_cursor))
+                    })
+                    .map(|(_, v)| v)
+                {
                     let doc = e.hover_doc.clone().unwrap_or_default();
                     let final_doc = format!("```flame\nenum {}\n```\n{}", word_under_cursor, doc);
                     hover_found = Some(JsonHover {
                         label: word_under_cursor.clone(),
-                        documentation: Some(final_doc)
+                        documentation: Some(final_doc),
                     });
-                } else if let Some(f) = tc.functions.iter().find(|(k, _)| k == &&word_under_cursor || k.ends_with(&format!(".{}", word_under_cursor))).map(|(_, v)| v) {
-                    let params_str = f.params.iter().map(|p| format!("{}: {:?}", p.name, p.ty)).collect::<Vec<_>>().join(", ");
-                    let return_str = if f.return_type == crate::typechecker::Type::Nil { "".to_string() } else { format!(" -> {:?}", f.return_type) };
-                    let fallback_doc = format!("```flame\nfn {}({}){}\n```", word_under_cursor, params_str, return_str);
-                    let final_doc = if let Some(doc) = &f.hover_doc { format!("{}\n{}", fallback_doc, doc) } else { fallback_doc };
+                } else if let Some(f) = tc
+                    .functions
+                    .iter()
+                    .find(|(k, _)| {
+                        k == &&word_under_cursor || k.ends_with(&format!(".{}", word_under_cursor))
+                    })
+                    .map(|(_, v)| v)
+                {
+                    let params_str = f
+                        .params
+                        .iter()
+                        .map(|p| format!("{}: {:?}", p.name, p.ty))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let return_str = if f.return_type == crate::typechecker::Type::Nil {
+                        "".to_string()
+                    } else {
+                        format!(" -> {:?}", f.return_type)
+                    };
+                    let fallback_doc = format!(
+                        "```flame\nfn {}({}){}\n```",
+                        word_under_cursor, params_str, return_str
+                    );
+                    let final_doc = if let Some(doc) = &f.hover_doc {
+                        format!("{}\n{}", fallback_doc, doc)
+                    } else {
+                        fallback_doc
+                    };
                     hover_found = Some(JsonHover {
                         label: format!("{}()", word_under_cursor),
-                        documentation: Some(final_doc)
+                        documentation: Some(final_doc),
                     });
                 } else if let Some(impl_name) = &current_impl {
                     if let Some(methods) = tc.methods.get(impl_name) {
-                        if let Some((_, f)) = methods.iter().find(|(k, _)| k == &&word_under_cursor) {
-                            let params_str = f.params.iter().map(|p| format!("{}: {:?}", p.name, p.ty)).collect::<Vec<_>>().join(", ");
-                            let return_str = if f.return_type == crate::typechecker::Type::Nil { "".to_string() } else { format!(" -> {:?}", f.return_type) };
-                            let fallback_doc = format!("```flame\nfn {}({}){}\n```", word_under_cursor, params_str, return_str);
-                            let final_doc = if let Some(doc) = &f.hover_doc { format!("{}\n{}", fallback_doc, doc) } else { fallback_doc };
+                        if let Some((_, f)) = methods.iter().find(|(k, _)| k == &&word_under_cursor)
+                        {
+                            let params_str = f
+                                .params
+                                .iter()
+                                .map(|p| format!("{}: {:?}", p.name, p.ty))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            let return_str = if f.return_type == crate::typechecker::Type::Nil {
+                                "".to_string()
+                            } else {
+                                format!(" -> {:?}", f.return_type)
+                            };
+                            let fallback_doc = format!(
+                                "```flame\nfn {}({}){}\n```",
+                                word_under_cursor, params_str, return_str
+                            );
+                            let final_doc = if let Some(doc) = &f.hover_doc {
+                                format!("{}\n{}", fallback_doc, doc)
+                            } else {
+                                fallback_doc
+                            };
                             hover_found = Some(JsonHover {
                                 label: format!("{}::{}()", impl_name, word_under_cursor),
-                                documentation: Some(final_doc)
+                                documentation: Some(final_doc),
                             });
                         }
                     }
                 }
             }
-            
+
             if hover_found.is_none() {
                 // Check if the bare word is a function/annotation from any native module
                 for mod_name in &native_modules {
@@ -2789,15 +3179,14 @@ pub fn analyze_file_for_json(
                                 function.flame_name, params_str, function.return_type
                             );
                             let doc = function.docs.clone().unwrap_or_else(|| {
-                                load_local_rust_doc(
-                                    &manifest_dir,
-                                    mod_name,
-                                    &function.flame_name,
-                                )
-                                .unwrap_or_default()
+                                load_local_rust_doc(&manifest_dir, mod_name, &function.flame_name)
+                                    .unwrap_or_default()
                             });
                             let final_doc = if doc.trim().is_empty() {
-                                format!("```flame\n{}\n```\n\n**Return Type**: `{}`", sig, function.return_type)
+                                format!(
+                                    "```flame\n{}\n```\n\n**Return Type**: `{}`",
+                                    sig, function.return_type
+                                )
                             } else {
                                 format!(
                                     "```flame\n{}\n```\n{}\n\n**Return Type**: `{}`",
@@ -2959,8 +3348,6 @@ pub fn analyze_file_for_json(
     }
 }
 
-
-
 fn list_std_modules(_manifest_dir: &Path) -> Vec<String> {
     vec![
         "thread".to_string(),
@@ -2973,11 +3360,10 @@ fn list_std_modules(_manifest_dir: &Path) -> Vec<String> {
         "time".to_string(),
         "fmt".to_string(),
         "os".to_string(),
-        "hardware".to_string(),
+        "window".to_string(),
         "desktop".to_string(),
         "env".to_string(),
         "camera".to_string(),
-        "embedded".to_string(),
         "unit".to_string(),
     ]
 }
@@ -3151,7 +3537,10 @@ fn load_imported_module_declarations(
             let mut found = None;
             for part in path_parts.iter().rev() {
                 let candidate = format!("{}.fm", part);
-                if let Some((_, src)) = crate::blaze::EMBEDDED_BLAZE_STD.iter().find(|(name, _)| *name == candidate) {
+                if let Some((_, src)) = crate::blaze::EMBEDDED_BLAZE_STD
+                    .iter()
+                    .find(|(name, _)| *name == candidate)
+                {
                     found = Some((*src).to_string());
                     break;
                 }
@@ -3182,6 +3571,8 @@ fn load_imported_module_declarations(
                     } else if let crate::parser::Stmt::ImplDecl { .. } = &stmt {
                         results.push(stmt.clone());
                     } else if let crate::parser::Stmt::StructDecl { .. } = &stmt {
+                        results.push(stmt.clone());
+                    } else if let crate::parser::Stmt::EnumDecl { .. } = &stmt {
                         results.push(stmt.clone());
                     }
                 }

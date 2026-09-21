@@ -5,24 +5,68 @@ description: OS system introspection in Flame.
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-Inspect the host operating system platform and architecture:
+Inspect the host operating system platform, hostname, CPU architecture, and physical RAM memory states:
 
 ---
+
+## Host Platform & Architecture
+
+Retrieve information about the host platform, architecture, and machine hostname:
 
 ```flame
 import std.os
 
-println($"Operating System Name: {os.name()}")   // e.g., "windows", "linux", "macos"
+println($"Operating System Name: {os.name()}")     // e.g., "windows", "linux", "macos"
 println($"Operating System Family: {os.family()}") // e.g., "windows", "unix"
-println($"CPU Architecture: {os.arch()}")         // e.g., "x86_64", "aarch64"
+println($"CPU Architecture: {os.arch()}")           // e.g., "x86_64", "aarch64"
+println($"Host Name: {os.hostname()}")             // e.g., "my-laptop"
 ```
 
 ---
 
+## System Memory (`os.mem`)
+
+Query system physical memory states in bytes using `os.mem()`, returning a typed `memStates` struct:
+
+```flame
+import std.os
+
+let memory = os.mem()
+
+let totalGb = memory.totalMemory / 1024 / 1024 / 1024
+let usedGb = memory.usedMemory / 1024 / 1024 / 1024
+let availableGb = memory.availableMemory / 1024 / 1024 / 1024
+let freeGb = memory.freeMemory / 1024 / 1024 / 1024
+
+println($"Total: {totalGb} GB")
+println($"Used: {usedGb} GB")
+println($"Available: {availableGb} GB")
+println($"Free: {freeGb} GB")
+```
+
+<Aside type="note">
+`freeMemory` represents memory completely untouched by the kernel, while `availableMemory` accounts for reclaimable disk caches and buffers. For calculating memory currently in use, use `memory.usedMemory` or `totalMemory - availableMemory`.
+</Aside>
+
+---
+
 ## API Reference
+
+### Functions
 
 | Method | Arguments | Returns | Description |
 | :--- | :--- | :--- | :--- |
 | `os.name` | *None* | `String` | Returns the OS name identifier (e.g., `"windows"`, `"linux"`, `"macos"`). |
 | `os.arch` | *None* | `String` | Returns the host CPU processor architecture (e.g., `"x86_64"`, `"aarch64"`). |
 | `os.family` | *None* | `String` | Returns the general OS operating platform family (e.g., `"windows"`, `"unix"`). |
+| `os.hostname` | *None* | `String` | Returns the host machine name / hostname. |
+| `os.mem` | *None* | `memStates` | Returns system physical memory statistics in bytes. |
+
+### `memStates` Struct
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `totalMemory` | `Int` | Total system physical RAM in bytes. |
+| `usedMemory` | `Int` | System physical RAM currently in use in bytes. |
+| `availableMemory` | `Int` | System physical RAM available to start new applications without swapping in bytes. |
+| `freeMemory` | `Int` | Completely unallocated system physical RAM in bytes. |

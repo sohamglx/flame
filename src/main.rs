@@ -3,7 +3,6 @@ pub mod blaze;
 pub mod cli;
 pub mod compiler;
 mod diagnostics;
-pub mod embedded;
 mod formatter;
 pub mod ide;
 mod lexer;
@@ -11,7 +10,6 @@ pub mod native_std;
 mod package_manager;
 mod parser;
 pub mod runner;
-mod std_docs;
 mod stdlib;
 mod test_engine;
 mod typechecker;
@@ -69,7 +67,7 @@ fn real_main() {
         "remove" => {
             if args.len() < 3 {
                 println!("\x1b[1;31merror:\x1b[0m please specify package name to remove.");
-                println!("usage: flame remove <package_name>");
+                println!("usage: fmp remove <package_name>");
                 return;
             }
             package_manager::remove_package(&args[2]);
@@ -77,7 +75,7 @@ fn real_main() {
         "new" => {
             if args.len() < 3 {
                 println!("\x1b[1;31merror:\x1b[0m please specify the project or plugin name");
-                println!("usage: flame new <project_name> | flame new --plugin <plugin_name>");
+                println!("usage: fmp new <project_name> | fmp new --plugin <plugin_name>");
                 return;
             }
             if args.contains(&"--plugin".to_string()) || args.contains(&"-p".to_string()) {
@@ -119,7 +117,7 @@ fn real_main() {
         "format" | "fmt" => {
             if args.len() < 3 {
                 println!("\x1b[1;31merror:\x1b[0m please specify a Flame file to format");
-                println!("usage: flame format <file_path.fm> [--stdout]");
+                println!("usage: fmp format <file_path.fm> [--stdout]");
                 return;
             }
             let filepath = &args[2];
@@ -157,17 +155,7 @@ fn real_main() {
         "list-plugins" => {
             list_plugins_command(&args);
         }
-        "flash" => {
-            flash_project(&args);
-        }
-        "monitor" => {
-            monitor_project(&args);
-        }
         "run" => {
-            if args.contains(&"--device".to_string()) {
-                flash_project(&args);
-                return;
-            }
             let force_local = args.contains(&"--local".to_string());
             let is_watch = args.contains(&"--watch".to_string()) || args.contains(&"-w".to_string());
 
@@ -196,7 +184,7 @@ fn real_main() {
                 println!(
                     "\x1b[1;31merror:\x1b[0m please specify a Flame file to run or create src/main.fm"
                 );
-                println!("usage: flame run [file_path.fm] [--watch]");
+                println!("usage: fmp run [file_path.fm] [--watch]");
                 return;
             };
 
@@ -219,32 +207,16 @@ fn real_main() {
         "gen" => {
             if args.len() < 3 || args[2] != "fmi" {
                 println!("\x1b[1;31merror:\x1b[0m unknown subcommand");
-                println!("usage: flame gen fmi <rust_file>");
+                println!("usage: fmp gen fmi <rust_file>");
                 return;
             }
             if args.len() < 4 {
                 println!("\x1b[1;31merror:\x1b[0m expected rust file path");
-                println!("usage: flame gen fmi <rust_file>");
+                println!("usage: fmp gen fmi <rust_file>");
                 return;
             }
             let filepath = &args[3];
             package_manager::gen_fmi_from_rust_file(std::path::Path::new(filepath));
-        }
-        "native" => {
-            if args.len() < 3 || args[2] != "init" {
-                println!("\x1b[1;31merror:\x1b[0m unknown subcommand");
-                println!("usage: flame native init [plugin_name]");
-                return;
-            }
-            let mut plugin_name = "bridge";
-            if let Some(idx) = args.iter().position(|r| r == "--name") {
-                if let Some(n) = args.get(idx + 1) {
-                    plugin_name = n;
-                }
-            } else if args.len() >= 4 {
-                plugin_name = &args[3];
-            }
-            init_native_bridge(plugin_name);
         }
         "version" | "--version" | "-version" | "--v" | "-v" | "-V" => {
             println!("Flame {} (Fifth Spark)", env!("CARGO_PKG_VERSION"));

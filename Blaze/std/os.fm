@@ -1,16 +1,39 @@
 package os
-
 @Docs("Returns the operating system name (e.g. `\"windows\"`, `\"linux\"`, `\"macos\"`).\n\n**Example:**\n```flame\nlet platform = os.name()\n```")
-export fn name() -> String {}
+export fn name() -> String {
+}
 
 @Docs("Returns the system CPU architecture (e.g. `\"x86_64\"`, `\"aarch64\"`).")
-export fn arch() -> String {}
+export fn arch() -> String {
+}
 
-@Docs("Returns total system physical memory in bytes.")
-export fn totalMemory() -> Int {}
+@Docs("Returns the system a string describing the family of the operating system. An example value may be: `\"unix\"`, or `\"windows\"`. This value may be an empty string if the family is unknown.")
+export fn family() -> String {
+}
 
-@Docs("Returns available system free memory in bytes.")
-export fn freeMemory() -> Int {}
+@Docs("System physical memory states in bytes")
+export struct memStates {
+    totalMemory: Int,
+    freeMemory: Int,
+    availableMemory: Int,
+    usedMemory: Int,
+}
+
+@Docs("Returns the system memory states
+
+    import std.os
+
+    let memory = os.mem()
+
+
+    memory.totalMemory // Returns total system physical memory in byte.
+    memory.freeMemory // Returns system free physical memory in byte.
+    memory.availableMemory // Returns system available physical memory in byte.
+    memory.usedMemory // Returns system used physical memory in byte.
+")
+export fn mem() -> memStates {
+}
 
 @Docs("Returns the host machine hostname.")
-export fn hostname() -> String {}
+export fn hostname() -> String {
+}

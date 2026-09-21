@@ -8,10 +8,8 @@ pub const EMBEDDED_BLAZE_STD: &[(&str, &str)] = &[
     ("byte.fm", include_str!("../Blaze/std/byte.fm")),
     ("camera.fm", include_str!("../Blaze/std/camera.fm")),
     ("desktop.fm", include_str!("../Blaze/std/desktop.fm")),
-    ("embedded.fm", include_str!("../Blaze/std/embedded.fm")),
     ("env.fm", include_str!("../Blaze/std/env.fm")),
     ("fs.fm", include_str!("../Blaze/std/fs.fm")),
-    ("hardware.fm", include_str!("../Blaze/std/hardware.fm")),
     ("json.fm", include_str!("../Blaze/std/json.fm")),
     ("math.fm", include_str!("../Blaze/std/math.fm")),
     ("net.fm", include_str!("../Blaze/std/net.fm")),
@@ -20,6 +18,7 @@ pub const EMBEDDED_BLAZE_STD: &[(&str, &str)] = &[
     ("thread.fm", include_str!("../Blaze/std/thread.fm")),
     ("time.fm", include_str!("../Blaze/std/time.fm")),
     ("unit.fm", include_str!("../Blaze/std/unit.fm")),
+    ("window.fm", include_str!("../Blaze/std/window.fm")),
 ];
 
 pub fn get_blaze_target_std_dirs() -> Vec<PathBuf> {
@@ -288,4 +287,105 @@ pub fn update_blaze_definitions(prefer_remote: bool) -> Result<usize, String> {
     }
 
     Ok(updated_directories)
+}
+
+use std::sync::OnceLock;
+
+static STD_DOCS_CACHE: OnceLock<(HashMap<(String, String), String>, HashMap<String, String>)> =
+    OnceLock::new();
+
+fn init_std_docs_cache() -> (HashMap<(String, String), String>, HashMap<String, String>) {
+    let mut func_docs = HashMap::new();
+    let mut mod_docs = HashMap::new();
+
+    let re = regex::Regex::new(
+        r#"(?s)@Docs\(\s*"((?:[^"\\]|\\.)*)"\s*\)\s*(?:export\s+)?(?:(package|struct|fn|const|enum))\s+([a-zA-Z_][\w]*)"#,
+    )
+    .unwrap();
+
+    let impl_re = regex::Regex::new(r#"(?s)impl\s+([a-zA-Z_][\w]*)\s*\{(.*?)\}"#).unwrap();
+
+    for (file_name, content) in EMBEDDED_BLAZE_STD {
+        let base_name = file_name.strip_suffix(".fm").unwrap_or(file_name);
+        let mod_prefixes = [
+            base_name.to_string(),
+            format!("std.{}", base_name),
+        ];
+
+        // 1. Match top-level annotated declarations
+        for cap in re.captures_iter(content) {
+            let raw_doc = &cap[1];
+            let unescaped = raw_doc
+                .replace("\\n", "\n")
+                .replace("\\\"", "\"")
+                .replace("\\\\", "\\");
+            let kind = &cap[2];
+            let name = &cap[3];
+
+            if kind == "package" {
+                for p in &mod_prefixes {
+                    mod_docs.insert(p.clone(), unescaped.clone());
+                }
+            } else {
+                for p in &mod_prefixes {
+                    func_docs.insert((p.clone(), name.to_string()), unescaped.clone());
+                }
+            }
+        }
+
+        // 2. Match methods inside impl blocks
+        for impl_cap in impl_re.captures_iter(content) {
+            let struct_name = &impl_cap[1];
+            let impl_body = &impl_cap[2];
+
+            for cap in re.captures_iter(impl_body) {
+                let raw_doc = &cap[1];
+                let unescaped = raw_doc
+                    .replace("\\n", "\n")
+                    .replace("\\\"", "\"")
+                    .replace("\\\\", "\\");
+                let name = &cap[3];
+
+                for p in &mod_prefixes {
+                    func_docs.insert((p.clone(), name.to_string()), unescaped.clone());
+                    func_docs.insert(
+                        (format!("{}.{}", p, struct_name), name.to_string()),
+                        unescaped.clone(),
+                    );
+                    func_docs.insert(
+                        (format!("{}.{}", p, struct_name.to_lowercase()), name.to_string()),
+                        unescaped.clone(),
+                    );
+                }
+                func_docs.insert((struct_name.to_string(), name.to_string()), unescaped.clone());
+                func_docs.insert((struct_name.to_lowercase(), name.to_string()), unescaped.clone());
+                func_docs.insert(
+                    (format!("std.{}", struct_name.to_lowercase()), name.to_string()),
+                    unescaped.clone(),
+                );
+            }
+        }
+    }
+
+    (func_docs, mod_docs)
+}
+
+pub fn get_std_function_doc(module: &str, function: &str) -> Option<String> {
+    let (func_docs, _) = STD_DOCS_CACHE.get_or_init(init_std_docs_cache);
+    let mod_clean = module.strip_prefix("std.").unwrap_or(module);
+    func_docs
+        .get(&(mod_clean.to_string(), function.to_string()))
+        .or_else(|| func_docs.get(&(format!("std.{}", mod_clean), function.to_string())))
+        .or_else(|| func_docs.get(&(module.to_string(), function.to_string())))
+        .cloned()
+}
+
+pub fn get_std_module_doc(module: &str) -> Option<String> {
+    let (_, mod_docs) = STD_DOCS_CACHE.get_or_init(init_std_docs_cache);
+    let mod_clean = module.strip_prefix("std.").unwrap_or(module);
+    mod_docs
+        .get(mod_clean)
+        .or_else(|| mod_docs.get(&format!("std.{}", mod_clean)))
+        .or_else(|| mod_docs.get(module))
+        .cloned()
 }

@@ -1,0 +1,118 @@
+---
+title: Window Management (std.window)
+description: Cross-platform desktop window management and automation in Flame.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+The `std.window` module provides native capabilities for listing, focusing, minimizing, maximizing, moving, and resizing desktop application windows.
+
+<Aside type="caution" title="Experimental Module">
+  The `std.window` module is experimental. Its API surface, platform-specific behaviors, and underlying driver implementations are under active development and may be changed, redesigned, or removed in future releases.
+</Aside>
+
+---
+
+## Listing Open Windows
+
+Enumerate all active, visible top-level windows on your desktop:
+
+```flame
+import std.window
+
+let windows = window.list()
+
+for w in windows {
+    println($"[{w.id}] {w.appName}: {w.title} ({w.x}, {w.y}, {w.width}x{w.height})")
+}
+```
+
+---
+
+## Finding & Manipulating Windows
+
+You can manipulate windows either using the module-level functions or directly calling methods on `Window` struct instances:
+
+### Module-Level Operations
+
+Pass a window title substring, app name, or window ID:
+
+```flame
+import std.window
+
+// Bring window to foreground
+window.focus("Firefox")
+
+// Minimize and maximize
+window.minimize("Discord")
+window.maximize("Code")
+
+// Restore window to normal size
+window.restore("Discord")
+
+// Move window to top-left corner
+window.move("Firefox", 0, 0)
+
+// Resize window
+window.resize("Firefox", 1920, 1080)
+
+// Close a window
+window.close("Calculator")
+```
+
+### Instance Methods on `Window`
+
+```flame
+import std.window
+
+let editor = window.find("Code")
+
+if editor != nil {
+    editor.focus()
+    editor.move(100, 100)
+    editor.resize(1280, 800)
+}
+```
+
+---
+
+## API Reference
+
+### Module Functions
+
+| Method | Arguments | Returns | Description |
+| :--- | :--- | :--- | :--- |
+| `window.list` | *None* | `[Window]` | Returns an array of all currently open top-level application windows. |
+| `window.find` | `query: String` | `Window?` | Finds the first window matching title substring, app name, or ID. |
+| `window.focus` | `target: Unknown` | `Bool` | Brings target window to foreground and sets input focus. |
+| `window.minimize` | `target: Unknown` | `Bool` | Minimizes target window. |
+| `window.maximize` | `target: Unknown` | `Bool` | Maximizes target window. |
+| `window.restore` | `target: Unknown` | `Bool` | Restores target window from minimized or maximized state. |
+| `window.move` | `target: Unknown, x: Int, y: Int` | `Bool` | Moves target window to $(X, Y)$ screen coordinates. |
+| `window.resize` | `target: Unknown, width: Int, height: Int` | `Bool` | Resizes target window to specified width and height. |
+| `window.close` | `target: Unknown` | `Bool` | Sends a close request to target window. |
+
+### `Window` Struct Fields
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `String` | Unique platform window identifier / handle. |
+| `title` | `String` | Text title currently displayed on window header bar. |
+| `appName` | `String` | Process name or window class (e.g. `"firefox"`, `"code"`). |
+| `pid` | `Int` | Operating system process ID owning the window. |
+| `x` | `Int` | Horizontal pixel coordinate on desktop screen. |
+| `y` | `Int` | Vertical pixel coordinate on desktop screen. |
+| `width` | `Int` | Window pixel width. |
+| `height` | `Int` | Window pixel height. |
+
+### `Window` Methods
+
+| Method | Arguments | Returns | Description |
+| :--- | :--- | :--- | :--- |
+| `w.focus` | *None* | `Bool` | Brings this window to foreground. |
+| `w.minimize` | *None* | `Bool` | Minimizes this window. |
+| `w.maximize` | *None* | `Bool` | Maximizes this window. |
+| `w.restore` | *None* | `Bool` | Restores this window. |
+| `w.move` | `x: Int, y: Int` | `Bool` | Moves this window to coordinates $(X, Y)$. |
+| `w.resize` | `width: Int, height: Int` | `Bool` | Resizes this window to $(width, height)$. |
+| `w.close` | *None* | `Bool` | Closes this window. |

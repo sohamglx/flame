@@ -1,0 +1,86 @@
+package window
+@Docs("Represents an active desktop application window.")
+export struct Window {
+    id: String,
+    title: String,
+    appName: String,
+    pid: Int,
+    x: Int,
+    y: Int,
+    width: Int,
+    height: Int,
+}
+
+impl Window {
+    @Docs("Brings this window to the foreground and gives it input focus.")
+    fn focus() -> Bool {
+        return window.focus(self.id)
+    }
+
+    @Docs("Minimizes this window to the taskbar/dock.")
+    fn minimize() -> Bool {
+        return window.minimize(self.id)
+    }
+
+    @Docs("Maximizes this window to fill the screen.")
+    fn maximize() -> Bool {
+        return window.maximize(self.id)
+    }
+
+    @Docs("Restores this window from minimized or maximized state.")
+    fn restore() -> Bool {
+        return window.restore(self.id)
+    }
+
+    @Docs("Moves this window to the specified coordinates (x, y).")
+    fn move(x: Int, y: Int) -> Bool {
+        return window.move(self.id, x, y)
+    }
+
+    @Docs("Resizes this window to the specified dimensions (width, height).")
+    fn resize(width: Int, height: Int) -> Bool {
+        return window.resize(self.id, width, height)
+    }
+
+    @Docs("Closes this window.")
+    fn close() -> Bool {
+        return window.close(self.id)
+    }
+
+}
+
+@Docs("Returns an array of all currently open desktop application windows.\n\n**Example:**\n```flame\nimport std.window\n\nlet windows = window.list()\nfor w in windows {\n    println($\"{w.title} ({w.appName}) - PID: {w.pid}\")\n}\n```")
+export fn list() -> [Window] {
+}
+
+@Docs("Finds the first window matching the given title substring, app name, or ID.\n\n**Example:**\n```flame\nlet win = window.find(\"Firefox\")\n```")
+export fn find(query: String) -> Window {
+}
+
+@Docs("Brings the target window to the foreground and gives it input focus.\n\nTarget can be a window title, app name, or window ID.\n\n**Example:**\n```flame\nwindow.focus(\"Firefox\")\n```")
+export fn focus(target: Unknown) -> Bool {
+}
+
+@Docs("Minimizes the target window to the taskbar/dock.\n\n**Example:**\n```flame\nwindow.minimize(\"Discord\")\n```")
+export fn minimize(target: Unknown) -> Bool {
+}
+
+@Docs("Maximizes the target window to fill the screen.\n\n**Example:**\n```flame\nwindow.maximize(\"Code\")\n```")
+export fn maximize(target: Unknown) -> Bool {
+}
+
+@Docs("Restores the target window from minimized or maximized state.\n\n**Example:**\n```flame\nwindow.restore(\"Spotify\")\n```")
+export fn restore(target: Unknown) -> Bool {
+}
+
+@Docs("Moves the target window to screen coordinates (x, y).\n\n**Example:**\n```flame\nwindow.move(\"Firefox\", 0, 0)\n```")
+export fn move(target: Unknown, x: Int, y: Int) -> Bool {
+}
+
+@Docs("Resizes the target window to dimensions (width, height).\n\n**Example:**\n```flame\nwindow.resize(\"Firefox\", 1920, 1080)\n```")
+export fn resize(target: Unknown, width: Int, height: Int) -> Bool {
+}
+
+@Docs("Sends a close signal to the target window.\n\n**Example:**\n```flame\nwindow.close(\"Calculator\")\n```")
+export fn close(target: Unknown) -> Bool {
+}

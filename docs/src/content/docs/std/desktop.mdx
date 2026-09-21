@@ -52,7 +52,34 @@ desktop.keyboard.hotkey("ctrl", "v")
 
 ---
 
+## Opening Applications & URLs (`desktop.open`)
+
+Open any website URL, custom browser internal scheme, file, or native application across platforms:
+
+```flame
+import std.desktop
+
+// Open standard web URLs
+desktop.open("https://google.com")
+
+// Open custom browser internal URL schemes
+desktop.open("brave://settings")
+desktop.open("chrome://extensions")
+
+// Open native applications with command-line arguments
+desktop.open("code", ["."])
+desktop.open("firefox", ["--private-window", "https://news.ycombinator.com"])
+```
+
+---
+
 ## API Reference
+
+### Desktop Operations
+
+| Method | Arguments | Returns | Description |
+| :--- | :--- | :--- | :--- |
+| `desktop.open` | `target: String, args: [String] = []` | `Bool` | Opens specified URL, browser scheme (e.g. `brave://`), file, or application with optional arguments. |
 
 ### Desktop Mouse (`std.desktop.mouse`)
 

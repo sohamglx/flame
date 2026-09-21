@@ -1,14 +1,14 @@
-use crate::utils::parse_manifest_section;
-use crate::{embedded, lexer, package_manager};
+use crate::diagnostics::Diagnostic;
+use crate::lexer::Lexer;
 use crate::lexer::TokenKind;
+use crate::parser::{Parser, Stmt};
+use crate::typechecker::TypeChecker;
+use crate::utils::parse_manifest_section;
+use crate::{lexer, package_manager};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use crate::diagnostics::Diagnostic;
-use crate::lexer::Lexer;
-use crate::parser::{Parser, Stmt};
-use crate::typechecker::TypeChecker;
 
 pub fn parse_file_stmts(path: &Path, content: &str) -> Result<Vec<Stmt>, Diagnostic> {
     let mut lexer = Lexer::new(content);
@@ -169,31 +169,6 @@ pub fn build_project(args: &[String]) -> Option<PathBuf> {
             }
         }
 
-        if target.is_none() {
-            if let Some((detected_target, _)) =
-                embedded::codegen::detect_embedded_target(&all_stmts)
-            {
-                target = Some(detected_target);
-            }
-        }
-
-        if let Some(t) = target {
-            match embedded::codegen::generate_baremetal_firmware_project(&all_stmts, &t, &pkg_name)
-            {
-                Ok(build_dir) => {
-                    println!(
-                        "\x1b[1;32m    Finished\x1b[0m embedded bare-metal firmware project at {}",
-                        build_dir.display()
-                    );
-                    return Some(build_dir);
-                }
-                Err(e) => {
-                    println!("\x1b[1;31merror:\x1b[0m {}", e);
-                    return None;
-                }
-            }
-        }
-
         let manifest_content = fs::read_to_string("flame.toml").unwrap_or_default();
         let mut native_deps_raw =
             parse_manifest_section(&manifest_content, "[native-dependencies]");
@@ -327,7 +302,6 @@ pub fn build_project(args: &[String]) -> Option<PathBuf> {
     }
 }
 
-
 pub fn get_manifest_pkg_name() -> String {
     let mut pkg_name = "app".to_string();
     if let Ok(toml_str) = fs::read_to_string("flame.toml") {
@@ -446,11 +420,12 @@ pub fn check_runtime_needs_rebuild(exe_path: &Path, _profile: &str) -> bool {
                                     "std.regex" => vec!["regex"],
                                     "std.json" => vec!["utils"],
                                     "std.desktop" => vec!["os"],
-                                    "std.hardware" => vec!["hardware"],
                                     "std.camera" => vec!["camera"],
                                     "std.base64" => vec!["base64"],
-                                    "std.net.tcp" | "std.net.udp" | "std.net.dns" | "std.net.url"
-                                    | "std.net.interface" | "std.net" => vec!["net"],
+                                    "std.net.tcp" | "std.net.udp" | "std.net.dns"
+                                    | "std.net.url" | "std.net.interface" | "std.net" => {
+                                        vec!["net"]
+                                    }
                                     "std.net.http" => vec!["net", "http"],
                                     "std.net.ws" => vec!["net", "ws"],
                                     "std.net.mqtt" => vec!["net", "mqtt"],
@@ -537,7 +512,9 @@ pub fn get_project_mtime_snapshot() -> HashMap<PathBuf, std::time::SystemTime> {
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.is_dir() {
-                    if p.file_name().map_or(false, |n| n == "target" || n == "build-cache") {
+                    if p.file_name()
+                        .map_or(false, |n| n == "target" || n == "build-cache")
+                    {
                         continue;
                     }
                     scan(&p, map);
@@ -560,4 +537,3 @@ pub fn get_project_mtime_snapshot() -> HashMap<PathBuf, std::time::SystemTime> {
     }
     map
 }
-

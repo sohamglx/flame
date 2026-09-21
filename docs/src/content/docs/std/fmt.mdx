@@ -11,23 +11,25 @@ The `fmt` module provides utilities for advanced string formatting and manipulat
 
 ## String Formatting
 
-You can format strings using positional or named arguments via `fmt.format`.
+You can format strings using arguments via `fmt.format`.
 
 ```flame
 import std.fmt
 
-// Positional formatting
-let greeting = fmt.format("Hello, {0}! Welcome to {1}.", ["Alice", "Flame"])
-println(greeting) // "Hello, Alice! Welcome to Flame."
 
-// Named formatting (using an object/formula)
-let welcome = fmt.format("Welcome, {name}! Your role is {role}.", { name: "Bob", role: "Admin" })
-println(welcome) // "Welcome, Bob! Your role is Admin."
+
+let a = (spidey, peter)
+let (name, rname) = a
+
+let formated = fmt.format("hello {} - {}", name, rname)
+
+println(formated)
+
 ```
 
 ## API Summary Table
 
 | Method | Arguments | Returns | Description |
 | :--- | :--- | :--- | :--- |
-| `fmt.format` | `template: String, args: Any` | `String` | Formats a template string using either a vector of positional arguments or a formula of named arguments. |
+| `fmt.format` | `template: String, args: Unknown` | `String` | Formats a template string using either a vector of positional arguments or a formula of named arguments. |
 

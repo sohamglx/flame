@@ -2,13 +2,11 @@
 pub mod compiler;
 pub mod blaze;
 pub mod diagnostics;
-pub mod embedded;
 pub mod lexer;
 pub mod native_std;
 pub mod package_manager;
 pub mod parser;
 pub mod runner;
-pub mod std_docs;
 pub mod stdlib;
 pub mod test_engine;
 pub mod typechecker;

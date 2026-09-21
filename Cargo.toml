@@ -1,6 +1,6 @@
 [package]
 name = "flamelang"
-version = "0.5.2"
+version = "0.5.3"
 edition = "2024"
 description = "A statically typed, fast, and modern programming language built in Rust."
 license = "ISC"
@@ -21,7 +21,7 @@ name = "flamelang"
 path = "src/main.rs"
 
 [features]
-default = ["cli", "net", "http", "ws", "mqtt", "utils", "os", "regex", "hardware", "camera", "base64", "gpio"]
+default = ["cli", "net", "http", "ws", "mqtt", "utils", "os", "automation", "regex", "hardware", "camera", "base64"]
 cli = ["dep:reqwest", "dep:zip"]
 avr = []
 esp32 = []
@@ -33,11 +33,11 @@ http = ["net"]
 ws = ["net", "dep:tokio-tungstenite", "dep:futures-util"]
 utils = ["dep:chrono", "dep:base64"]
 os = ["dep:sysinfo", "dep:enigo"]
+automation = ["os"]
 regex = []
-hardware = ["dep:btleplug", "dep:serialport"]
+hardware = ["dep:btleplug", "dep:serialport", "dep:sysinfo"]
 camera = ["dep:nokhwa", "dep:image"]
 base64 = ["dep:base64"]
-gpio = ["dep:rppal"]
 
 [dependencies]
 tokio = { version = "1", optional = true, features = ["rt", "macros", "net", "time", "sync", "io-util", "rt-multi-thread"] }
@@ -63,16 +63,15 @@ zip = { version = "8.6.0", optional = true }
 syn = { version = "3.0.0", features = ["full"] }
 quote = "1.0"
 proc-macro2 = "1.0"
-embedded-hal = "1.0"
-embedded-io = "0.7.1"
-embedded-storage = "0.3"
 ctrlc = "3.5.2"
 chrono = { version = "0.4.45", optional = true }
 base64 = { version = "0.23.1", optional = true }
 dotenvy = "0.15.7"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-rppal = { version = "0.22", optional = true }
+x11rb = "0.14.0"
+dbus = "0.9"
+libc = "0.2"
 
 [profile.dev]
 opt-level = 0

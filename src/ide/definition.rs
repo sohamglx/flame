@@ -297,10 +297,7 @@ pub fn find_local_symbol(
     // 1. Check enclosing function / impl method parameters and local declarations
     for stmt in stmts {
         if let crate::parser::Stmt::FuncDecl {
-            params,
-            body,
-            span,
-            ..
+            params, body, span, ..
         } = stmt
         {
             if cursor_line >= span.line {
@@ -316,7 +313,9 @@ pub fn find_local_symbol(
                     }
                 }
                 if let Some(inner_body) = body {
-                    if let Some(def) = search_body_for_local_symbol(inner_body, clean, cursor_line, filepath) {
+                    if let Some(def) =
+                        search_body_for_local_symbol(inner_body, clean, cursor_line, filepath)
+                    {
                         return Some(def);
                     }
                 }
@@ -324,10 +323,7 @@ pub fn find_local_symbol(
         } else if let crate::parser::Stmt::ImplDecl { methods, .. } = stmt {
             for m in methods {
                 if let crate::parser::Stmt::FuncDecl {
-                    params,
-                    body,
-                    span,
-                    ..
+                    params, body, span, ..
                 } = m
                 {
                     if cursor_line >= span.line {
@@ -343,7 +339,12 @@ pub fn find_local_symbol(
                             }
                         }
                         if let Some(inner_body) = body {
-                            if let Some(def) = search_body_for_local_symbol(inner_body, clean, cursor_line, filepath) {
+                            if let Some(def) = search_body_for_local_symbol(
+                                inner_body,
+                                clean,
+                                cursor_line,
+                                filepath,
+                            ) {
                                 return Some(def);
                             }
                         }
@@ -441,9 +442,15 @@ pub fn find_symbol_in_rust_file(
                                 let sub = &impl_body[fn_match.start()..fn_match.end()];
                                 let sym_offset = sub.find(symbol).unwrap_or(0);
                                 let abs_offset = base_offset + fn_match.start() + sym_offset;
-                                let line_idx = content[..abs_offset].chars().filter(|&c| c == '\n').count() + 1;
-                                let last_line_start = content[..abs_offset].rfind('\n').map(|i| i + 1).unwrap_or(0);
-                                let col_idx = content[last_line_start..abs_offset].chars().count() + 1;
+                                let line_idx =
+                                    content[..abs_offset].chars().filter(|&c| c == '\n').count()
+                                        + 1;
+                                let last_line_start = content[..abs_offset]
+                                    .rfind('\n')
+                                    .map(|i| i + 1)
+                                    .unwrap_or(0);
+                                let col_idx =
+                                    content[last_line_start..abs_offset].chars().count() + 1;
                                 return Some(JsonDefinition {
                                     file: path_str.clone(),
                                     line: line_idx,
@@ -470,7 +477,10 @@ pub fn find_symbol_in_rust_file(
             let sym_offset = sub.find(symbol).unwrap_or(0);
             let abs_offset = fn_match.start() + sym_offset;
             let line_idx = content[..abs_offset].chars().filter(|&c| c == '\n').count() + 1;
-            let last_line_start = content[..abs_offset].rfind('\n').map(|i| i + 1).unwrap_or(0);
+            let last_line_start = content[..abs_offset]
+                .rfind('\n')
+                .map(|i| i + 1)
+                .unwrap_or(0);
             let col_idx = content[last_line_start..abs_offset].chars().count() + 1;
             return Some(JsonDefinition {
                 file: path_str.clone(),
@@ -493,7 +503,10 @@ pub fn find_symbol_in_rust_file(
             let sym_offset = sub.find(symbol).unwrap_or(0);
             let abs_offset = type_match.start() + sym_offset;
             let line_idx = content[..abs_offset].chars().filter(|&c| c == '\n').count() + 1;
-            let last_line_start = content[..abs_offset].rfind('\n').map(|i| i + 1).unwrap_or(0);
+            let last_line_start = content[..abs_offset]
+                .rfind('\n')
+                .map(|i| i + 1)
+                .unwrap_or(0);
             let col_idx = content[last_line_start..abs_offset].chars().count() + 1;
             return Some(JsonDefinition {
                 file: path_str,
@@ -718,8 +731,8 @@ pub fn infer_receiver_type(
         }
 
         let mut curr_expr = &value;
-        while let crate::parser::Expr::Await(inner, _)
-        | crate::parser::Expr::Borrow(inner, _, _) = curr_expr
+        while let crate::parser::Expr::Await(inner, _) | crate::parser::Expr::Borrow(inner, _, _) =
+            curr_expr
         {
             curr_expr = inner;
         }
@@ -749,9 +762,7 @@ pub fn infer_receiver_type(
             }
             let receiver = cap[2].to_string();
             let method = cap[3].to_string();
-            if let Some(ret_type) =
-                get_plugin_func_return_type(manifest_dir, &receiver, &method)
-            {
+            if let Some(ret_type) = get_plugin_func_return_type(manifest_dir, &receiver, &method) {
                 return (Some(ret_type), Some(receiver));
             }
         }
@@ -903,9 +914,7 @@ pub fn find_definition(
             return Some(local_def);
         }
         // Check if word matches a native plugin directly (e.g. server.init)
-        if let Some(def) =
-            find_native_plugin_symbol(manifest_dir, clean_word, None, clean_word)
-        {
+        if let Some(def) = find_native_plugin_symbol(manifest_dir, clean_word, None, clean_word) {
             return Some(def);
         }
     }
@@ -914,8 +923,8 @@ pub fn find_definition(
     if let Some(ref ns) = namespace {
         // 2a. Standard library module
         let std_names = [
-            "math", "fs", "json", "time", "byte", "net", "unit", "os", "hardware", "desktop",
-            "env", "camera", "embedded", "thread", "process",
+            "os", "fmt", "fs", "byte", "net", "thread", "time", "process", "json", "math", "unit",
+            "window", "desktop", "env", "camera",
         ];
         if std_names.contains(&ns.as_str()) {
             if let Some(blaze) = locate_blaze_dir() {
@@ -945,8 +954,7 @@ pub fn find_definition(
             infer_receiver_type(stmts, content, ns, manifest_dir);
         if let Some(ref st) = inferred_struct {
             if let Some(ref pl) = inferred_plugin {
-                if let Some(def) =
-                    find_native_plugin_symbol(manifest_dir, pl, Some(st), clean_word)
+                if let Some(def) = find_native_plugin_symbol(manifest_dir, pl, Some(st), clean_word)
                 {
                     return Some(def);
                 }
@@ -1136,9 +1144,25 @@ pub fn find_definition(
 
     // 7. Compiler Built-ins and Annotations
     let builtins = [
-        "println", "print", "eprint", "assert", "assertEq", "assertNe", "assertTrue",
-        "assertFalse", "panic", "typeof", "range", "sleep", "mockData", "mockApi",
-        "mockFunction", "input", "Result", "Option", "Error",
+        "println",
+        "print",
+        "eprint",
+        "assert",
+        "assertEq",
+        "assertNe",
+        "assertTrue",
+        "assertFalse",
+        "panic",
+        "typeof",
+        "range",
+        "sleep",
+        "mockData",
+        "mockApi",
+        "mockFunction",
+        "input",
+        "Result",
+        "Option",
+        "Error",
     ];
     if builtins.contains(&clean_word) {
         if let Some(blaze) = locate_blaze_dir() {
@@ -1159,9 +1183,25 @@ pub fn find_definition(
     }
 
     let annotations = [
-        "Application", "Test", "Embedded", "Cli", "Command", "Platform", "Docs", "Requires",
-        "Permission", "Suggestions", "Setup", "Cleanup", "BeforeAll", "AfterAll", "Ignore",
-        "Only", "Parameterized", "Benchmark", "ExpectPanic",
+        "Application",
+        "Test",
+        "Embedded",
+        "Cli",
+        "Command",
+        "Platform",
+        "Docs",
+        "Requires",
+        "Permission",
+        "Suggestions",
+        "Setup",
+        "Cleanup",
+        "BeforeAll",
+        "AfterAll",
+        "Ignore",
+        "Only",
+        "Parameterized",
+        "Benchmark",
+        "ExpectPanic",
     ];
     if annotations.contains(&clean_word) || word.starts_with('@') {
         if let Some(blaze) = locate_blaze_dir() {
@@ -1194,8 +1234,14 @@ mod tests {
         assert!(blaze_dir.is_some(), "Blaze directory must be located");
         let std_dir = blaze_dir.unwrap().join("std");
         assert!(std_dir.exists(), "Blaze/std directory must exist");
-        assert!(std_dir.join("builtins.fm").exists(), "builtins.fm must exist");
-        assert!(std_dir.join("annotations.fm").exists(), "annotations.fm must exist");
+        assert!(
+            std_dir.join("builtins.fm").exists(),
+            "builtins.fm must exist"
+        );
+        assert!(
+            std_dir.join("annotations.fm").exists(),
+            "annotations.fm must exist"
+        );
         assert!(std_dir.join("math.fm").exists(), "math.fm must exist");
     }
 
@@ -1297,4 +1343,3 @@ mod tests {
         assert!(d.file.ends_with("math.fm"));
     }
 }
-

@@ -1379,14 +1379,46 @@ impl TypeChecker {
         span: &Span,
     ) -> Type {
         let callee_ty = self.infer_expr_type(callee);
+        let callee_name = match callee {
+            Expr::Identifier(n, _) => Some(n.clone()),
+            Expr::Dot(inner, member, _) => {
+                if let Expr::Identifier(mod_name, _) = &**inner {
+                    Some(format!("{}.{}", mod_name, member))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        let func_sig = callee_name.as_ref().and_then(|n| self.functions.get(n).cloned());
+
         if let Type::Function(params, ret) = &callee_ty {
-            if args.len() != params.len() {
+            let (min_args, max_args) = if let Some(sig) = &func_sig {
+                (
+                    sig.params.iter().filter(|p| !p.has_default).count(),
+                    sig.params.len(),
+                )
+            } else {
+                let min_count = params.iter().take_while(|p| !matches!(p, Type::Nullable(_))).count();
+                (min_count, params.len())
+            };
+
+            if args.len() < min_args || args.len() > max_args {
                 self.error(
-                    format!(
-                        "closure expects {} argument(s), got {}",
-                        params.len(),
-                        args.len()
-                    ),
+                    if min_args == max_args {
+                        format!(
+                            "function expects {} argument(s), got {}",
+                            params.len(),
+                            args.len()
+                        )
+                    } else {
+                        format!(
+                            "function expects between {} and {} arguments, got {}",
+                            min_args,
+                            max_args,
+                            args.len()
+                        )
+                    },
                     span.clone(),
                     None,
                     None,
@@ -1395,7 +1427,7 @@ impl TypeChecker {
             for (idx, expected) in params.iter().enumerate() {
                 if let Some((_, arg)) = args.get(idx) {
                     let actual = self.infer_expr_type(arg);
-                    self.expect_assignable(expected, &actual, &arg.span(), "closure argument");
+                    self.expect_assignable(expected, &actual, &arg.span(), "function argument");
                 }
             }
 
@@ -1798,6 +1830,7 @@ impl TypeChecker {
                                 ty: Type::Byte,
                                 is_ref: false,
                                 is_mut: false,
+                                has_default: false,
                             }],
                             args,
                             span,
@@ -1834,6 +1867,7 @@ impl TypeChecker {
                                 ty: *element_ty.clone(),
                                 is_ref: false,
                                 is_mut: false,
+                                has_default: false,
                             }],
                             args,
                             span,
@@ -1857,6 +1891,7 @@ impl TypeChecker {
                                 ty: cb_ty,
                                 is_ref: false,
                                 is_mut: false,
+                                has_default: false,
                             }],
                             args,
                             span,

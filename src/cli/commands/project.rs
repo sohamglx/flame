@@ -1,6 +1,5 @@
 use crate::parser::Stmt;
 use super::build::parse_file_stmts;
-use crate::embedded;
 use crate::package_manager;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -147,93 +146,6 @@ pub fn package_project(_args: &[String]) {
         "\x1b[1;32m  Packaged\x1b[0m successfully to target/pkg/{}",
         pkg_name
     );
-}
-
-pub fn flash_project(args: &[String]) {
-    let toml_path = Path::new("flame.toml");
-    let mut pkg_name = "app".to_string();
-    let mut toml_target = None;
-    if toml_path.exists() {
-        if let Ok(toml_str) = fs::read_to_string("flame.toml") {
-            for line in toml_str.lines() {
-                let t = line.trim();
-                if t.starts_with("name =") {
-                    if let Some(val) = t.split('=').nth(1) {
-                        pkg_name = val.trim().trim_matches('"').trim_matches('\'').to_string();
-                    }
-                } else if t.starts_with("target =") {
-                    if let Some(val) = t.split('=').nth(1) {
-                        toml_target =
-                            Some(val.trim().trim_matches('"').trim_matches('\'').to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    let mut port = None;
-    let mut target = toml_target;
-    for i in 0..args.len() {
-        if args[i] == "--port" && i + 1 < args.len() {
-            port = Some(args[i + 1].as_str());
-        } else if args[i] == "--target" && i + 1 < args.len() {
-            target = Some(args[i + 1].to_string());
-        }
-    }
-
-    let main_path = Path::new("src/main.fm");
-    let content = if main_path.exists() {
-        fs::read_to_string(main_path).unwrap_or_default()
-    } else if args.len() >= 3 && !args[2].starts_with("-") && Path::new(&args[2]).exists() {
-        fs::read_to_string(&args[2]).unwrap_or_default()
-    } else {
-        println!("\x1b[1;31merror:\x1b[0m no src/main.fm or Flame file found to flash.");
-        return;
-    };
-
-    let stmts = match parse_file_stmts(main_path, &content) {
-        Ok(mut s) => {
-            crate::parser::filter_platform_stmts(&mut s, target.as_deref());
-            s
-        }
-        Err(e) => {
-            e.print(&content);
-            return;
-        }
-    };
-
-    let mut _baud = 115200;
-    if let Some((detected_target, detected_baud)) =
-        embedded::codegen::detect_embedded_target(&stmts)
-    {
-        if target.is_none() {
-            target = Some(detected_target);
-        }
-        _baud = detected_baud;
-    }
-
-    let target_str = target.unwrap_or_else(|| "arduino-uno".to_string());
-    match embedded::codegen::generate_baremetal_firmware_project(&stmts, &target_str, &pkg_name) {
-        Ok(build_dir) => {
-            let _ = embedded::flasher::build_and_flash(&target_str, port, &build_dir, &pkg_name);
-        }
-        Err(err) => println!("\x1b[1;31merror:\x1b[0m {}", err),
-    }
-}
-
-pub fn monitor_project(args: &[String]) {
-    let mut port = None;
-    let mut baud = 115200;
-    for i in 0..args.len() {
-        if args[i] == "--port" && i + 1 < args.len() {
-            port = Some(args[i + 1].as_str());
-        } else if args[i] == "--baud" && i + 1 < args.len() {
-            if let Ok(b) = args[i + 1].parse::<u32>() {
-                baud = b;
-            }
-        }
-    }
-    embedded::flasher::open_serial_monitor(port, baud);
 }
 
 

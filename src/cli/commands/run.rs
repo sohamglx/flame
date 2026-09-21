@@ -7,7 +7,6 @@ use crate::parser::{Parser, Stmt};
 use crate::runner::Runner;
 use crate::typechecker::TypeChecker;
 use super::build::{build_project, check_runtime_needs_rebuild, get_manifest_pkg_name, get_project_mtime_snapshot, parse_file_stmts};
-use crate::embedded;
 use super::test::collect_fm_files;
 
 pub fn run_file(path_str: &str, force_local: bool, script_args: &[String]) {

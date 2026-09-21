@@ -2,6 +2,56 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.5.3] - 2026-09-22 (Codename: *Fifth Spark*)
+
+### 🪟 Desktop Window Management (`std.window`) [Experimental]
+
+- **Cross-Platform Window Automation Engine**:
+  - Introduced the `std.window` standard library module and `Window` struct for desktop window inspection and control.
+  - **Window Enumeration**: `window.list() -> [Window]` returns all visible top-level windows with coordinates (`x`, `y`), dimensions (`width`, `height`), process ID (`pid`), unique window handle (`id`), window title, and application name (`appName`).
+  - **Query & Resolution**: `window.find(query) -> Window` finds windows by title substring, application name, PID, or window ID.
+  - **Window Manipulation**: Control window state using either module-level functions or instance methods: `focus()`, `minimize()`, `maximize()`, `restore()`, `move(x, y)`, `resize(width, height)`, and `close()`.
+  - **Multi-Platform Native Driver Backends**:
+    - **Linux (Wayland & X11)**: Integrated AT-SPI D-Bus (`org.a11y.atspi`) for Wayland-native accessible window enumeration and window activation, paired with pure-Rust `x11rb` protocol messages for `_NET_ACTIVE_WINDOW`, `_NET_WM_STATE` (maximizing/minimizing), and `_NET_CLIENT_LIST`. Removed `gtk-launch` to prevent accidentally launching new window instances, and eliminated remote desktop portal session prompts on Wayland.
+    - **macOS**: Native CoreGraphics and Accessibility framework integrations (`AXUIElement`, `CGWindowListCopyWindowInfo`).
+    - **Windows**: Win32 native APIs (`EnumWindows`, `GetWindowTextW`, `ShowWindow`, `SetForegroundWindow`, `SetWindowPos`).
+- **Experimental Notice**: Marked `std.window` with experimental status and documentation warnings as its multiplatform driver APIs and window handle conventions continue evolving.
+
+### 🖥️ Desktop Automation & Scheme Handling (`std.desktop`)
+
+- **Optional Arguments for `desktop.open`**:
+  - Enhanced `desktop.open(target, args = [])` to make `args` optional in both the static typechecker and interpreter runtime. Single-argument calls like `desktop.open("https://flamelang.vercel.app")` or `desktop.open("brave://")` now work seamlessly.
+- **Browser-Specific Internal URL Schemes**:
+  - Added native direct launch support for browser internal schemes (`brave://`, `chrome://`, `chromium://`, `edge://`) on Linux and cross-platform desktop openers.
+- **Process Output Silencing**:
+  - Silenced subprocess standard output and error across desktop openers and window manager helpers to eliminate terminal noise (such as `Opening in existing browser session.`).
+
+### 🎯 IDE Autocompletion Precision & Noise Elimination
+
+- **Scope-Aware Module Completion Filtering**:
+  - Resolved an issue where functions from imported standard modules (`list`, `find`, `focus`, `close`, `open`, etc.) leaked into bare-word completion suggestions on blank lines and empty spaces. Functions from imported modules are now strictly confined to their respective namespaces (`window.`, `desktop.`).
+- **Context-Specific Member Dot Completions**:
+  - Typing `.` on collection arrays (e.g. `windows.` where `windows: [Window]`) now provides only dedicated array methods (`len`, `isEmpty`, `push`, `pop`, `map`, `filter`, `concat`, `reverse`, `slice`, `join`, `get`) along with universal methods (`type`, `toString`, `toJson`).
+  - Typing `.` on `Window` struct instances (`w.`) displays only `Window` properties (`id`, `title`, `appName`, `pid`, `x`, `y`, `width`, `height`) and methods (`focus`, `minimize`, `maximize`, `restore`, `move`, `resize`, `close`).
+  - Completely pruned unrelated hardware GPIO/actuator methods (`mode`, `high`, `low`, `angle`, `speed`, `stop`), channels (`send`, `recv`), and math functions from the fallback completion matrix.
+- **Loop Variable Type Inference**:
+  - Enhanced IDE document scanner to parse `for <item> in <collection>` loops, automatically inferring variable types (e.g. `for w in windows` infers `w: Window` when `windows` is `[Window]`).
+
+### 📐 Typechecker Enhancements
+
+- **Numeric Arithmetic Compatibility**:
+  - Resolved an issue where division and arithmetic operators could not be applied between structured integer properties (e.g. `memory.totalMemory / 1024 / 1024`) and literals.
+- **Default Parameter Signatures**:
+  - Added `has_default` metadata to `ParamInfo` in the typechecker, allowing call sites to accept argument counts between required minimums and defined maximums.
+
+### 🧹 Standard Library Clean-Up (`std.embedded` Removal)
+
+- **Removed `std.embedded` & Hardware Crate Dependencies**:
+  - Deprecated and removed the `std.embedded` module and its associated crate dependencies (`embedded-hal`, `embedded-io`, `embedded-storage`, `rppal`, and feature `gpio`) to streamline the toolchain and reduce binary size.
+  - Updated documentation, astro sidebar, and overview links accordingly.
+
+---
+
 ## [0.5.2] - 2026-09-13 (Codename: *Fifth Spark*)
 
 ### 🐛 STD Bug Fixes

@@ -284,11 +284,12 @@ pub fn register_std_module(mod_name: &str, env: Arc<Mutex<Env>>) {
         #[cfg(feature = "os")]
         "std.os" => Some(crate::native_std::os::init()),
         "std.env" => Some(crate::native_std::env::init()),
-        #[cfg(feature = "os")]
+        #[cfg(any(feature = "os", feature = "automation"))]
         "std.desktop" => Some(crate::native_std::desktop::init()),
+        #[cfg(any(feature = "os", feature = "automation"))]
+        "std.window" => Some(crate::native_std::window::init()),
         #[cfg(feature = "camera")]
         "std.camera" => Some(crate::native_std::camera::init()),
-        "std.embedded" => Some(crate::native_std::embedded::init()),
         _ => None,
     };
 

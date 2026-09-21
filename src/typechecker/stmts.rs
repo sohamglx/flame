@@ -332,6 +332,7 @@ impl TypeChecker {
                                         ty: self.parse_type_name(&param.type_name),
                                         is_ref: param.is_ref,
                                         is_mut: param.is_mut,
+                                        has_default: param.default_val.is_some() || param.type_name.ends_with('?'),
                                     })
                                     .collect(),
                                 hover_doc: hover_doc,
@@ -390,6 +391,7 @@ impl TypeChecker {
                                     ty: self.parse_type_name(&param.type_name),
                                     is_ref: param.is_ref,
                                     is_mut: param.is_mut,
+                                    has_default: param.default_val.is_some() || param.type_name.ends_with('?'),
                                 })
                                 .collect(),
                             hover_doc: hover_doc,
@@ -451,6 +453,7 @@ impl TypeChecker {
                                         ty: self.parse_type_name(&param.type_name),
                                         is_ref: param.is_ref,
                                         is_mut: param.is_mut,
+                                        has_default: param.default_val.is_some() || param.type_name.ends_with('?'),
                                     }
                                 })
                                 .collect();
@@ -566,6 +569,7 @@ impl TypeChecker {
                                                                                 m.as_bool()
                                                                             })
                                                                             .unwrap_or(false),
+                                                                        has_default: p_ty_str.ends_with('?') || p.get("default_val").is_some(),
                                                                     });
                                                                 }
                                                             }
@@ -641,6 +645,7 @@ impl TypeChecker {
                                                                             ),
                                                                             is_ref: true,
                                                                             is_mut: true,
+                                                                            has_default: false,
                                                                         });
                                                                     }
                                                                     if let Some(ps) = m
@@ -654,6 +659,7 @@ impl TypeChecker {
                                                                                     ty: self.parse_type_name(p_ty_str),
                                                                                     is_ref: p.get("is_ref").and_then(|r| r.as_bool()).unwrap_or(false),
                                                                                     is_mut: p.get("is_mut").and_then(|m| m.as_bool()).unwrap_or(false),
+                                                                                    has_default: p_ty_str.ends_with('?') || p.get("default_val").is_some(),
                                                                                 });
                                                                             }
                                                                         }
@@ -1030,6 +1036,7 @@ impl TypeChecker {
                                                         ty: self.parse_type_name(&p.type_name),
                                                         is_ref: p.is_ref,
                                                         is_mut: p.is_mut,
+                                                        has_default: p.default_val.is_some() || p.type_name.ends_with('?'),
                                                     })
                                                     .collect();
                                                 let r_type = return_type
@@ -1090,6 +1097,7 @@ impl TypeChecker {
                                                 ty: self.parse_type_name(&p.type_name),
                                                 is_ref: p.is_ref,
                                                 is_mut: p.is_mut,
+                                                has_default: p.default_val.is_some() || p.type_name.ends_with('?'),
                                             })
                                             .collect();
                                         let r_type = return_type

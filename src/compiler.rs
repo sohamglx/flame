@@ -49,7 +49,7 @@ pub fn build_project(
         }
     }
 
-    if let Ok(dev_path) = std::env::var("WREN_DEV_PATH") {
+    if let Ok(dev_path) = std::env::var("FLAME_DEV_PATH") {
         is_local_dev = true;
         flame_source_dir = std::path::PathBuf::from(dev_path);
     }
@@ -88,7 +88,7 @@ pub fn build_project(
                                 "std.regex" => vec!["regex"],
                                 "std.json" => vec!["utils"],
                                 "std.desktop" => vec!["os"],
-                                "std.hardware" => vec!["hardware"],
+                                "std.window" => vec!["automation"],
                                 "std.camera" => vec!["camera"],
                                 "std.base64" => vec!["base64"],
                                 "std.net.tcp" | "std.net.udp" | "std.net.dns" | "std.net.url"

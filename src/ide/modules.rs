@@ -20,22 +20,8 @@ pub fn get_std_module_methods(module: &str) -> Option<Vec<String>> {
                 // If it's just "std" or "std.", suggest the standard modules
                 return Some(
                     vec![
-                        "thread",
-                        "process",
-                        "fs",
-                        "byte",
-                        "net",
-                        "json",
-                        "math",
-                        "time",
-                        "fmt",
-                        "os",
-                        "hardware",
-                        "desktop",
-                        "env",
-                        "camera",
-                        "embedded",
-                        "unit",
+                        "os", "fmt", "fs", "byte", "net", "thread", "time", "process", "json",
+                        "math", "unit", "window", "desktop", "env", "camera",
                     ]
                     .into_iter()
                     .map(String::from)
@@ -62,11 +48,10 @@ pub fn get_std_module_methods(module: &str) -> Option<Vec<String>> {
         "time" => Some(crate::native_std::time::init()),
         "fmt" => Some(crate::native_std::fmt::init()),
         "os" => Some(crate::native_std::os::init()),
-        "hardware" => Some(crate::native_std::hardware::init()),
         "desktop" => Some(crate::native_std::desktop::init()),
+        "window" => Some(crate::native_std::window::init()),
         "env" => Some(crate::native_std::env::init()),
         "camera" => Some(crate::native_std::camera::init()),
-        "embedded" => Some(crate::native_std::embedded::init()),
         "unit" => Some(crate::native_std::unit::init()),
         _ => None,
     }?;
@@ -82,4 +67,3 @@ pub fn get_std_module_methods(module: &str) -> Option<Vec<String>> {
 
     Some(map.keys().cloned().collect())
 }
-
