@@ -261,56 +261,6 @@ fn setupCursor() {
 
 ---
 
-## Project Verification with `flame check`
-
-Flame includes a multi-file diagnostics and type-checking command: `flame check`.
-
-### Checking an Entire Project
-Run `flame check` without arguments from your project root, or point it to your source directory:
-
-```bash
-# Checks all .fm and .flame files in src/ by default
-flame check
-
-# Or specify the directory explicitly
-flame check src/
-```
-
-Output:
-```text
-check: no diagnostics across 5 files
-```
-
-### Checking Specific Files
-You can check a single file or multiple individual files:
-
-```bash
-# Check a single file
-flame check src/main.fm
-
-# Check multiple files
-flame check src/main.fm src/navbar.fm src/about.fm
-```
-
-### Machine-Readable JSON Output
-For CI/CD pipelines and IDE tooling, pass the `--json` flag:
-
-```bash
-flame check src/ --json
-```
-
-If any file contains syntax errors or type discrepancies, Flame outputs human-readable diagnostic snippets with line numbers and column pointers:
-
-```text
-error : type mismatch in expression
-  --> src/projects.fm:14:18
-   |
-14 |         while i < 6 && i < data.length {
-   |                   ^
-```
-
----
-
 ## Running and Developing Web Applications
 
 Flame provides a built-in HTTP server, live-reload watcher, and static bundler:
@@ -320,7 +270,7 @@ Flame provides a built-in HTTP server, live-reload watcher, and static bundler:
 Start a local development server:
 
 ```bash
-flame run --web src/main.fm
+fmp run --web src/main.fm
 ```
 
 This compiles your project into `dist/` and serves it at `http://localhost:3000/`.
@@ -330,7 +280,7 @@ This compiles your project into `dist/` and serves it at `http://localhost:3000/
 Enable hot reloading during active development:
 
 ```bash
-flame run --watch --web src/main.fm
+fmp run --watch --web src/main.fm
 ```
 
 The watcher listens for filesystem changes across your source files, automatically recompiles `dist/app.js` and `dist/app.css`, and immediately refreshes the browser without losing scroll state.
@@ -340,7 +290,7 @@ The watcher listens for filesystem changes across your source files, automatical
 Generate an optimized static distribution:
 
 ```bash
-flame build --web src/main.fm
+fmp build --web src/main.fm
 ```
 
 ---
@@ -984,17 +934,17 @@ Deploying your Flame Web application is as simple as hosting the `dist/` directo
 
 <CardGrid>
   <Card title="Cloudflare Pages">
-    - **Build Command**: `flame build --web src/main.fm`
+    - **Build Command**: `fmp build --web`
     - **Output Directory**: `dist`
   </Card>
   <Card title="Vercel">
     - **Framework Preset**: Other
-    - **Build Command**: `flame build --web src/main.fm`
+    - **Build Command**: `fmp build --web`
     - **Output Directory**: `dist`
   </Card>
   <Card title="Netlify">
     - **Publish Directory**: `dist`
-    - **Build Command**: `flame build --web src/main.fm`
+    - **Build Command**: `fmp build --web`
   </Card>
   <Card title="Docker / Nginx">
     - Copy `dist/` directly into `/usr/share/nginx/html`
