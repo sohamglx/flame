@@ -2,7 +2,7 @@
   "name": "flame-language-support",
   "displayName": "Flame",
   "description": "Rich IDE syntax highlighting and configuration for the Flame programming language.",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "icon": "flame.png",
   "publisher": "ezet-galaxy",
   "license": "ISC",

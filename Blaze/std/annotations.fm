@@ -74,3 +74,37 @@ export annotation Benchmark() {
 @Docs("Asserts that the test function MUST terminate with a panic or error; fails if it completes successfully.")
 export annotation ExpectPanic() {
 }
+
+@Docs("Marks this application or module as targeting the web browser environment, directing Blaze to compile UI and DOM operations into optimized fine-grained JavaScript.\n\n**Example:**\n```flame\nimport std.web\n\n@Web\nfn main() {\n    @Page(\"/\")\n    fn index() {\n        <h1>Hello Web</h1>\n    }\n}\n```")
+export annotation Web() {
+}
+
+@Docs("Binds a function as a routable page view mounted at the specified URL path.\n\n**Parameters:**\n- `path: String`: The URL route path (e.g. `\"/\"`, `\"/about\"`, `\"/users/:id\"`).\n\n**Example:**\n```flame\n@Page(\"/\")\nfn home() {\n    <main><h1>Welcome to Flame Web</h1></main>\n}\n```")
+export annotation Page(path: String = "/") {
+}
+
+@Docs("Marks this function or block as strictly client-side browser code, directing the compiler to target the browser environment.\n\n**Example:**\n```flame\n@Client\nfn logout() {\n    navigate(\"/login\")\n}\n```")
+export annotation Client() {
+}
+
+@Docs("Declares a fine-grained reactive state variable. Changes to this variable automatically update only the dependent DOM text nodes and attributes without re-rendering the surrounding component.\n\n**Example:**\n```flame\n@State\nlet count = 0\n```")
+export annotation State() {
+}
+
+@Docs("Directs the compiler to compile heavy computational routines to WebAssembly (WASM) rather than JavaScript.\n\n**Example:**\n```flame\n@Wasm\nfn calculate_hash(data: [Byte]) -> String {\n    // intensive computation\n}\n```")
+export annotation Wasm() {
+}
+
+@Docs("Marks a reusable UI component that returns JSX/DOM nodes.\n\n**Example:**\n```flame\n@Component\nfn Card(title: String, body: String) {\n    <div class=\"card\">\n        <h3>{title}</h3>\n        <p>{body}</p>\n    </div>\n}\n```")
+export annotation Component() {
+}
+
+@Docs("Declares a CSS stylesheet block compiled directly into the web application's CSS.\n\n**Example:**\n```flame\n@Style\nfn styles() {\n    \"body { margin: 0; background: #0f172a; }\"\n}\n```")
+export annotation Style() {
+}
+
+@Docs("Defines a shared layout component wrapping page routes.\n\n**Example:**\n```flame\n@Layout\nfn DefaultLayout(children: Unknown) {\n    <div class=\"layout\">\n        <nav><a href=\"/\">Home</a></nav>\n        <main>{children}</main>\n    </div>\n}\n```")
+export annotation Layout() {
+}
+
+

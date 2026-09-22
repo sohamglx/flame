@@ -15,6 +15,7 @@ mod test_engine;
 mod typechecker;
 pub mod utils;
 pub mod vm;
+pub mod web;
 
 pub use cli::ide::{JsonCompletion, JsonHover};
 
@@ -156,8 +157,21 @@ fn real_main() {
             list_plugins_command(&args);
         }
         "run" => {
-            let force_local = args.contains(&"--local".to_string());
+            let is_web = args.contains(&"--web".to_string());
             let is_watch = args.contains(&"--watch".to_string()) || args.contains(&"-w".to_string());
+            let force_local = args.contains(&"--local".to_string());
+
+            if is_web {
+                let mut target_path: Option<String> = None;
+                for arg in args.iter().skip(2) {
+                    if arg != "--web" && arg != "--watch" && arg != "-w" && arg != "--local" {
+                        target_path = Some(arg.clone());
+                        break;
+                    }
+                }
+                run_web(target_path.as_deref(), is_watch);
+                return;
+            }
 
             let (filepath, script_args_start) = if args.len() > 2 {
                 let mut idx = 2;

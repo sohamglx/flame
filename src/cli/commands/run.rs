@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::thread;
 use crate::diagnostics::Diagnostic;
 use crate::lexer::Lexer;
 use crate::parser::{Parser, Stmt};
@@ -146,4 +147,83 @@ pub fn run_file_watch(path_str: &str, force_local: bool, script_args: &[String])
         }
     }
 }
+
+pub fn run_web(target_path_opt: Option<&str>, watch: bool) {
+    let raw_path = target_path_opt.unwrap_or(".");
+    let target_path = Path::new(raw_path);
+    let project_dir = if target_path.is_file() {
+        if let Some(parent) = target_path.parent() {
+            if parent.ends_with("src") {
+                parent.parent().unwrap_or(parent)
+            } else {
+                parent
+            }
+        } else {
+            target_path
+        }
+    } else {
+        target_path
+    };
+
+    if !project_dir.exists() {
+        println!("\x1b[1;31merror:\x1b[0m project path '{}' not found", raw_path);
+        return;
+    }
+
+    let build_res = match crate::web::build_web_project(project_dir) {
+        Ok(res) => res,
+        Err(e) => {
+            eprintln!("\x1b[1;31merror:\x1b[0m web build failed: {}", e);
+            return;
+        }
+    };
+
+    let port = build_res.port;
+    let routes = build_res.routes;
+    let dist_dir = build_res.dist_dir.clone();
+
+    if watch {
+        // Spawn web server in background thread with hot reload enabled
+        let dist_clone = dist_dir.clone();
+        let routes_clone = routes.clone();
+        thread::spawn(move || {
+            let config = crate::web::WebServerConfig {
+                dist_dir: dist_clone,
+                port,
+                routes: routes_clone,
+                hot_reload: true,
+            };
+            let _ = crate::web::serve_dist(config);
+        });
+
+        println!("\x1b[1;36m    Watching\x1b[0m for changes in {} (hot reload active)...", project_dir.display());
+        let mut snapshot = super::build::get_path_mtime_snapshot(project_dir);
+
+        loop {
+            thread::sleep(std::time::Duration::from_millis(250));
+            let new_snapshot = super::build::get_path_mtime_snapshot(project_dir);
+            if new_snapshot != snapshot {
+                snapshot = new_snapshot;
+                println!("\n\x1b[1;36m    [hot-reload]\x1b[0m Rebuilding web distribution...");
+                match crate::web::build_web_project(project_dir) {
+                    Ok(_) => {
+                        println!("\x1b[1;32m    [hot-reload]\x1b[0m Successfully updated dist/");
+                    }
+                    Err(e) => {
+                        eprintln!("\x1b[1;31merror:\x1b[0m hot reload failed: {}", e);
+                    }
+                }
+            }
+        }
+    } else {
+        let config = crate::web::WebServerConfig {
+            dist_dir,
+            port,
+            routes,
+            hot_reload: false,
+        };
+        let _ = crate::web::serve_dist(config);
+    }
+}
+
 

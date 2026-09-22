@@ -746,6 +746,7 @@ pub(crate) fn format_expr_simple(expr: &Expr) -> String {
                 .join(", ");
             format!("[{}]", inner)
         }
+        Expr::JsxElement { tag, .. } => format!("<{} ...>", tag),
         _ => "...".to_string(),
     }
 }

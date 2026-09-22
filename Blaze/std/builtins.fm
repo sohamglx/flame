@@ -35,10 +35,6 @@ export fn assertFalse(condition: Bool, message: String = "") {
 export fn panic(message: String) {
 }
 
-@Docs("Returns the runtime type name of `value` as a String (e.g. `\"Int\"`, `\"String\"`, `\"Formula\"`).\n\n**Example:**\n```flame\nlet t = typeof(42)\n```")
-export fn typeof(value: Unknown) -> String {
-}
-
 @Docs("Generates a vector of integers from `start` up to `end`.\n\n**Example:**\n```flame\nfor i in range(0, 5) { print(i) }\n```")
 export fn range(start: Int, end: Int, step: Int = 1) -> [Int] {
 }

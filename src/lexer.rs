@@ -186,7 +186,7 @@ impl<'a> Lexer<'a> {
                 self.line += 1;
                 self.col = 1;
             } else {
-                self.col += 1;
+                self.col += ch.len_utf16();
             }
             Some(ch)
         } else {
@@ -630,45 +630,77 @@ impl<'a> Lexer<'a> {
                 };
             }
             '\'' => {
-                let mut content = String::new();
-
-                while let Some(next) = self.peek() {
-                    if next == '\\' {
-                        self.advance();
-                        if let Some(escaped) = self.peek() {
-                            match escaped {
-                                'n' => content.push('\n'),
-                                'r' => content.push('\r'),
-                                't' => content.push('\t'),
-                                '\\' => content.push('\\'),
-                                '\'' => content.push('\''),
-                                _ => {
-                                    content.push('\\');
-                                    content.push(escaped);
-                                }
-                            }
-                            self.advance();
+                let has_closing_on_line = {
+                    let mut i = self.index;
+                    let mut found = false;
+                    while i < self.chars.len() {
+                        let c = self.chars[i];
+                        if c == '\n' {
+                            break;
                         }
-                        continue;
+                        if c == '\\' {
+                            i += 2;
+                            continue;
+                        }
+                        if c == '\'' {
+                            found = true;
+                            break;
+                        }
+                        i += 1;
                     }
-                    if next == '\'' {
-                        self.advance();
-                        break;
-                    }
-
-                    content.push(self.advance().unwrap());
-                }
-
-                return Token {
-                    kind: TokenKind::StringLiteral,
-                    lexeme: content,
-                    span: Span {
-                        start: self.byte_pos(start_pos),
-                        end: self.byte_pos(self.index),
-                        line: start_line,
-                        col: start_col,
-                    },
+                    found
                 };
+
+                if has_closing_on_line {
+                    let mut content = String::new();
+                    while let Some(next) = self.peek() {
+                        if next == '\\' {
+                            self.advance();
+                            if let Some(escaped) = self.peek() {
+                                match escaped {
+                                    'n' => content.push('\n'),
+                                    'r' => content.push('\r'),
+                                    't' => content.push('\t'),
+                                    '\\' => content.push('\\'),
+                                    '\'' => content.push('\''),
+                                    _ => {
+                                        content.push('\\');
+                                        content.push(escaped);
+                                    }
+                                }
+                                self.advance();
+                            }
+                            continue;
+                        }
+                        if next == '\'' {
+                            self.advance();
+                            break;
+                        }
+                        content.push(self.advance().unwrap());
+                    }
+
+                    return Token {
+                        kind: TokenKind::StringLiteral,
+                        lexeme: content,
+                        span: Span {
+                            start: self.byte_pos(start_pos),
+                            end: self.byte_pos(self.index),
+                            line: start_line,
+                            col: start_col,
+                        },
+                    };
+                } else {
+                    return Token {
+                        kind: TokenKind::Identifier,
+                        lexeme: "'".to_string(),
+                        span: Span {
+                            start: self.byte_pos(start_pos),
+                            end: self.byte_pos(self.index),
+                            line: start_line,
+                            col: start_col,
+                        },
+                    };
+                }
             }
             _ => {
                 if ch.is_ascii_digit() {

@@ -1,0 +1,19 @@
+import std.web
+
+export @Component
+fn NavBar() {
+    <header class="navbar">
+        <div id="cursor-dot" class="cursor-dot"></div>
+        <div id="cursor-outline" class="cursor-outline"></div>
+        <div class="nav-brand">
+            <span class="brand-icon">⚡</span>
+            <span class="brand-text">Flame Web</span>
+        </div>
+        <nav class="nav-links">
+            <a href="/" class="nav-link">Home</a>
+            <a href="/about" class="nav-link">About</a>
+            <a href="/projects" class="nav-link">Projects</a>
+            <a href="/contact" class="nav-link">Contact</a>
+        </nav>
+    </header>
+}

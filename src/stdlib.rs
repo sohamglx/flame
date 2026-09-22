@@ -290,6 +290,7 @@ pub fn register_std_module(mod_name: &str, env: Arc<Mutex<Env>>) {
         "std.window" => Some(crate::native_std::window::init()),
         #[cfg(feature = "camera")]
         "std.camera" => Some(crate::native_std::camera::init()),
+        "std.web" => Some(crate::native_std::web::init()),
         _ => None,
     };
 

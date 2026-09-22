@@ -108,14 +108,31 @@ pub fn run_definition_command(args: &[String]) {
     }
 }
 
-pub fn run_check_command(args: &[String]) {
-    if args.len() < 3 {
-        println!("\x1b[1;31merror:\x1b[0m please specify a Flame file to check");
-        println!("usage: flame check <file> [--json] [--line N --col N]");
-        return;
+fn collect_check_files(path: &Path, files: &mut Vec<std::path::PathBuf>) {
+    if path.is_file() {
+        if path.extension().map_or(false, |ext| ext == "fm" || ext == "flame") {
+            files.push(path.to_path_buf());
+        }
+    } else if path.is_dir() {
+        if let Ok(entries) = fs::read_dir(path) {
+            let mut entries_vec: Vec<_> = entries.flatten().collect();
+            entries_vec.sort_by_key(|e| e.path());
+            for entry in entries_vec {
+                let p = entry.path();
+                if p.is_dir() {
+                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if !name.starts_with('.') && name != "dist" && name != "target" && name != "node_modules" {
+                        collect_check_files(&p, files);
+                    }
+                } else if p.is_file() && p.extension().map_or(false, |ext| ext == "fm" || ext == "flame") {
+                    files.push(p);
+                }
+            }
+        }
     }
+}
 
-    let file = &args[2];
+pub fn run_check_command(args: &[String]) {
     let json_mode = args.iter().any(|arg| arg == "--json");
     let line = args
         .iter()
@@ -136,62 +153,202 @@ pub fn run_check_command(args: &[String]) {
         None
     };
 
-    let output = std::panic::catch_unwind(|| analyze_file_for_json(file, line, col, stdin_content))
-        .unwrap_or_else(|_| JsonCheckOutput {
-            file: file.to_string(),
-            diagnostics: vec![],
-            std_modules: vec![],
-            native_modules: vec![],
-            plugins: vec![],
-            completions: vec![],
-            hover: None,
-            signature_help: None,
-            tokens: vec![],
-            definition: None,
-        });
+    let mut target_args: Vec<String> = Vec::new();
+    let mut skip_next = false;
+    for arg in args.iter().skip(2) {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if arg == "--line" || arg == "--col" {
+            skip_next = true;
+            continue;
+        }
+        if arg == "--json" || arg == "--stdin" {
+            continue;
+        }
+        target_args.push(arg.clone());
+    }
+
+    let mut files_to_check: Vec<std::path::PathBuf> = Vec::new();
+    if target_args.is_empty() {
+        if Path::new("src").is_dir() {
+            collect_check_files(Path::new("src"), &mut files_to_check);
+        } else if Path::new("src/main.fm").exists() {
+            files_to_check.push(std::path::PathBuf::from("src/main.fm"));
+        } else {
+            collect_check_files(Path::new("."), &mut files_to_check);
+        }
+
+        if files_to_check.is_empty() && stdin_content.is_none() {
+            println!("\x1b[1;31merror:\x1b[0m please specify a Flame file or directory to check");
+            println!("usage: flame check [<file-or-dir>...] [--json] [--line N --col N]");
+            return;
+        }
+    } else {
+        for target in &target_args {
+            let p = Path::new(target);
+            if p.is_dir() {
+                collect_check_files(p, &mut files_to_check);
+            } else {
+                files_to_check.push(p.to_path_buf());
+            }
+        }
+    }
+
+    // Single file mode with IDE cursor query (line/col/stdin)
+    if (line.is_some() || col.is_some() || stdin_content.is_some()) && files_to_check.len() <= 1 {
+        let file = files_to_check.first().map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "unknown.fm".to_string());
+        let output = std::panic::catch_unwind(|| analyze_file_for_json(&file, line, col, stdin_content))
+            .unwrap_or_else(|_| JsonCheckOutput {
+                file: file.clone(),
+                diagnostics: vec![],
+                std_modules: vec![],
+                native_modules: vec![],
+                plugins: vec![],
+                completions: vec![],
+                hover: None,
+                signature_help: None,
+                tokens: vec![],
+                definition: None,
+            });
+
+        if json_mode {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&output).unwrap_or_else(|_| "{}".to_string())
+            );
+        } else if output.diagnostics.is_empty() {
+            println!("\x1b[1;32mcheck:\x1b[0m no diagnostics in {}", file);
+        } else {
+            let content = std::fs::read_to_string(&file).unwrap_or_default();
+            let file_lines: Vec<&str> = content.lines().collect();
+            for diagnostic in &output.diagnostics {
+                let color = match diagnostic.severity.as_str() {
+                    "warning" => "\x1b[1;33m",
+                    "info" => "\x1b[1;34m",
+                    _ => "\x1b[1;31m",
+                };
+                println!(
+                    "{}{} :\x1b[0m \x1b[1m{}\x1b[0m",
+                    color, diagnostic.severity, diagnostic.message
+                );
+                println!(
+                    "  \x1b[1;36m-->\x1b[0m {}:{}:{}",
+                    diagnostic.file, diagnostic.line, diagnostic.column
+                );
+
+                let line_idx = diagnostic.line.saturating_sub(1);
+                if line_idx < file_lines.len() {
+                    let line_str = diagnostic.line.to_string();
+                    let spacer = " ".repeat(line_str.len());
+                    println!(" \x1b[1;36m{} |\x1b[0m", spacer);
+                    println!(" \x1b[1;36m{} |\x1b[0m {}", line_str, file_lines[line_idx]);
+                    let col = diagnostic.column.saturating_sub(1);
+                    let pointer = " ".repeat(col) + "^";
+                    println!(" \x1b[1;36m{} |\x1b[0m {}{}\x1b[0m", spacer, color, pointer);
+                }
+            }
+        }
+        return;
+    }
+
+    // Multi-file or project check mode
+    let mut all_outputs: Vec<JsonCheckOutput> = Vec::new();
+    let mut total_errors = 0;
+    let mut total_warnings = 0;
+
+    for file_path in &files_to_check {
+        let file_str = file_path.to_string_lossy().to_string();
+        let output = std::panic::catch_unwind(|| analyze_file_for_json(&file_str, None, None, None))
+            .unwrap_or_else(|_| JsonCheckOutput {
+                file: file_str.clone(),
+                diagnostics: vec![],
+                std_modules: vec![],
+                native_modules: vec![],
+                plugins: vec![],
+                completions: vec![],
+                hover: None,
+                signature_help: None,
+                tokens: vec![],
+                definition: None,
+            });
+
+        for d in &output.diagnostics {
+            if d.severity == "warning" {
+                total_warnings += 1;
+            } else if d.severity == "error" {
+                total_errors += 1;
+            }
+        }
+
+        all_outputs.push(output);
+    }
 
     if json_mode {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&output).unwrap_or_else(|_| "{}".to_string())
-        );
-    } else if output.diagnostics.is_empty() {
-        println!("\x1b[1;32mcheck:\x1b[0m no diagnostics");
-    } else {
-        let content = if args.iter().any(|arg| arg == "--stdin") {
-            // Already read from stdin earlier, but we consumed it.
-            // In non-json mode, we probably aren't using stdin, but let's fall back to reading the file.
-            std::fs::read_to_string(file).unwrap_or_default()
+        if files_to_check.len() == 1 {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&all_outputs[0]).unwrap_or_else(|_| "{}".to_string())
+            );
         } else {
-            std::fs::read_to_string(file).unwrap_or_default()
-        };
-        let file_lines: Vec<&str> = content.lines().collect();
-
-        for diagnostic in output.diagnostics {
-            let color = match diagnostic.severity.as_str() {
-                "warning" => "\x1b[1;33m",
-                "info" => "\x1b[1;34m",
-                _ => "\x1b[1;31m",
-            };
             println!(
-                "{}{} :\x1b[0m \x1b[1m{}\x1b[0m",
-                color, diagnostic.severity, diagnostic.message
+                "{}",
+                serde_json::to_string_pretty(&all_outputs).unwrap_or_else(|_| "[]".to_string())
             );
-            println!(
-                "  \x1b[1;36m-->\x1b[0m {}:{}:{}",
-                diagnostic.file, diagnostic.line, diagnostic.column
-            );
+        }
+    } else {
+        let mut had_any_diags = false;
+        for output in &all_outputs {
+            if !output.diagnostics.is_empty() {
+                had_any_diags = true;
+                let content = std::fs::read_to_string(&output.file).unwrap_or_default();
+                let file_lines: Vec<&str> = content.lines().collect();
 
-            let line_idx = diagnostic.line.saturating_sub(1);
-            if line_idx < file_lines.len() {
-                let line_str = diagnostic.line.to_string();
-                let spacer = " ".repeat(line_str.len());
-                println!(" \x1b[1;36m{} |\x1b[0m", spacer);
-                println!(" \x1b[1;36m{} |\x1b[0m {}", line_str, file_lines[line_idx]);
-                let col = diagnostic.column.saturating_sub(1);
-                let pointer = " ".repeat(col) + "^";
-                println!(" \x1b[1;36m{} |\x1b[0m {}{}\x1b[0m", spacer, color, pointer);
+                for diagnostic in &output.diagnostics {
+                    let color = match diagnostic.severity.as_str() {
+                        "warning" => "\x1b[1;33m",
+                        "info" => "\x1b[1;34m",
+                        _ => "\x1b[1;31m",
+                    };
+                    println!(
+                        "{}{} :\x1b[0m \x1b[1m{}\x1b[0m",
+                        color, diagnostic.severity, diagnostic.message
+                    );
+                    println!(
+                        "  \x1b[1;36m-->\x1b[0m {}:{}:{}",
+                        diagnostic.file, diagnostic.line, diagnostic.column
+                    );
+
+                    let line_idx = diagnostic.line.saturating_sub(1);
+                    if line_idx < file_lines.len() {
+                        let line_str = diagnostic.line.to_string();
+                        let spacer = " ".repeat(line_str.len());
+                        println!(" \x1b[1;36m{} |\x1b[0m", spacer);
+                        println!(" \x1b[1;36m{} |\x1b[0m {}", line_str, file_lines[line_idx]);
+                        let col = diagnostic.column.saturating_sub(1);
+                        let pointer = " ".repeat(col) + "^";
+                        println!(" \x1b[1;36m{} |\x1b[0m {}{}\x1b[0m", spacer, color, pointer);
+                    }
+                }
             }
+        }
+
+        if !had_any_diags {
+            if files_to_check.len() == 1 {
+                println!("\x1b[1;32mcheck:\x1b[0m no diagnostics in {}", files_to_check[0].display());
+            } else {
+                println!(
+                    "\x1b[1;32mcheck:\x1b[0m no diagnostics across {} files",
+                    files_to_check.len()
+                );
+            }
+        } else {
+            println!(
+                "\x1b[1;31mcheck:\x1b[0m {} error(s), {} warning(s) found across {} files",
+                total_errors, total_warnings, files_to_check.len()
+            );
         }
     }
 }
@@ -3308,6 +3465,83 @@ pub fn analyze_file_for_json(
         .or(hover_found)
         .or(scanned_var_hover)
         .or_else(|| ide::get_keyword_hover(&word_under_cursor));
+
+    if let (Some(l), Some(c)) = (line, col) {
+        fn is_pos_in_jsx_text(stmts: &[crate::parser::ast::Stmt], target_line: usize, target_col: usize) -> bool {
+            fn check_expr(expr: &crate::parser::ast::Expr, target_line: usize, target_col: usize) -> bool {
+                match expr {
+                    crate::parser::ast::Expr::JsxElement { children, .. } => {
+                        for child in children {
+                            match child {
+                                crate::parser::ast::JsxChild::Text(_, span) => {
+                                    if span.line == target_line {
+                                        let len = span.end.saturating_sub(span.start);
+                                        if target_col >= span.col && target_col <= span.col + len + 1 {
+                                            return true;
+                                        }
+                                    }
+                                }
+                                crate::parser::ast::JsxChild::Element(e) => {
+                                    if check_expr(e, target_line, target_col) {
+                                        return true;
+                                    }
+                                }
+                                crate::parser::ast::JsxChild::Expr(e) => {
+                                    if check_expr(e, target_line, target_col) {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        false
+                    }
+                    crate::parser::ast::Expr::Block(stmts, _) => {
+                        for s in stmts {
+                            if check_stmt(s, target_line, target_col) {
+                                return true;
+                            }
+                        }
+                        false
+                    }
+                    crate::parser::ast::Expr::Closure { body, .. } => {
+                        for s in body {
+                            if check_stmt(s, target_line, target_col) {
+                                return true;
+                            }
+                        }
+                        false
+                    }
+                    _ => false,
+                }
+            }
+
+            fn check_stmt(stmt: &crate::parser::ast::Stmt, target_line: usize, target_col: usize) -> bool {
+                match stmt {
+                    crate::parser::ast::Stmt::FuncDecl { body: Some(stmts), .. } => {
+                        for s in stmts {
+                            if check_stmt(s, target_line, target_col) {
+                                return true;
+                            }
+                        }
+                        false
+                    }
+                    crate::parser::ast::Stmt::ExprStmt(e) => check_expr(e, target_line, target_col),
+                    _ => false,
+                }
+            }
+
+            for stmt in stmts {
+                if check_stmt(stmt, target_line, target_col) {
+                    return true;
+                }
+            }
+            false
+        }
+
+        if is_pos_in_jsx_text(&parsed_stmts, l, c) {
+            hover = None;
+        }
+    }
 
     if let Some(h) = &mut hover {
         if let Some(d) = &mut h.documentation {

@@ -492,6 +492,34 @@ impl TypeChecker {
                 Type::Function(param_types, Box::new(ret_ty))
             }
             Expr::Call(callee, args, span) => self.infer_call_type(callee, args, span),
+            Expr::JsxElement {
+                tag,
+                attributes,
+                children,
+                span,
+            } => {
+                for attr in attributes {
+                    if let Some(val) = &attr.value {
+                        self.infer_expr_type(val);
+                    }
+                }
+                for child in children {
+                    match child {
+                        crate::parser::JsxChild::Expr(e) => {
+                            self.infer_expr_type(e);
+                        }
+                        crate::parser::JsxChild::Element(e) => {
+                            self.infer_expr_type(e);
+                        }
+                        crate::parser::JsxChild::Text(_, _) => {}
+                    }
+                }
+                self.insert_hover_info(
+                    span.clone(),
+                    format!("JSX Element: <{}>\nRepresents an HTML DOM element in std.web.", tag),
+                );
+                Type::Named("HtmlNode".to_string())
+            }
         }
     }
 

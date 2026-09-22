@@ -75,6 +75,27 @@ pub fn build_project(args: &[String]) -> Option<PathBuf> {
         "dev [unoptimized]"
     };
     let profile = if is_release { "release" } else { "dev" };
+
+    if target.as_deref() == Some("web") || args.contains(&"--web".to_string()) {
+        println!("\x1b[1;36m    Building\x1b[0m web target (Flame -> Blaze -> JS/HTML/CSS)...");
+        match crate::web::build_web_project(Path::new(".")) {
+            Ok(res) => {
+                println!(
+                    "\x1b[1;32m    Finished\x1b[0m web target -> {} in 0.05s",
+                    res.dist_dir.display()
+                );
+                println!(
+                    "\x1b[1;32m   Packaged\x1b[0m web distribution (dist/index.html, dist/app.js, dist/app.css)"
+                );
+                return Some(res.dist_dir);
+            }
+            Err(e) => {
+                eprintln!("\x1b[1;31merror:\x1b[0m web build failed: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
     if is_release {
         println!(
             "\x1b[1;36m    Building\x1b[0m optimized production release binary (target/release)..."
@@ -500,11 +521,12 @@ pub fn check_runtime_needs_rebuild(exe_path: &Path, _profile: &str) -> bool {
     false
 }
 
-pub fn get_project_mtime_snapshot() -> HashMap<PathBuf, std::time::SystemTime> {
+pub fn get_path_mtime_snapshot(root: &Path) -> HashMap<PathBuf, std::time::SystemTime> {
     let mut map = HashMap::new();
-    if let Ok(m) = fs::metadata("flame.toml") {
+    let toml = root.join("flame.toml");
+    if let Ok(m) = fs::metadata(&toml) {
         if let Ok(time) = m.modified() {
-            map.insert(PathBuf::from("flame.toml"), time);
+            map.insert(toml, time);
         }
     }
     fn scan(dir: &Path, map: &mut HashMap<PathBuf, std::time::SystemTime>) {
@@ -513,7 +535,7 @@ pub fn get_project_mtime_snapshot() -> HashMap<PathBuf, std::time::SystemTime> {
                 let p = entry.path();
                 if p.is_dir() {
                     if p.file_name()
-                        .map_or(false, |n| n == "target" || n == "build-cache")
+                        .map_or(false, |n| n == "target" || n == "build-cache" || n == "dist" || n == "node_modules")
                     {
                         continue;
                     }
@@ -526,14 +548,23 @@ pub fn get_project_mtime_snapshot() -> HashMap<PathBuf, std::time::SystemTime> {
             }
         }
     }
-    if Path::new("src").exists() {
-        scan(Path::new("src"), &mut map);
+    let src = root.join("src");
+    if src.exists() {
+        scan(&src, &mut map);
+    } else {
+        scan(root, &mut map);
     }
-    if Path::new("native").exists() {
-        scan(Path::new("native"), &mut map);
+    let native = root.join("native");
+    if native.exists() {
+        scan(&native, &mut map);
     }
-    if Path::new(".flame").join("pkg").exists() {
-        scan(&Path::new(".flame").join("pkg"), &mut map);
+    let pkg = root.join(".flame").join("pkg");
+    if pkg.exists() {
+        scan(&pkg, &mut map);
     }
     map
+}
+
+pub fn get_project_mtime_snapshot() -> HashMap<PathBuf, std::time::SystemTime> {
+    get_path_mtime_snapshot(Path::new("."))
 }

@@ -269,7 +269,9 @@ impl TypeChecker {
                         self.commands.insert(cmd_info.name.clone(), cmd_info);
                     }
 
-                    let is_builtin_file = self.filepath.ends_with("builtins.fm");
+                    let is_builtin_file = self.filepath.ends_with("builtins.fm")
+                        || self.filepath.contains("Blaze/std/")
+                        || self.filepath.contains("std/");
                     let platform = get_platform_annotation(annotations);
                     if !self.is_importing {
                         let mut is_dup = false;

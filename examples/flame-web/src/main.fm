@@ -1,0 +1,84 @@
+import std.web
+import std.net.http
+import navbar
+import about
+import projects
+import contact
+
+@Web(title: "Flame Web Showcase", port: 3000)
+fn main() {
+
+    @State
+    let mut count = 0
+
+    @State
+    let mut btn_color = "#3b82f6"
+
+    fn toggleColor() {
+        if btn_color == "#3b82f6" {
+            btn_color = "#10b981"
+        } else if btn_color == "#10b981" {
+            btn_color = "#ec4899"
+        } else if btn_color == "#ec4899" {
+            btn_color = "#8b5cf6"
+        } else {
+            btn_color = "#3b82f6"
+        }
+    }
+
+    fn setupCursor() {
+        web.window.addEventListener(
+            "mousemove", 
+            (e) {
+                let dot = web.document.getElementById("cursor-dot")
+                let outline = web.document.getElementById("cursor-outline")
+                if dot {
+                    dot.style.left = e.clientX + "px"
+                    dot.style.top = e.clientY + "px"
+                }
+                if outline {
+                    outline.style.left = e.clientX + "px"
+                    outline.style.top = e.clientY + "px"
+                }
+            }
+        )
+    }
+
+    setupCursor()
+
+    @Layout
+    fn AppLayout(children) {
+        <div class= "app-layout">
+            <NavBar />
+            <div class= "app-content">
+                {children}
+            </div>
+        </div>
+    }
+
+    @Page("/")
+    fn index() {
+        <div class="page-container">
+            <main class="hero-section">
+                <div class="hero-badge">Next-Gen Reactive Framework</div>
+                <h1 class="hero-title">High-Performance Web in Flame</h1>
+                <p class="hero-subtitle">
+                    Compile Flame directly into ultra-fast JavaScript DOM code with fine-grained reactivity and zero-overhead routing.
+                </p>
+                <div class="interactive-panel">
+                    <button onClick={
+                        count += 1
+                    } class="btn-counter">
+                        Counter: {count}
+                    </button>
+                    <button onClick={toggleColor} style={"background-color: " + btn_color + ";"} class="btn-color-toggle">
+                        Active Color: {btn_color}
+                    </button>
+                </div>
+            </main>
+        </div>
+    }
+
+    @Style
+    fn appStyles() {""}
+}

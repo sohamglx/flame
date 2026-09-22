@@ -10,73 +10,147 @@ pub struct SemanticToken {
 pub fn get_semantic_tokens(source: &str) -> Vec<SemanticToken> {
     let mut tokens = Vec::new();
     let mut lexer = crate::lexer::Lexer::new(source);
+    let mut raw_tokens = Vec::new();
 
     loop {
         let t = lexer.next_token();
         if t.kind == crate::lexer::TokenKind::EOF {
             break;
         }
+        raw_tokens.push(t);
+    }
 
+    let len = raw_tokens.len();
+    let mut i = 0;
+    let mut jsx_tag_depth: usize = 0;
+    let mut in_jsx_tag = false;
+    let mut jsx_expr_depth: usize = 0;
+
+    while i < len {
+        let t = &raw_tokens[i];
         let mut token_type = None;
         let modifiers = 0;
 
-        match t.kind {
-            crate::lexer::TokenKind::Comment => {
-                token_type = Some(3); // comment
+        // Check JSX tag entry
+        if t.kind == crate::lexer::TokenKind::Lt {
+            if i + 1 < len && raw_tokens[i + 1].kind == crate::lexer::TokenKind::Slash {
+                in_jsx_tag = true;
+            } else if i + 1 < len
+                && (raw_tokens[i + 1].kind == crate::lexer::TokenKind::Identifier
+                    || raw_tokens[i + 1].kind == crate::lexer::TokenKind::Type)
+            {
+                in_jsx_tag = true;
+                jsx_tag_depth += 1;
             }
-            crate::lexer::TokenKind::StringLiteral
-            | crate::lexer::TokenKind::InterpolatedStringContent
-            | crate::lexer::TokenKind::StringEnd => {
-                token_type = Some(4); // string
-            }
-            crate::lexer::TokenKind::Annotation => {
-                token_type = Some(0); // keyword
-            }
-            crate::lexer::TokenKind::Fn => {
-                token_type = Some(0); // keyword
-            }
-            crate::lexer::TokenKind::Let
-            | crate::lexer::TokenKind::Const
-            | crate::lexer::TokenKind::Struct
-            | crate::lexer::TokenKind::Enum
-            | crate::lexer::TokenKind::Trait
-            | crate::lexer::TokenKind::Impl
-            | crate::lexer::TokenKind::Export
-            | crate::lexer::TokenKind::Import
-            | crate::lexer::TokenKind::Mut
-            | crate::lexer::TokenKind::As
-            | crate::lexer::TokenKind::Type
-            | crate::lexer::TokenKind::Where
-            | crate::lexer::TokenKind::Formula
-            | crate::lexer::TokenKind::If
-            | crate::lexer::TokenKind::Else
-            | crate::lexer::TokenKind::Match
-            | crate::lexer::TokenKind::For
-            | crate::lexer::TokenKind::In
-            | crate::lexer::TokenKind::While
-            | crate::lexer::TokenKind::Loop
-            | crate::lexer::TokenKind::Break
-            | crate::lexer::TokenKind::Continue
-            | crate::lexer::TokenKind::Defer
-            | crate::lexer::TokenKind::Return
-            | crate::lexer::TokenKind::Yield
-            | crate::lexer::TokenKind::Await
-            | crate::lexer::TokenKind::Async
-            | crate::lexer::TokenKind::Thread
-            | crate::lexer::TokenKind::Ampersand2
-            | crate::lexer::TokenKind::Pipe2
-            | crate::lexer::TokenKind::Exclamation
-            | crate::lexer::TokenKind::True
-            | crate::lexer::TokenKind::False
-            | crate::lexer::TokenKind::Nil => {
-                token_type = Some(0); // keyword
-            }
-            _ => {
-                if t.kind == crate::lexer::TokenKind::Identifier
-                    && (t.lexeme == "self" || t.lexeme == "Self")
+        }
+
+        if in_jsx_tag {
+            if t.kind == crate::lexer::TokenKind::Slash
+                && i + 1 < len
+                && raw_tokens[i + 1].kind == crate::lexer::TokenKind::Gt
+            {
+                // Self closing: />
+                jsx_tag_depth = jsx_tag_depth.saturating_sub(1);
+            } else if t.kind == crate::lexer::TokenKind::Gt {
+                in_jsx_tag = false;
+                if i >= 2
+                    && raw_tokens[i - 2].kind == crate::lexer::TokenKind::Slash
+                    && i >= 3
+                    && raw_tokens[i - 3].kind == crate::lexer::TokenKind::Lt
                 {
-                    token_type = Some(0); // keyword
+                    // </tag> closing tag
+                    jsx_tag_depth = jsx_tag_depth.saturating_sub(1);
                 }
+            }
+        }
+
+        // Track dynamic expressions { ... } inside JSX
+        if jsx_tag_depth > 0 {
+            if t.kind == crate::lexer::TokenKind::OpenBrace {
+                jsx_expr_depth += 1;
+            } else if t.kind == crate::lexer::TokenKind::CloseBrace {
+                jsx_expr_depth = jsx_expr_depth.saturating_sub(1);
+            }
+        } else {
+            jsx_expr_depth = 0;
+        }
+
+        let is_in_jsx_text = jsx_tag_depth > 0 && !in_jsx_tag && jsx_expr_depth == 0;
+
+        if !is_in_jsx_text {
+            match &t.kind {
+                crate::lexer::TokenKind::Comment => {
+                    token_type = Some(3); // comment
+                }
+                crate::lexer::TokenKind::StringLiteral
+                | crate::lexer::TokenKind::InterpolatedStringContent
+                | crate::lexer::TokenKind::StringEnd => {
+                    token_type = Some(4); // string
+                }
+                crate::lexer::TokenKind::At
+                | crate::lexer::TokenKind::Annotation => {
+                    token_type = Some(0); // keyword (same as tags)
+                }
+                crate::lexer::TokenKind::Fn
+                | crate::lexer::TokenKind::Let
+                | crate::lexer::TokenKind::Const
+                | crate::lexer::TokenKind::Struct
+                | crate::lexer::TokenKind::Enum
+                | crate::lexer::TokenKind::Trait
+                | crate::lexer::TokenKind::Impl
+                | crate::lexer::TokenKind::Export
+                | crate::lexer::TokenKind::Import
+                | crate::lexer::TokenKind::Mut
+                | crate::lexer::TokenKind::As
+                | crate::lexer::TokenKind::Type
+                | crate::lexer::TokenKind::Where
+                | crate::lexer::TokenKind::Formula
+                | crate::lexer::TokenKind::If
+                | crate::lexer::TokenKind::Else
+                | crate::lexer::TokenKind::Match
+                | crate::lexer::TokenKind::For
+                | crate::lexer::TokenKind::In
+                | crate::lexer::TokenKind::While
+                | crate::lexer::TokenKind::Loop
+                | crate::lexer::TokenKind::Break
+                | crate::lexer::TokenKind::Continue
+                | crate::lexer::TokenKind::Defer
+                | crate::lexer::TokenKind::Return
+                | crate::lexer::TokenKind::Yield
+                | crate::lexer::TokenKind::Await
+                | crate::lexer::TokenKind::Async
+                | crate::lexer::TokenKind::Thread
+                | crate::lexer::TokenKind::Ampersand2
+                | crate::lexer::TokenKind::Pipe2
+                | crate::lexer::TokenKind::Exclamation
+                | crate::lexer::TokenKind::True
+                | crate::lexer::TokenKind::False
+                | crate::lexer::TokenKind::Nil => {
+                    token_type = Some(0); // keyword (pink, same as tags)
+                }
+                crate::lexer::TokenKind::Identifier => {
+                    if t.lexeme == "self" || t.lexeme == "Self" {
+                        token_type = Some(0); // keyword
+                    } else if i > 0 && raw_tokens[i - 1].kind == crate::lexer::TokenKind::At {
+                        token_type = Some(0); // annotation identifier colored like tags (keyword)
+                    } else if i > 0 && raw_tokens[i - 1].kind == crate::lexer::TokenKind::Fn {
+                        token_type = Some(1); // function declaration name (blue)
+                    } else if i > 0 && raw_tokens[i - 1].kind == crate::lexer::TokenKind::Lt {
+                        // JSX opening tag name colored like keyword (pink)
+                        token_type = Some(0); // JSX tag name
+                    } else if i > 1
+                        && raw_tokens[i - 2].kind == crate::lexer::TokenKind::Lt
+                        && raw_tokens[i - 1].kind == crate::lexer::TokenKind::Slash
+                    {
+                        // JSX closing tag name colored like keyword (pink)
+                        token_type = Some(0); // JSX tag name
+                    } else if i + 1 < len && raw_tokens[i + 1].kind == crate::lexer::TokenKind::OpenParen {
+                        token_type = Some(1); // function call
+                    } else if t.lexeme.starts_with("on") && t.lexeme.len() > 2 {
+                        token_type = Some(1); // function color (blue) for event handlers like onClick
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -84,13 +158,14 @@ pub fn get_semantic_tokens(source: &str) -> Vec<SemanticToken> {
             tokens.push(SemanticToken {
                 line: t.span.line.saturating_sub(1),
                 col: t.span.col.saturating_sub(1),
-                length: t.span.end.saturating_sub(t.span.start),
+                length: t.lexeme.encode_utf16().count(),
                 token_type: ty,
                 token_modifiers: modifiers,
             });
         }
+
+        i += 1;
     }
 
     tokens
 }
-

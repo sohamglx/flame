@@ -1,0 +1,31 @@
+import std.web
+import navbar
+
+export @Page("/about")
+fn about() {
+    <div class="page-container">
+        <main class="content-section">
+            <h1 class="section-title">About Flame Web</h1>
+            <p class="section-description">
+                Flame Web pairs Flame syntax with a reactive DOM runtime. It compiles UI trees into native DOM calls with granular signals.
+            </p>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Fine-Grained Signals</h3>
+                    <p>No virtual DOM overhead. When state changes, only the exact DOM node updates.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🌐</div>
+                    <h3>Built-in SPA Router</h3>
+                    <p>Multi-page navigation with client-side history state and instant page switches.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎨</div>
+                    <h3>Scoped & Dynamic Styling</h3>
+                    <p>Inline style attributes and @Style functions provide complete styling power.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+}

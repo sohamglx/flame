@@ -111,6 +111,26 @@ pub enum Expr {
     StructInit(Box<Expr>, Vec<(String, Expr)>, Span),
     Index(Box<Expr>, Box<Expr>, Span),
     Cast(Box<Expr>, String, Span),
+    JsxElement {
+        tag: String,
+        attributes: Vec<JsxAttribute>,
+        children: Vec<JsxChild>,
+        span: Span,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct JsxAttribute {
+    pub name: String,
+    pub value: Option<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum JsxChild {
+    Text(String, Span),
+    Expr(Expr),
+    Element(Box<Expr>),
 }
 
 #[derive(Debug, Clone)]
@@ -142,9 +162,11 @@ impl Expr {
             Expr::StructInit(_, _, s) => s.clone(),
             Expr::Index(_, _, s) => s.clone(),
             Expr::Cast(_, _, s) => s.clone(),
+            Expr::JsxElement { span, .. } => span.clone(),
         }
     }
 }
+
 
 #[derive(Debug, Clone)]
 pub enum EnumVariant {

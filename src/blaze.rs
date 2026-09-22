@@ -18,6 +18,7 @@ pub const EMBEDDED_BLAZE_STD: &[(&str, &str)] = &[
     ("thread.fm", include_str!("../Blaze/std/thread.fm")),
     ("time.fm", include_str!("../Blaze/std/time.fm")),
     ("unit.fm", include_str!("../Blaze/std/unit.fm")),
+    ("web.fm", include_str!("../Blaze/std/web.fm")),
     ("window.fm", include_str!("../Blaze/std/window.fm")),
 ];
 

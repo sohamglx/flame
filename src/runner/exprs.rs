@@ -3919,6 +3919,45 @@ impl Runner {
                 }
                 Ok(Value::Tuple(vals))
             }
+            Expr::JsxElement {
+                tag,
+                attributes,
+                children,
+                ..
+            } => {
+                let mut attrs_map = HashMap::new();
+                for attr in attributes {
+                    let val = if let Some(v_expr) = &attr.value {
+                        self.eval_expr(v_expr, env.clone())?
+                    } else {
+                        Value::Bool(true)
+                    };
+                    attrs_map.insert(attr.name.clone(), val);
+                }
+
+                let mut children_vals = Vec::new();
+                for child in children {
+                    match child {
+                        crate::parser::JsxChild::Text(t, _) => {
+                            children_vals.push(Value::String(t.clone()));
+                        }
+                        crate::parser::JsxChild::Expr(e) => {
+                            children_vals.push(self.eval_expr(e, env.clone())?);
+                        }
+                        crate::parser::JsxChild::Element(e) => {
+                            children_vals.push(self.eval_expr(e, env.clone())?);
+                        }
+                    }
+                }
+
+                let mut node_obj = HashMap::new();
+                node_obj.insert("tag".to_string(), Value::String(tag.clone()));
+                node_obj.insert("attributes".to_string(), Value::Object(attrs_map));
+                node_obj.insert("children".to_string(), Value::Tuple(children_vals));
+                node_obj.insert("__type__".to_string(), Value::String("HtmlNode".to_string()));
+
+                Ok(Value::Object(node_obj))
+            }
         }
     }
 

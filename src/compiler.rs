@@ -96,6 +96,7 @@ pub fn build_project(
                                 "std.net.http" => vec!["net", "http"],
                                 "std.net.ws" => vec!["net", "ws"],
                                 "std.net.mqtt" => vec!["net", "mqtt"],
+                                "std.web" => vec![],
                                 _ => vec![],
                             };
 
@@ -1403,4 +1404,64 @@ fn generate_return_conversion_var(return_type: &str, s_name: &str, var_name: &st
         code.push_str("        cv\n");
     }
     code
+}
+
+// =========================================================================
+// Flame -> Blaze Web Target Compiler (Fine-Grained Reactive JS/HTML/CSS)
+// =========================================================================
+
+pub use crate::web::{build_web_project, WebCompiler};
+
+#[cfg(test)]
+mod web_compiler_tests {
+    use super::*;
+    use crate::lexer::Lexer;
+    use crate::parser::Parser;
+
+    #[test]
+    fn test_web_compiler_fine_grained_js() {
+        let code = r#"
+        @Web(port: 4200, title: "Test Web App")
+        fn main() {
+            @State
+            let count = 0
+
+            @Page("/")
+            fn index() {
+                <main>
+                    <h1>Counter</h1>
+                    <button onclick={count += 1}>
+                        Count: {count}
+                    </button>
+                </main>
+            }
+
+        }
+        "#;
+        let mut lexer = Lexer::new(code);
+        let mut tokens = Vec::new();
+        loop {
+            let tok = lexer.next_token();
+            let is_eof = tok.kind == crate::lexer::TokenKind::EOF;
+            tokens.push(tok);
+            if is_eof {
+                break;
+            }
+        }
+        let mut parser = Parser::new(tokens, "web_test.fm".to_string());
+        let stmts = parser.parse().unwrap();
+
+        let mut compiler = WebCompiler::new("test_app".to_string());
+        compiler.process_stmts(&stmts);
+        let js = compiler.compile_to_js();
+
+        assert_eq!(compiler.port, 4200);
+        assert_eq!(compiler.app_title, "Test Web App");
+        assert!(js.contains("_createSignal(\"count\""), "Generated JS must declare state: {}", js);
+        assert!(js.contains("document.createElement(\"main\")"), "Must create main: {}", js);
+        assert!(js.contains("document.createElement(\"h1\")"), "Must create h1: {}", js);
+        assert!(js.contains("document.createElement(\"button\")"), "Must create button: {}", js);
+        assert!(js.contains("_subscribe(\"count\""), "Must subscribe count to text node: {}", js);
+        assert!(js.contains("_routes"), "Must define client router: {}", js);
+    }
 }

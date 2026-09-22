@@ -14,6 +14,9 @@
       "include": "#decorators"
     },
     {
+      "include": "#jsx"
+    },
+    {
       "include": "#imports"
     },
     {
@@ -116,6 +119,158 @@
       ]
     },
 
+    "jsx": {
+      "patterns": [
+        {
+          "include": "#jsx-tag-in-expression"
+        }
+      ]
+    },
+
+    "jsx-tag-in-expression": {
+      "begin": "(?<!\\+\\+|--)(?<=[({\\[,?=>:*]|&&|\\|\\||\\?|\\*\\/|^return|\\breturn|^await|\\bawait|^yield|\\byield|^)\\s*(?=(<)\\s*([a-zA-Z_][a-zA-Z0-9_-]*)(?:\\s+|(?=/?>)|>))",
+      "end": "(?!(<)\\s*([a-zA-Z_][a-zA-Z0-9_-]*)(?:\\s+|(?=/?>)|>))",
+      "patterns": [
+        {
+          "include": "#jsx-tag"
+        }
+      ]
+    },
+
+    "jsx-tag": {
+      "name": "meta.tag.flame",
+      "begin": "(?=(<)\\s*([a-zA-Z_][a-zA-Z0-9_-]*)(?:\\s+|(?=/?>)|>))",
+      "end": "(/\\s*>)|(?:(</)\\s*([a-zA-Z_][a-zA-Z0-9_-]*)\\s*(>))",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.flame"
+        },
+        "2": {
+          "name": "punctuation.definition.tag.flame"
+        },
+        "3": {
+          "name": "keyword.control.flame"
+        },
+        "4": {
+          "name": "punctuation.definition.tag.flame"
+        }
+      },
+      "patterns": [
+        {
+          "begin": "(<)\\s*([a-zA-Z_][a-zA-Z0-9_-]*)",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.flame"
+            },
+            "2": {
+              "name": "keyword.control.flame"
+            }
+          },
+          "end": "(?=[/]?>)",
+          "patterns": [
+            {
+              "include": "#jsx-attributes"
+            }
+          ]
+        },
+        {
+          "begin": "(>)",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.flame"
+            }
+          },
+          "end": "(?=</)",
+          "contentName": "meta.jsx.children.flame",
+          "patterns": [
+            {
+              "include": "#jsx-children"
+            }
+          ]
+        }
+      ]
+    },
+
+    "jsx-children": {
+      "patterns": [
+        {
+          "include": "#jsx-tag"
+        },
+        {
+          "include": "#jsx-embedded-expression"
+        },
+        {
+          "include": "#comments"
+        }
+      ]
+    },
+
+    "jsx-attributes": {
+      "patterns": [
+        {
+          "match": "\\b(on[A-Z][a-zA-Z0-9_]*|on[a-z]+)\\b(?=\\s*(=|\\{))",
+          "name": "entity.name.function.flame"
+        },
+        {
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_-]*)\\b(?=\\s*(=|\\{))",
+          "name": "entity.other.attribute-name.flame"
+        },
+        {
+          "name": "string.quoted.double.flame",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "match": "\\\\.",
+              "name": "constant.character.escape.flame"
+            }
+          ]
+        },
+        {
+          "include": "#jsx-embedded-expression"
+        }
+      ]
+    },
+
+    "jsx-embedded-expression": {
+      "name": "meta.embedded.expression.flame",
+      "begin": "\\{",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.begin.flame"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.end.flame"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#keywords"
+        },
+        {
+          "include": "#types"
+        },
+        {
+          "include": "#numbers"
+        },
+        {
+          "include": "#identifiers"
+        },
+        {
+          "include": "#jsx-tag-in-expression"
+        }
+      ]
+    },
+
     "imports": {
       "patterns": [
         {
@@ -214,7 +369,23 @@
       "patterns": [
         {
           "name": "support.type.flame",
-          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+          "match": "\\b(Int|Num|Float|String|Bool|Array|Map|Option|Result|Vector|Void|Any|Byte|Char|Never|Self|Nil)\\b"
+        },
+        {
+          "name": "support.type.flame",
+          "match": "(?<=:\\s*)([A-Z][a-zA-Z0-9_]*)"
+        },
+        {
+          "name": "support.type.flame",
+          "match": "(?<=->\\s*)([A-Z][a-zA-Z0-9_]*)"
+        },
+        {
+          "name": "support.type.flame",
+          "match": "(?<=\\b(struct|enum|trait|impl|type|as)\\s+)([A-Z][a-zA-Z0-9_]*)"
+        },
+        {
+          "name": "support.type.flame",
+          "match": "(?<=<\\s*)([A-Z][a-zA-Z0-9_]*)(?=[>,\\s])"
         }
       ]
     },
@@ -339,14 +510,7 @@
 
         {
           "name": "string.quoted.single.flame",
-          "begin": "'",
-          "end": "'",
-          "patterns": [
-            {
-              "name": "constant.character.escape.flame",
-              "match": "\\\\."
-            }
-          ]
+          "match": "'[^'\\\\\\n\\r]*'"
         }
       ]
     },

@@ -9,6 +9,7 @@ pub struct Parser {
     index: usize,
     filepath: String,
     thread_aliases: std::collections::HashSet<String>,
+    web_function_stack: Vec<bool>,
 }
 
 impl Parser {
@@ -20,7 +21,79 @@ impl Parser {
             index: 0,
             filepath,
             thread_aliases,
+            web_function_stack: Vec::new(),
         }
+    }
+
+    pub fn is_field_name_token(kind: &TokenKind) -> bool {
+        matches!(
+            kind,
+            TokenKind::Identifier
+                | TokenKind::Type
+                | TokenKind::Yield
+                | TokenKind::Formula
+                | TokenKind::Async
+                | TokenKind::Await
+                | TokenKind::Thread
+                | TokenKind::Match
+                | TokenKind::As
+        )
+    }
+
+    fn consume_field_name(&mut self, err_msg: &str) -> Result<Token, Diagnostic> {
+        if Self::is_field_name_token(&self.peek().kind) {
+            Ok(self.advance())
+        } else {
+            self.consume(TokenKind::Identifier, err_msg)
+        }
+    }
+
+    pub fn is_web_annotation(name: &str) -> bool {
+        let clean = name.rsplit('.').next().unwrap_or(name);
+        let lower = clean.to_ascii_lowercase();
+        matches!(
+            lower.as_str(),
+            "component"
+                | "page"
+                | "web"
+                | "layout"
+                | "client"
+                | "route"
+                | "island"
+                | "view"
+                | "server"
+                | "head"
+                | "body"
+                | "html"
+                | "style"
+        )
+    }
+
+    fn is_inside_web_annotated_function(&self) -> bool {
+        self.web_function_stack.last().copied().unwrap_or(false)
+    }
+
+    fn is_jsx_tag_lookahead(&self) -> bool {
+        if !self.check(TokenKind::Lt) {
+            return false;
+        }
+        if self.index + 1 >= self.tokens.len() {
+            return false;
+        }
+        if self.tokens[self.index + 1].kind == TokenKind::Slash {
+            return true;
+        }
+        if self.tokens[self.index + 1].kind != TokenKind::Identifier {
+            return false;
+        }
+        if self.index + 2 < self.tokens.len() {
+            match self.tokens[self.index + 2].kind {
+                TokenKind::Gt | TokenKind::Slash => return true,
+                TokenKind::Identifier => return true,
+                _ => {}
+            }
+        }
+        false
     }
 
     fn peek(&self) -> Token {
@@ -65,8 +138,13 @@ impl Parser {
         if token.kind == kind {
             Ok(self.advance())
         } else {
+            let primary_msg = if !msg.is_empty() {
+                msg.to_string()
+            } else {
+                format!("expected {:?}, found '{}'", kind, token.lexeme)
+            };
             Err(Diagnostic::new_error(
-                format!("expected {:?}, found '{}'", kind, token.lexeme),
+                primary_msg,
                 self.filepath.clone(),
                 token.span.clone(),
                 Some(msg.to_string()),
@@ -550,6 +628,14 @@ impl Parser {
     }
 
     fn parse_func_decl(&mut self, annotations: Vec<Annotation>) -> Result<Stmt, Diagnostic> {
+        let is_web = annotations.iter().any(|a| Self::is_web_annotation(&a.name));
+        self.web_function_stack.push(is_web);
+        let res = self.parse_func_decl_inner(annotations);
+        self.web_function_stack.pop();
+        res
+    }
+
+    fn parse_func_decl_inner(&mut self, annotations: Vec<Annotation>) -> Result<Stmt, Diagnostic> {
         let start_tok = self.consume(TokenKind::Fn, "expected 'fn' function definition")?;
         let name_tok = if matches!(
             self.peek().kind,
@@ -600,13 +686,19 @@ impl Parser {
             if self.match_token(TokenKind::Colon) {
                 p_type = self.parse_type()?;
             } else if p_name_tok.kind != TokenKind::SelfLower {
-                return Err(Diagnostic::new_error(
-                    "expected ':' after parameter name".to_string(),
-                    self.filepath.clone(),
-                    p_name_tok.span.clone(),
-                    Some("Add a type annotation for this parameter".to_string()),
-                    Some("Use ': Type' after the parameter name".to_string()),
-                ));
+                let is_web_context = self.is_inside_web_annotated_function()
+                    || annotations.iter().any(|a| Self::is_web_annotation(&a.name));
+                if is_web_context {
+                    p_type = "Any".to_string();
+                } else {
+                    return Err(Diagnostic::new_error(
+                        "expected ':' after parameter name".to_string(),
+                        self.filepath.clone(),
+                        p_name_tok.span.clone(),
+                        Some("Add a type annotation for this parameter".to_string()),
+                        Some("Use ': Type' after the parameter name".to_string()),
+                    ));
+                }
             } else {
                 p_type = "Self".to_string();
             }
@@ -752,7 +844,7 @@ impl Parser {
         self.consume(TokenKind::OpenBrace, "expected '{'")?;
         let mut fields = Vec::new();
         while !self.check(TokenKind::CloseBrace) && !self.check(TokenKind::EOF) {
-            let field_name = self.consume(TokenKind::Identifier, "expected field name")?;
+            let field_name = self.consume_field_name("expected field name")?;
             self.consume(TokenKind::Colon, "expected ':'")?;
             let field_type = self.parse_type()?;
             fields.push((field_name.lexeme.clone(), field_type));
@@ -996,7 +1088,7 @@ impl Parser {
             let mut is_tuple_destructure = false;
             if self.match_token(TokenKind::OpenBrace) {
                 while !self.check(TokenKind::CloseBrace) && !self.check(TokenKind::EOF) {
-                    let field = self.consume(TokenKind::Identifier, "expected identifier in pattern destructuring")?;
+                    let field = self.consume_field_name("expected identifier in pattern destructuring")?;
                     destructure.push(field.lexeme.clone());
                     self.match_token(TokenKind::Comma);
                 }
@@ -1004,7 +1096,7 @@ impl Parser {
             } else if self.match_token(TokenKind::OpenParen) {
                 is_tuple_destructure = true;
                 while !self.check(TokenKind::CloseParen) && !self.check(TokenKind::EOF) {
-                    let field = self.consume(TokenKind::Identifier, "expected identifier in pattern destructuring")?;
+                    let field = self.consume_field_name("expected identifier in pattern destructuring")?;
                     destructure.push(field.lexeme.clone());
                     self.match_token(TokenKind::Comma);
                 }
@@ -1255,11 +1347,19 @@ impl Parser {
 
     fn parse_comparison(&mut self) -> Result<Expr, Diagnostic> {
         let mut expr = self.parse_shift()?;
+        if matches!(expr, Expr::JsxElement { .. }) {
+            return Ok(expr);
+        }
         while self.check(TokenKind::Lt)
             || self.check(TokenKind::Le)
             || self.check(TokenKind::Gt)
             || self.check(TokenKind::Ge)
         {
+            if self.check(TokenKind::Lt) && self.is_inside_web_annotated_function() {
+                if self.peek().span.line > expr.span().line || self.is_jsx_tag_lookahead() {
+                    break;
+                }
+            }
             let tok = self.advance();
             let op = match tok.kind {
                 TokenKind::Le => BinaryOp::Le,
@@ -1460,9 +1560,306 @@ impl Parser {
         self.parse_primary()
     }
 
+    fn parse_jsx_element(&mut self) -> Result<Expr, Diagnostic> {
+        let lt_tok = self.consume(TokenKind::Lt, "expected '<'")?;
+        if !self.is_inside_web_annotated_function() {
+            return Err(Diagnostic::new_error(
+                "JSX syntax is only permitted within functions annotated with a web annotation (e.g. @Component, @Page, @Web)".to_string(),
+                self.filepath.clone(),
+                lt_tok.span.clone(),
+                Some("Annotate the enclosing function with @Component, @Page, or @Web to use JSX".to_string()),
+                Some("Add @Component or @Page before 'fn'".to_string()),
+            ));
+        }
+        let tag_tok = self.consume(TokenKind::Identifier, "expected tag name after '<'")?;
+        let tag = tag_tok.lexeme.clone();
+
+        let mut attributes = Vec::new();
+        while !self.check(TokenKind::Gt)
+            && !self.check(TokenKind::Slash)
+            && !self.check(TokenKind::EOF)
+        {
+            let is_attr_start = matches!(
+                self.peek().kind,
+                TokenKind::Identifier
+                    | TokenKind::Type
+                    | TokenKind::For
+                    | TokenKind::In
+                    | TokenKind::As
+                    | TokenKind::Match
+                    | TokenKind::If
+                    | TokenKind::Else
+                    | TokenKind::While
+                    | TokenKind::Loop
+                    | TokenKind::Return
+                    | TokenKind::Let
+                    | TokenKind::Const
+                    | TokenKind::Fn
+                    | TokenKind::True
+                    | TokenKind::False
+                    | TokenKind::Nil
+                    | TokenKind::Import
+                    | TokenKind::Export
+                    | TokenKind::Struct
+                    | TokenKind::Enum
+                    | TokenKind::Trait
+                    | TokenKind::Impl
+                    | TokenKind::Mut
+                    | TokenKind::Async
+                    | TokenKind::Await
+                    | TokenKind::Yield
+            );
+            if is_attr_start {
+                let attr_tok = self.advance();
+                let mut attr_name = attr_tok.lexeme.clone();
+                let attr_start = attr_tok.span.start;
+                let mut attr_end = attr_tok.span.end;
+
+                while self.match_token(TokenKind::Minus) {
+                    let is_sub = matches!(
+                        self.peek().kind,
+                        TokenKind::Identifier
+                            | TokenKind::Type
+                            | TokenKind::For
+                            | TokenKind::In
+                            | TokenKind::As
+                            | TokenKind::Match
+                            | TokenKind::If
+                            | TokenKind::Else
+                            | TokenKind::While
+                            | TokenKind::Loop
+                            | TokenKind::Return
+                            | TokenKind::Let
+                            | TokenKind::Const
+                            | TokenKind::Fn
+                            | TokenKind::True
+                            | TokenKind::False
+                            | TokenKind::Nil
+                            | TokenKind::Import
+                            | TokenKind::Export
+                            | TokenKind::Struct
+                            | TokenKind::Enum
+                            | TokenKind::Trait
+                            | TokenKind::Impl
+                            | TokenKind::Mut
+                            | TokenKind::Async
+                            | TokenKind::Await
+                            | TokenKind::Yield
+                    );
+                    if is_sub {
+                        let sub_tok = self.advance();
+                        attr_name.push('-');
+                        attr_name.push_str(&sub_tok.lexeme);
+                        attr_end = sub_tok.span.end;
+                    }
+                }
+
+                let value = if self.match_token(TokenKind::Equal) || self.check(TokenKind::OpenBrace) {
+                    if self.match_token(TokenKind::OpenBrace) {
+                        let mut stmts = Vec::new();
+                        while !self.check(TokenKind::CloseBrace) && !self.check(TokenKind::EOF) {
+                            stmts.push(self.parse_statement()?);
+                        }
+                        let close_tok = self.consume(
+                            TokenKind::CloseBrace,
+                            "expected '}' after JSX attribute expression",
+                        )?;
+                        attr_end = close_tok.span.end;
+                        if stmts.len() == 1 {
+                            if let Stmt::ExprStmt(e) = stmts.remove(0) {
+                                Some(e)
+                            } else {
+                                Some(Expr::Block(stmts, Span {
+                                    start: attr_start,
+                                    end: close_tok.span.end,
+                                    line: attr_tok.span.line,
+                                    col: attr_tok.span.col,
+                                }))
+                            }
+                        } else {
+                            Some(Expr::Block(stmts, Span {
+                                start: attr_start,
+                                end: close_tok.span.end,
+                                line: attr_tok.span.line,
+                                col: attr_tok.span.col,
+                            }))
+                        }
+                    } else if self.check(TokenKind::StringLiteral)
+                        || self.check(TokenKind::MultilineStringLiteral)
+                    {
+                        let str_tok = self.advance();
+                        attr_end = str_tok.span.end;
+                        Some(Expr::Literal(
+                            LiteralValue::String(str_tok.lexeme),
+                            str_tok.span.clone(),
+                        ))
+                    } else {
+                        let val_expr = self.parse_primary()?;
+                        attr_end = val_expr.span().end;
+                        Some(val_expr)
+                    }
+                } else {
+                    None
+                };
+
+                attributes.push(JsxAttribute {
+                    name: attr_name,
+                    value,
+                    span: Span {
+                        start: attr_start,
+                        end: attr_end,
+                        line: attr_tok.span.line,
+                        col: attr_tok.span.col,
+                    },
+                });
+            } else {
+                break;
+            }
+        }
+
+        if self.match_token(TokenKind::Slash) {
+            let gt_tok = self.consume(TokenKind::Gt, "expected '>' after '/' in self-closing JSX tag")?;
+            return Ok(Expr::JsxElement {
+                tag,
+                attributes,
+                children: Vec::new(),
+                span: Span {
+                    start: lt_tok.span.start,
+                    end: gt_tok.span.end,
+                    line: lt_tok.span.line,
+                    col: lt_tok.span.col,
+                },
+            });
+        }
+
+        let _gt_tok = self.consume(TokenKind::Gt, "expected '>' to close JSX tag header")?;
+        let mut children = Vec::new();
+        let mut text_buf = String::new();
+        let mut text_start = 0;
+        let mut text_line = 0;
+        let mut text_col = 0;
+        let mut prev_token_end = 0;
+
+        let flush_text = |children: &mut Vec<JsxChild>,
+                          text_buf: &mut String,
+                          text_start: usize,
+                          prev_token_end: usize,
+                          text_line: usize,
+                          text_col: usize| {
+            let trimmed = text_buf.trim();
+            if !trimmed.is_empty() {
+                children.push(JsxChild::Text(
+                    trimmed.to_string(),
+                    Span {
+                        start: text_start,
+                        end: prev_token_end,
+                        line: text_line,
+                        col: text_col,
+                    },
+                ));
+            }
+            text_buf.clear();
+        };
+
+        while !self.check(TokenKind::EOF) {
+            if self.check(TokenKind::Lt) && self.check_next(TokenKind::Slash) {
+                break;
+            }
+
+            if self.check(TokenKind::Lt) && self.check_next(TokenKind::Identifier) {
+                flush_text(
+                    &mut children,
+                    &mut text_buf,
+                    text_start,
+                    prev_token_end,
+                    text_line,
+                    text_col,
+                );
+                let child_elem = self.parse_jsx_element()?;
+                children.push(JsxChild::Element(Box::new(child_elem)));
+                prev_token_end = 0;
+                continue;
+            }
+
+            if self.match_token(TokenKind::OpenBrace) {
+                flush_text(
+                    &mut children,
+                    &mut text_buf,
+                    text_start,
+                    prev_token_end,
+                    text_line,
+                    text_col,
+                );
+                let expr = self.parse_expr()?;
+                self.consume(
+                    TokenKind::CloseBrace,
+                    "expected '}' after JSX child expression",
+                )?;
+                children.push(JsxChild::Expr(expr));
+                prev_token_end = 0;
+                continue;
+            }
+
+            let tok = self.advance();
+            if text_buf.is_empty() {
+                text_start = tok.span.start;
+                text_line = tok.span.line;
+                text_col = tok.span.col;
+            } else if prev_token_end > 0 && tok.span.start > prev_token_end {
+                text_buf.push(' ');
+            }
+            text_buf.push_str(&tok.lexeme);
+            prev_token_end = tok.span.end;
+        }
+
+        flush_text(
+            &mut children,
+            &mut text_buf,
+            text_start,
+            prev_token_end,
+            text_line,
+            text_col,
+        );
+
+        let close_err = format!("expected '</{}>' to close JSX tag", tag);
+        self.consume(TokenKind::Lt, &close_err)?;
+        self.consume(TokenKind::Slash, "expected '/' in closing JSX tag")?;
+        let close_tag_tok = self.consume(TokenKind::Identifier, "expected closing tag name")?;
+        let end_gt = self.consume(TokenKind::Gt, "expected '>' after closing tag name")?;
+
+        if close_tag_tok.lexeme != tag {
+            return Err(Diagnostic::new_error(
+                format!(
+                    "mismatched closing JSX tag: expected '</{}>', found '</{}>'",
+                    tag, close_tag_tok.lexeme
+                ),
+                self.filepath.clone(),
+                close_tag_tok.span.clone(),
+                None,
+                None,
+            ));
+        }
+
+        Ok(Expr::JsxElement {
+            tag,
+            attributes,
+            children,
+            span: Span {
+                start: lt_tok.span.start,
+                end: end_gt.span.end,
+                line: lt_tok.span.line,
+                col: lt_tok.span.col,
+            },
+        })
+    }
+
     fn parse_primary(&mut self) -> Result<Expr, Diagnostic> {
         let token = self.peek();
         match token.kind {
+            TokenKind::Lt if self.check_next(TokenKind::Identifier) => {
+                let expr = self.parse_jsx_element()?;
+                self.parse_accessors(expr)
+            }
             TokenKind::At => {
                 let mut annotations = Vec::new();
                 while self.check(TokenKind::At) {
@@ -1780,7 +2177,7 @@ impl Parser {
         }
         if self.index + 1 < self.tokens.len() {
             let next = &self.tokens[self.index + 1];
-            if next.kind == TokenKind::Identifier {
+            if Self::is_field_name_token(&next.kind) {
                 if self.index + 2 < self.tokens.len() {
                     let next2 = &self.tokens[self.index + 2];
                     if next2.kind == TokenKind::Colon {
@@ -2062,7 +2459,7 @@ impl Parser {
                 let mut fields = Vec::new();
                 while !self.check(TokenKind::CloseBrace) && !self.check(TokenKind::EOF) {
                     let field_tok =
-                        self.consume(TokenKind::Identifier, "expected struct field name")?;
+                        self.consume_field_name("expected struct field name")?;
                     self.consume(TokenKind::Colon, "expected ':' after field name")?;
                     let val = self.parse_expr()?;
                     fields.push((field_tok.lexeme.clone(), val));
@@ -2107,3 +2504,101 @@ impl Parser {
         Ok(expr)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::Lexer;
+
+    fn parse_code(code: &str) -> Vec<Stmt> {
+        let mut lexer = Lexer::new(code);
+        let mut tokens = Vec::new();
+        loop {
+            let tok = lexer.next_token();
+            let is_eof = tok.kind == TokenKind::EOF;
+            tokens.push(tok);
+            if is_eof {
+                break;
+            }
+        }
+        let mut parser = Parser::new(tokens, "test.fm".to_string());
+        parser.parse().unwrap()
+    }
+
+    #[test]
+    fn test_parse_jsx() {
+        let code = r#"
+        @Component
+        fn render() {
+            <main>
+                <h1>Counter</h1>
+                <button onclick={count += 1}>
+                    Count: {count}
+                </button>
+            </main>
+        }
+        "#;
+        let stmts = parse_code(code);
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::FuncDecl { body: Some(body), .. } = &stmts[0] {
+            if let Stmt::ExprStmt(Expr::JsxElement { tag, children, .. }) = &body[0] {
+                assert_eq!(tag, "main");
+                assert_eq!(children.len(), 2);
+            } else {
+                panic!("Expected JsxElement");
+            }
+        } else {
+            panic!("Expected FuncDecl");
+        }
+    }
+
+    #[test]
+    fn test_parse_jsx_block() {
+        let code = r#"
+        @Web
+        fn main() {
+            @Page("/")
+            fn index() {
+                @State
+                let mut count = 0
+
+                <main>
+                    <h1>Counter</h1>
+                    <button onClick={
+                        count += 1;
+                    }>
+                        Count: {count}
+                    </button>
+                </main>
+            }
+        }
+        "#;
+        let stmts = parse_code(code);
+        assert!(!stmts.is_empty());
+    }
+
+    #[test]
+    fn test_parse_jsx_without_web_annotation_fails() {
+        let code = r#"
+        fn render() {
+            <main><h1>Invalid</h1></main>
+        }
+        "#;
+        let mut lexer = Lexer::new(code);
+        let mut tokens = Vec::new();
+        loop {
+            let tok = lexer.next_token();
+            let is_eof = tok.kind == TokenKind::EOF;
+            tokens.push(tok);
+            if is_eof {
+                break;
+            }
+        }
+        let mut parser = Parser::new(tokens, "test.fm".to_string());
+        let res = parser.parse();
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(err.message.contains("JSX syntax is only permitted within functions annotated with a web annotation"));
+    }
+}
+

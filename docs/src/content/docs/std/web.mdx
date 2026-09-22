@@ -1,0 +1,1003 @@
+---
+title: Web Applications (std.web)
+description: Fine-grained reactive web development in Flame with direct JavaScript DOM compilation, zero Virtual DOM diffing, multi-file architecture, built-in SPA router, layout engine, and live reload server.
+---
+
+import { Aside, Tabs, TabItem, Card, CardGrid } from '@astrojs/starlight/components';
+
+The `std.web` module is Flame's official framework and compiler toolchain for building high-performance, reactive web applications.
+
+Instead of shipping a heavy runtime framework or forcing bulky WebAssembly binaries for simple UI updates, Flame compiles your UI and component declarations directly into **clean, fine-grained reactive JavaScript, HTML5, and CSS**.
+
+---
+
+## Architectural Philosophy: Polyglot Compilation
+
+The browser's user interface is fundamentally a JavaScript and DOM environment. Access to the DOM tree, events, animations, and Web APIs are native to browser JavaScript engines.
+
+Flame cleanly divides responsibilities between JavaScript and WebAssembly (WASM):
+
+```text
+                 Flame Source (*.fm)
+                          │
+                        Blaze
+                          │
+                     @Web Target
+                          │
+              ┌───────────┴───────────┐
+              │                       │
+          UI / DOM               Computation
+              │                       │
+         JavaScript                  WASM
+              │                       │
+              └───────────┬───────────┘
+                          ↓
+                   Modern Browser
+```
+
+- **UI & DOM Manipulation**: Compiles to minimal, human-readable JavaScript with direct DOM node updates.
+- **Browser APIs**: Maps 1:1 with native browser globals (`window`, `document`, `localStorage`).
+- **Networking**: Idiomatic `std.net.http` client compiled to high-speed asynchronous requests.
+- **Zero Heavy Runtimes**: Output bundle `dist/app.js` is typically under **2 KB** before minification!
+
+---
+
+## Fine-Grained Reactivity (No Virtual DOM)
+
+Unlike traditional frameworks like React that re-render entire component functions and perform expensive virtual DOM tree diffing on every state change, Flame's compiler performs **fine-grained static dependency tracking**:
+
+### React Virtual DOM vs. Flame Compiler Updates
+
+```text
+React (Runtime Overhead):
+state change ──> re-render component ──> allocate virtual DOM ──> tree diffing ──> DOM mutation
+
+Flame (Zero Virtual DOM):
+state change ──> known compiler dependency ──> direct DOM node update
+```
+
+Because Flame knows statically which text nodes and attributes reference `@State` variables, generated JavaScript modifies **only the exact affected DOM text node or attribute**:
+
+```text
+count changes ──> _t0.textContent = "Counter: " + count
+```
+
+The surrounding `<main>`, `<h1>`, and `<button>` elements are untouched, and no component re-renders take place.
+
+---
+
+## Multi-File Project Architecture
+
+Large web applications should be modular. Flame provides native multi-file support with automatic file discovery, modular imports/exports, tag-like component instantiation, and auto-registered routing.
+
+### Directory Structure
+
+A typical multi-file Flame web project is structured as follows:
+
+```text
+my-web-app/
+├── flame.toml             # Project manifest
+├── src/
+│   ├── main.fm           # App entrypoint (@Web, @Layout, root @Page("/"))
+│   ├── navbar.fm         # Shared navigation bar (export @Component fn NavBar)
+│   ├── about.fm          # About page (export @Page("/about") fn about)
+│   ├── projects.fm       # Projects page + API fetching (export @Page("/projects"))
+│   └── contact.fm        # Contact form (export @Page("/contact") fn contact)
+└── dist/                 # Auto-generated static web bundle
+    ├── index.html        # HTML5 entry mounting to #app
+    ├── app.js            # Standalone reactive signals + SPA router + compiled UI
+    └── app.css           # Preserved custom stylesheet + @Style injections
+```
+
+### Automatic File Discovery & Bundling
+
+When compiling or running a web project (`flame run --web` or `flame build --web`), Flame's compiler:
+1. Automatically scans the entire `src/` directory recursively for all `.fm` and `.flame` source files.
+2. Processes all exported declarations (`export @Component`, `export @Page`, `export fn`).
+3. Seamlessly links modular dependencies (`import navbar`, `import about`, etc.) without requiring external bundlers like Webpack, Vite, or Rollup.
+
+---
+
+## Exports, Components & Auto-Routing
+
+Flame enables seamless modularity through the `export` keyword:
+
+### 1. Reusable Tag Components (`export @Component`)
+
+Declare reusable UI components in dedicated files with `export @Component`:
+
+```flame
+// src/navbar.fm
+import std.web
+
+export @Component
+fn NavBar() {
+    <header class="navbar">
+        <div class="nav-brand">⚡ Flame Web</div>
+        <nav class="nav-links">
+            <a href="/" class="nav-link">Home</a>
+            <a href="/about" class="nav-link">About</a>
+            <a href="/projects" class="nav-link">Projects</a>
+            <a href="/contact" class="nav-link">Contact</a>
+        </nav>
+    </header>
+}
+```
+
+Once imported, components can be rendered anywhere in your UI like standard tags:
+```flame
+<NavBar />
+```
+
+### 2. Auto-Integrated SPA Routing (`export @Page`)
+
+In Flame, any function annotated with `export @Page("/path")` in any `.fm` file in `src/` is **automatically registered into the client-side SPA router**:
+
+```flame
+// src/about.fm
+import std.web
+import navbar
+
+export @Page("/about")
+fn about() {
+    <div class="page-container">
+        <main class="content-section">
+            <h1 class="section-title">About Flame Web</h1>
+            <p>Fine-grained reactivity with zero virtual DOM.</p>
+        </main>
+    </div>
+}
+```
+
+<Aside type="tip" title="Zero Route Boilerplate">
+You do not need to configure an explicit route table or router object in `main.fm`. Simply exporting `@Page("/about")` causes Flame's compiler to register `/about` into the router and link navigation from any `<a href="/about">` tag automatically.
+</Aside>
+
+### 3. Pages Usable as Tag-Like Components
+
+Every `@Page` is also registered as a reusable component. You can mount a page directly inside another component or layout:
+
+```flame
+<About />
+```
+
+---
+
+## App Shells with `@Layout`
+
+Web applications often require a consistent layout shell (such as a top navigation bar, sidebar, and footer) that wraps all page content.
+
+Flame provides the `@Layout` annotation:
+
+```flame
+// src/main.fm
+@Layout
+fn AppLayout(children) {
+    <div class="app-layout">
+        <NavBar />
+        <div class="app-content">
+            {children}
+        </div>
+    </div>
+}
+```
+
+### How `@Layout` Works
+- **Automatic Wrapping**: Pages that do not specify a custom layout are automatically wrapped inside the `@Layout` component.
+- **Dynamic Slot Interpolation**: The `{children}` expression automatically injects the active `@Page` content into the layout container.
+- **Persistent Chrome**: When switching routes via the client-side router, the layout shell remains intact while only the `{children}` DOM node updates.
+
+---
+
+## Networking & Asynchronous Functions (`std.net.http`)
+
+Flame Web projects use Flame's native networking module `std.net.http` rather than browser-specific APIs:
+
+```flame
+import std.net.http
+
+export fn fetchProjects() {
+    let container = web.document.getElementById("projects-grid")
+    if container {
+        container.innerHTML = "<div class='loading'>Loading live projects...</div>"
+    }
+
+    // High-level HTTP GET request with await
+    let data = await http.get("https://jsonplaceholder.typicode.com/posts")
+
+    if container {
+        container.innerHTML = ""
+        let mut i = 0
+        while i < 6 && i < data.length {
+            let post = data[i]
+            let card = web.document.createElement("div")
+            card.className = "project-card"
+            card.innerHTML = "<h3>" + post.title + "</h3><p>" + post.body + "</p>"
+            container.appendChild(card)
+            i += 1
+        }
+    }
+}
+```
+
+### Automatic `async function` Generation
+Flame's compiler performs static AST analysis to detect any use of `await` inside functions, components, event handlers, and closures. When `await` is present, Flame automatically marks the compiled JavaScript declaration as `async function`:
+
+```javascript
+// Compiled output in dist/app.js
+async function fetchProjects() {
+    // ...
+    let data = await http.get("https://jsonplaceholder.typicode.com/posts");
+    // ...
+}
+```
+
+This ensures full compliance with JavaScript syntax specifications and prevents browser `SyntaxError: Unexpected reserved word` errors.
+
+---
+
+## DOM & Window Interop (`std.web`)
+
+The `std.web` module exposes direct, type-safe access to browser globals through `web.document` and `web.window`:
+
+### Custom Animated Cursor Example
+
+```flame
+fn setupCursor() {
+    web.window.addEventListener("mousemove", (e) {
+        let dot = web.document.getElementById("cursor-dot")
+        let outline = web.document.getElementById("cursor-outline")
+        if dot {
+            dot.style.left = e.clientX + "px"
+            dot.style.top = e.clientY + "px"
+        }
+        if outline {
+            outline.style.left = e.clientX + "px"
+            outline.style.top = e.clientY + "px"
+        }
+    })
+}
+```
+
+---
+
+## Project Verification with `flame check`
+
+Flame includes a multi-file diagnostics and type-checking command: `flame check`.
+
+### Checking an Entire Project
+Run `flame check` without arguments from your project root, or point it to your source directory:
+
+```bash
+# Checks all .fm and .flame files in src/ by default
+flame check
+
+# Or specify the directory explicitly
+flame check src/
+```
+
+Output:
+```text
+check: no diagnostics across 5 files
+```
+
+### Checking Specific Files
+You can check a single file or multiple individual files:
+
+```bash
+# Check a single file
+flame check src/main.fm
+
+# Check multiple files
+flame check src/main.fm src/navbar.fm src/about.fm
+```
+
+### Machine-Readable JSON Output
+For CI/CD pipelines and IDE tooling, pass the `--json` flag:
+
+```bash
+flame check src/ --json
+```
+
+If any file contains syntax errors or type discrepancies, Flame outputs human-readable diagnostic snippets with line numbers and column pointers:
+
+```text
+error : type mismatch in expression
+  --> src/projects.fm:14:18
+   |
+14 |         while i < 6 && i < data.length {
+   |                   ^
+```
+
+---
+
+## Running and Developing Web Applications
+
+Flame provides a built-in HTTP server, live-reload watcher, and static bundler:
+
+### 1. Development Server (`run --web`)
+
+Start a local development server:
+
+```bash
+flame run --web src/main.fm
+```
+
+This compiles your project into `dist/` and serves it at `http://localhost:3000/`.
+
+### 2. Live Hot Reload (`run --watch --web`)
+
+Enable hot reloading during active development:
+
+```bash
+flame run --watch --web src/main.fm
+```
+
+The watcher listens for filesystem changes across your source files, automatically recompiles `dist/app.js` and `dist/app.css`, and immediately refreshes the browser without losing scroll state.
+
+### 3. Production Build (`build --web`)
+
+Generate an optimized static distribution:
+
+```bash
+flame build --web src/main.fm
+```
+
+---
+
+## Anatomy of the `dist/` Output
+
+When Flame builds your web application, it produces a self-contained static directory ready for instant deployment:
+
+```text
+dist/
+├── index.html   # HTML5 entry point mounting the app to #app
+├── app.js       # Standalone reactive runtime, router, and compiled UI (<2 KB)
+└── app.css      # Merged styles (custom styles preserved + @Style injections)
+```
+
+### Stylesheet Preservation
+When you customize `dist/app.css`, subsequent `flame build --web` or `flame run --web` runs **never overwrite** your custom CSS rules. Instead, Flame merges custom CSS with any `@Style` declarations in your code.
+
+---
+
+## Core Annotations Reference
+
+| Annotation | Target | Description |
+| :--- | :--- | :--- |
+| `@Web` | `fn main()` | Marks the application entrypoint. Accepts optional parameters `title` and `port` (e.g. `@Web(title: "My App", port: 3000)`). |
+| `@Layout` | Function | Declares an application shell wrapping page content. Receives `(children)` as parameter. |
+| `@Page(path)` | Function | Declares a client-side routable page (e.g. `@Page("/")`, `@Page("/about")`). Automatically integrated into the SPA router. |
+| `@Component` | Function | Declares a reusable UI component that returns JSX elements. Usable as a tag (`<NavBar />`). |
+| `@State` | `let mut var` | Marks a variable as reactive. Compiles to an observable signal; mutations instantly update dependent DOM nodes. |
+| `@Style` | Function | Injects CSS rules into `dist/app.css` without overwriting existing stylesheet content. |
+
+---
+
+## JSX Syntax Rules & Behavior
+
+### Clean Text Handling
+Text placed inside JSX tags behaves as plain text:
+
+```flame
+<p>Compile Flame's source directly into high-speed native JavaScript.</p>
+```
+
+- Plain words are treated as text content without erroneous keyword or function highlighting.
+- Apostrophes (such as in `Flame's`) do not break strings across lines or create unwanted auto-closing quote pairs.
+
+### Expression Interpolation `{expr}`
+Dynamic Flame code is placed inside curly braces:
+
+```flame
+<h1>Counter: {count}</h1>
+```
+
+### Event Handlers (`onClick`, `onInput`, `onChange`, `onKeyDown`)
+JSX attributes starting with `on` register native DOM event listeners:
+
+1. **Inline Signal Mutations**:
+   ```flame
+   <button onClick={count += 1}>Increment</button>
+   ```
+
+2. **Function References**:
+   ```flame
+   <button onClick={fetchProjects}>Fetch Data</button>
+   ```
+
+3. **Multi-Statement Event Blocks**:
+   ```flame
+   <button onClick={
+       count += 1
+       toggleColor()
+   }>
+       Update
+   </button>
+   ```
+
+### Dynamic Inline Styles
+Use curly braces with dynamic string expressions:
+
+```flame
+<button style={"background-color: " + btn_color + "; color: white;"}>
+    Active Color: {btn_color}
+</button>
+```
+
+---
+
+## Complete Multi-File Showcase Application
+
+Below is the complete, working implementation of a 4-page responsive web application with custom cursor, live API fetching, and layout wrapping:
+
+<Tabs>
+  <TabItem label="src/main.fm">
+```flame
+import std.web
+import std.net.http
+import navbar
+import about
+import projects
+import contact
+
+@Web(title: "Flame Web Showcase", port: 3000)
+fn main() {
+
+    @State
+    let mut count = 0
+
+    @State
+    let mut btn_color = "#3b82f6"
+
+    fn toggleColor() {
+        if btn_color == "#3b82f6" {
+            btn_color = "#10b981"
+        } else if btn_color == "#10b981" {
+            btn_color = "#ec4899"
+        } else if btn_color == "#ec4899" {
+            btn_color = "#8b5cf6"
+        } else {
+            btn_color = "#3b82f6"
+        }
+    }
+
+    fn setupCursor() {
+        web.window.addEventListener(
+            "mousemove", 
+            (e) {
+                let dot = web.document.getElementById("cursor-dot")
+                let outline = web.document.getElementById("cursor-outline")
+                if dot {
+                    dot.style.left = e.clientX + "px"
+                    dot.style.top = e.clientY + "px"
+                }
+                if outline {
+                    outline.style.left = e.clientX + "px"
+                    outline.style.top = e.clientY + "px"
+                }
+            }
+        )
+    }
+
+    setupCursor()
+
+    @Layout
+    fn AppLayout(children) {
+        <div class="app-layout">
+            <NavBar />
+            <div class="app-content">
+                {children}
+            </div>
+        </div>
+    }
+
+    @Page("/")
+    fn index() {
+        <div class="page-container">
+            <main class="hero-section">
+                <div class="hero-badge">Next-Gen Reactive Framework</div>
+                <h1 class="hero-title">High-Performance Web in Flame</h1>
+                <p class="hero-subtitle">
+                    Compile Flame directly into ultra-fast JavaScript DOM code with fine-grained reactivity and zero-overhead routing.
+                </p>
+                <div class="interactive-panel">
+                    <button onClick={
+                        count += 1
+                    } class="btn-counter">
+                        Counter: {count}
+                    </button>
+                    <button onClick={toggleColor} style={"background-color: " + btn_color + ";"} class="btn-color-toggle">
+                        Active Color: {btn_color}
+                    </button>
+                </div>
+            </main>
+        </div>
+    }
+
+    @Style
+    fn appStyles() {""}
+}
+```
+  </TabItem>
+
+  <TabItem label="src/navbar.fm">
+```flame
+import std.web
+
+export @Component
+fn NavBar() {
+    <header class="navbar">
+        <div id="cursor-dot" class="cursor-dot"></div>
+        <div id="cursor-outline" class="cursor-outline"></div>
+        <div class="nav-brand">
+            <span class="brand-icon">⚡</span>
+            <span class="brand-text">Flame Web</span>
+        </div>
+        <nav class="nav-links">
+            <a href="/" class="nav-link">Home</a>
+            <a href="/about" class="nav-link">About</a>
+            <a href="/projects" class="nav-link">Projects</a>
+            <a href="/contact" class="nav-link">Contact</a>
+        </nav>
+    </header>
+}
+```
+  </TabItem>
+
+  <TabItem label="src/about.fm">
+```flame
+import std.web
+import navbar
+
+export @Page("/about")
+fn about() {
+    <div class="page-container">
+        <main class="content-section">
+            <h1 class="section-title">About Flame Web</h1>
+            <p class="section-description">
+                Flame Web pairs Flame syntax with a reactive DOM runtime. It compiles UI trees into native DOM calls with granular signals.
+            </p>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Fine-Grained Signals</h3>
+                    <p>No virtual DOM overhead. When state changes, only the exact DOM node updates.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🌐</div>
+                    <h3>Built-in SPA Router</h3>
+                    <p>Multi-page navigation with client-side history state and instant page switches.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎨</div>
+                    <h3>Scoped & Dynamic Styling</h3>
+                    <p>Inline style attributes and @Style functions provide complete styling power.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+}
+```
+  </TabItem>
+
+  <TabItem label="src/projects.fm">
+```flame
+import std.web
+import std.net.http
+import navbar
+
+export fn fetchProjects() {
+    let container = web.document.getElementById("projects-grid")
+    if container {
+        container.innerHTML = "<div class='loading-card'>⚡ Loading live projects via std.net.http...</div>"
+    }
+    let data = await http.get("https://jsonplaceholder.typicode.com/posts")
+    if container {
+        container.innerHTML = ""
+        let mut i = 0
+        while i < 6 && i < data.length {
+            let post = data[i]
+            let card = web.document.createElement("div")
+            card.className = "project-card"
+            card.innerHTML = "<span class='project-tag'>Post #" + post.id + "</span><h3 class='project-title'>" + post.title + "</h3><p class='project-body'>" + post.body + "</p>"
+            container.appendChild(card)
+            i += 1
+        }
+    }
+}
+
+export @Page("/projects")
+fn projects() {
+    <div class="page-container">
+        <main class="content-section">
+            <h1 class="section-title">Live API Projects</h1>
+            <p class="section-description">
+                Demonstrating native std.net.http integration with jsonplaceholder.typicode.com/posts in Flame.
+            </p>
+            <div class="action-bar">
+                <button onClick={fetchProjects} class="btn-primary">
+                    Fetch Live Posts via http.get()
+                </button>
+            </div>
+            <div id="projects-grid" class="projects-container">
+                <div class="empty-state">
+                    Click the button above to load live posts using Flames std.net.http client.
+                </div>
+            </div>
+        </main>
+    </div>
+}
+```
+  </TabItem>
+
+  <TabItem label="src/contact.fm">
+```flame
+import std.web
+import navbar
+
+@State
+let mut contact_status = "Awaiting your message"
+
+export fn submitContact() {
+    contact_status = "🚀 Thank you! Your message was sent successfully."
+}
+
+export @Page("/contact")
+fn contact() {
+    <div class="page-container">
+        <main class="content-section">
+            <h1 class="section-title">Get in Touch</h1>
+            <p class="section-description">
+                Send a message through our reactive contact form.
+            </p>
+            <div class="contact-box">
+                <div class="form-group">
+                    <label>Your Name</label>
+                    <input id="contact-name" type="text" placeholder="e.g. Satoshi Nakamoto" class="input-field" />
+                </div>
+                <div class="form-group">
+                    <label>Message</label>
+                    <textarea id="contact-msg" placeholder="Tell us about your project..." class="input-field textarea"></textarea>
+                </div>
+                <button onClick={submitContact} class="btn-primary">
+                    Send Message
+                </button>
+                <div class="status-banner">
+                    Status: {contact_status}
+                </div>
+            </div>
+        </main>
+    </div>
+}
+```
+  </TabItem>
+
+  <TabItem label="dist/app.css">
+```css
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background-color: #0b0f19;
+    color: #f1f5f9;
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+.cursor-dot {
+    position: fixed;
+    top: -100px;
+    left: -100px;
+    width: 8px;
+    height: 8px;
+    background: #ec4899;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9999;
+    transform: translate(-50%, -50%);
+    transition: width 0.15s, height 0.15s;
+}
+.cursor-outline {
+    position: fixed;
+    top: -100px;
+    left: -100px;
+    width: 34px;
+    height: 34px;
+    border: 2px solid rgba(168, 85, 247, 0.6);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9998;
+    transform: translate(-50%, -50%);
+    transition: transform 0.06s ease-out, border-color 0.2s;
+}
+.navbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 2.5rem;
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+.nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #f8fafc;
+}
+.brand-icon {
+    font-size: 1.5rem;
+}
+.nav-links {
+    display: flex;
+    gap: 1.8rem;
+}
+.nav-link {
+    color: #94a3b8;
+    text-decoration: none;
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: color 0.2s;
+}
+.nav-link:hover {
+    color: #38bdf8;
+}
+.hero-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 6rem 2rem;
+}
+.hero-badge {
+    display: inline-block;
+    padding: 0.4rem 1rem;
+    border-radius: 9999px;
+    background: rgba(56, 189, 248, 0.1);
+    color: #38bdf8;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    border: 1px solid rgba(56, 189, 248, 0.25);
+}
+.hero-title {
+    font-size: 3.5rem;
+    font-weight: 800;
+    line-height: 1.15;
+    margin-bottom: 1.25rem;
+    background: linear-gradient(135deg, #ffffff 0%, #94a3b8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.hero-subtitle {
+    font-size: 1.2rem;
+    color: #94a3b8;
+    max-width: 650px;
+    line-height: 1.6;
+    margin-bottom: 2.5rem;
+}
+.interactive-panel {
+    display: flex;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+.btn-counter {
+    padding: 0.9rem 2rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: #1e293b;
+    color: #f8fafc;
+    font-size: 1.05rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.15s, background 0.2s;
+}
+.btn-counter:hover {
+    transform: translateY(-2px);
+    background: #334155;
+}
+.btn-color-toggle {
+    padding: 0.9rem 2rem;
+    border-radius: 12px;
+    border: none;
+    color: #ffffff;
+    font-size: 1.05rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.15s, filter 0.2s;
+}
+.btn-color-toggle:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.1);
+}
+.content-section {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 4rem 2rem;
+    width: 100%;
+}
+.section-title {
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin-bottom: 0.8rem;
+}
+.section-description {
+    font-size: 1.15rem;
+    color: #94a3b8;
+    margin-bottom: 2.5rem;
+    line-height: 1.6;
+}
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+.feature-card {
+    background: #131d31;
+    padding: 2rem;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    transition: transform 0.2s, border-color 0.2s;
+}
+.feature-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(56, 189, 248, 0.4);
+}
+.feature-icon {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+}
+.feature-card h3 {
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+}
+.feature-card p {
+    color: #94a3b8;
+    line-height: 1.5;
+    font-size: 0.95rem;
+}
+.action-bar {
+    margin-bottom: 2rem;
+}
+.btn-primary {
+    padding: 0.85rem 1.8rem;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.15s;
+}
+.btn-primary:hover {
+    background: #2563eb;
+    transform: translateY(-2px);
+}
+.projects-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+.empty-state, .loading-card {
+    grid-column: 1 / -1;
+    padding: 3rem;
+    text-align: center;
+    background: #131d31;
+    border-radius: 16px;
+    color: #94a3b8;
+    border: 1px dashed rgba(255, 255, 255, 0.15);
+}
+.project-card {
+    background: #131d31;
+    padding: 1.5rem;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+.project-tag {
+    align-self: flex-start;
+    padding: 0.25rem 0.6rem;
+    background: rgba(168, 85, 247, 0.15);
+    color: #c084fc;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+.project-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #f1f5f9;
+    text-transform: capitalize;
+}
+.project-body {
+    font-size: 0.9rem;
+    color: #94a3b8;
+    line-height: 1.5;
+}
+.contact-box {
+    background: #131d31;
+    padding: 2.5rem;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    max-width: 600px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.form-group label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #cbd5e1;
+}
+.input-field {
+    background: #0b0f19;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 0.8rem 1rem;
+    border-radius: 8px;
+    color: #f8fafc;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
+}
+.input-field:focus {
+    border-color: #38bdf8;
+}
+.textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+.status-banner {
+    padding: 0.8rem 1.2rem;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    color: #34d399;
+    border-radius: 8px;
+    font-size: 0.95rem;
+}
+```
+  </TabItem>
+</Tabs>
+
+---
+
+## Deploying to Production
+
+Deploying your Flame Web application is as simple as hosting the `dist/` directory on any static cloud provider:
+
+<CardGrid>
+  <Card title="Cloudflare Pages">
+    - **Build Command**: `flame build --web src/main.fm`
+    - **Output Directory**: `dist`
+  </Card>
+  <Card title="Vercel">
+    - **Framework Preset**: Other
+    - **Build Command**: `flame build --web src/main.fm`
+    - **Output Directory**: `dist`
+  </Card>
+  <Card title="Netlify">
+    - **Publish Directory**: `dist`
+    - **Build Command**: `flame build --web src/main.fm`
+  </Card>
+  <Card title="Docker / Nginx">
+    - Copy `dist/` directly into `/usr/share/nginx/html`
+    - Supports instant caching and sub-millisecond edge delivery.
+  </Card>
+</CardGrid>

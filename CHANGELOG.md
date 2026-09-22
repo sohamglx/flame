@@ -2,6 +2,69 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.5.4] - 2026-09-22 (Codename: *Fifth Spark*)
+
+### 🌐 Native Web Subsystem (`std.web`) & Reactive DOM Architecture
+
+- **Fine-Grained Reactive DOM Runtime**:
+  - Integrated a reactive web runtime directly into the Flame compiler and standard library (`std.web`).
+  - Flame UI trees compile into fine-grained native DOM operations with direct signal subscriptions, eliminating virtual DOM overhead.
+- **First-Class JSX Syntax**:
+  - Added native parser and AST support for JSX elements (`Expr::Jsx`), self-closing tags, attributes, event handlers, and embedded dynamic expression blocks (`{ ... }`).
+  - JSX syntax is activated automatically when importing `std.web` or annotating components with `@Page` or `@Layout`.
+- **Web Application Annotations**:
+  - `@Page(route)`: Binds a component function to a client-side SPA route (e.g. `@Page("/")`, `@Page("/about")`).
+  - `@Layout`: Declares top-level layout shells with shared navigation, header, and footer components.
+  - `@Style`: Defines component-level and page-level scoped CSS styles injected directly into the document `<head>` with automated deduplication.
+  - `@Server` / `@Client`: Declares execution tier boundaries for hybrid and client-rendered code paths.
+- **Native Browser & DOM APIs (`std.web`)**:
+  - **Global Objects**: Exported `web.document`, `web.window`, `web.history`, `web.location`, `web.local_storage`, `web.session_storage`, and `web.console`.
+  - **DOM Events**: Native event listeners with strongly typed event objects (`MouseEvent`, `KeyboardEvent`, `InputEvent`, `Event`).
+  - **Timers**: `web.set_timeout`, `web.clear_timeout`, `web.set_interval`, `web.clear_interval`.
+  - **Dialogs**: `web.alert`, `web.prompt`, `web.confirm`.
+- **First-Class HTTP Networking (`std.net.http`) in Web Applications**:
+  - Web applications can perform asynchronous HTTP requests using Flame's standard `http.get`, `http.post`, `http.put`, and `http.delete` APIs without having to invoke raw JavaScript `fetch`.
+
+### 📁 Multi-File Web Architecture & Client-Side SPA Router
+
+- **Multi-File Modular Applications**:
+  - Full support for multi-page web applications composed across separate `.fm` files (e.g. `main.fm`, `navbar.fm`, `about.fm`, `projects.fm`, `contact.fm`).
+  - Exported `@Page` routes from imported modules automatically integrate into the application route table and can be utilized as JSX tag components.
+- **Client-Side SPA History & Instant Navigation**:
+  - Zero-reload navigation utilizing HTML5 `history.pushState` and `window.onpopstate` events.
+  - Seamless route matching with instant page transitions and persistent layout state.
+
+### 🛠️ High-Precision Code Formatter (`flame format`)
+
+- **Verbatim JSX Text Content Preservation**:
+  - Fixed an issue where `flame format` altered text content between JSX tags, such as stripping spaces around ampersands (`<h3>Scoped & Dynamic Styling</h3>` turning into `<h3>Scoped&Dynamic Styling</h3>`) or inserting unwanted spaces around hyphens in compound words (`Built-in` becoming `Built - in`, `Fine-Grained` becoming `Fine - Grained`).
+  - JSX text runs are now emitted verbatim directly from source token spans.
+- **Tag Attribute Spacing**:
+  - Suppressed whitespace around `=` in JSX tag attributes, ensuring attributes are formatted cleanly as `class="page-container"` and `onClick={increment}` without spaces after `=`.
+- **Hierarchical Tag Indentation**:
+  - Implemented robust 4-space indentation across opening tags, nested elements, self-closing tags (`<br />`, `<img />`), and closing tags (`</div>`).
+
+### 🎯 IDE Syntax Highlighting & UTF-16 Semantic Token Alignment
+
+- **JSX Text Keyword Isolation (TextMate Grammar)**:
+  - Overhauled `ide/syntaxes/flame.tmLanguage.json` and `docs/src/syntax/flame.tmLanguage.json` with scoped `jsx-tag-in-expression`, `jsx-tag`, and `meta.jsx.children.flame` patterns.
+  - English words inside JSX tags (e.g. `in` in `Built-in SPA Router`, `and` in descriptive paragraphs, `for`, `let`, `if`) remain normal plain text.
+  - Syntax highlighting inside JSX is strictly reserved for evaluated Flame expression blocks (`{ ... }`).
+- **Surrogate-Pair Emoji UTF-16 Column Correction**:
+  - Updated `src/lexer.rs` column tracking to use UTF-16 code units (`col += ch.len_utf16()`).
+  - Fixed an off-by-one column shift where 2-code-unit non-BMP emojis (such as `🌐`, `🎨`) caused subsequent tokens on the line to misalign in LSP semantic tokens, which previously caused the final character of closing tags (e.g. `v` in `</div>`) to lose its keyword highlight.
+- **Synchronized Extension Distribution**:
+  - Synchronized grammar definitions across `ide/syntaxes/flame.tmLanguage.json`, `docs/src/syntax/flame.tmLanguage.json`, and the installed IDE extension bundle.
+
+### 🚀 Web Build & Development Server (`flame build --web` & `flame run --web`)
+
+- **Standalone Production Bundles**:
+  - `flame build --web [entry]` compiles Flame web applications into an optimized, self-contained distribution in `dist/` containing `index.html`, `app.js`, and `styles.css`.
+- **Hot-Reloading Development Server**:
+  - `flame run --web [entry]` launches a local development HTTP server with built-in asset serving and instant re-compilation on source code changes.
+
+---
+
 ## [0.5.3] - 2026-09-22 (Codename: *Fifth Spark*)
 
 ### 🪟 Desktop Window Management (`std.window`) [Experimental]

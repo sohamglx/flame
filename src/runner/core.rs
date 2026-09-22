@@ -149,29 +149,48 @@ impl Runner {
                 let res = self.invoke_callback_value(&app_val, Vec::new())?;
                 last_val = res;
             }
-        } else {
             let main_func = self.env.lock().unwrap().get("main");
-            if let Some(main_val @ Value::Function { .. }) = main_func {
-                let explicitly_called = stmts.iter().any(|s| match s {
-                    Stmt::ExprStmt(Expr::Call(callee, ..)) => match &**callee {
-                        Expr::Identifier(id, _) => id == "main",
-                        _ => false,
-                    },
-                    Stmt::ExprStmt(Expr::Await(inner, _)) => {
-                        if let Expr::Call(callee, ..) = &**inner {
-                            match &**callee {
-                                Expr::Identifier(id, _) => id == "main",
-                                _ => false,
+            if let Some(main_val) = main_func {
+                if let Value::Function { ref annotations, .. } = main_val {
+                    let is_web = annotations.iter().any(|a| a.name == "Web");
+                    let explicitly_called = stmts.iter().any(|s| match s {
+                        Stmt::ExprStmt(Expr::Call(callee, ..)) => match &**callee {
+                            Expr::Identifier(id, _) => id == "main",
+                            _ => false,
+                        },
+                        Stmt::ExprStmt(Expr::Await(inner, _)) => {
+                            if let Expr::Call(callee, ..) = &**inner {
+                                match &**callee {
+                                    Expr::Identifier(id, _) => id == "main",
+                                    _ => false,
+                                }
+                            } else {
+                                false
                             }
-                        } else {
-                            false
+                        }
+                        _ => false,
+                    });
+                    if !explicitly_called {
+                        let res = self.invoke_callback_value(&main_val, Vec::new())?;
+                        last_val = res;
+                    }
+                    if is_web {
+                        let project_dir = std::path::Path::new(".");
+                        match crate::web::build_web_project(project_dir) {
+                            Ok(build_res) => {
+                                let config = crate::web::WebServerConfig {
+                                    dist_dir: build_res.dist_dir,
+                                    port: build_res.port,
+                                    routes: build_res.routes,
+                                    hot_reload: false,
+                                };
+                                let _ = crate::web::serve_dist(config);
+                            }
+                            Err(e) => {
+                                eprintln!("\x1b[1;31merror:\x1b[0m Failed to build web project: {}", e);
+                            }
                         }
                     }
-                    _ => false,
-                });
-                if !explicitly_called {
-                    let res = self.invoke_callback_value(&main_val, Vec::new())?;
-                    last_val = res;
                 }
             }
         }

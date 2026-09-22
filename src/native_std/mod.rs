@@ -17,6 +17,7 @@ pub mod thread;
 #[cfg(feature = "utils")]
 pub mod time;
 pub mod unit;
+pub mod web;
 #[cfg(any(feature = "os", feature = "automation"))]
 pub mod window;
 

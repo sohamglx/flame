@@ -150,6 +150,7 @@ export default defineConfig({
                     { label: 'Math (std.math)', slug: 'std/math' },
                     {label: 'Unit System (std.unit)', slug: 'std/unit'},
                     { label: 'Camera (std.camera)', slug: 'std/camera' },
+                    { label: 'Web Applications (std.web)', slug: 'std/web' },
                 ],
             },
         ],

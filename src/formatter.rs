@@ -123,13 +123,196 @@ pub fn format_code(source: &str) -> String {
         }
     }
 
+    let mut is_jsx_lt = vec![false; tokens.len()];
+    let mut is_jsx_gt = vec![false; tokens.len()];
+    let mut is_jsx_slash = vec![false; tokens.len()];
+    let mut is_jsx_tag_name = vec![false; tokens.len()];
+    let mut is_jsx_attr_eq = vec![false; tokens.len()];
+    let mut jsx_unindent_before_lt = vec![false; tokens.len()];
+    let mut jsx_indent_after_gt = vec![false; tokens.len()];
+
+    let mut inline_braces = vec![false; tokens.len()];
+    let mut inside_inline_braces = vec![false; tokens.len()];
+    let mut brace_idx_stack = Vec::new();
+    for (idx, tok) in tokens.iter().enumerate() {
+        if tok.kind == TokenKind::OpenBrace {
+            brace_idx_stack.push(idx);
+        } else if tok.kind == TokenKind::CloseBrace {
+            if let Some(start_idx) = brace_idx_stack.pop() {
+                let mut non_newline_tokens = Vec::new();
+                let mut has_newline = false;
+                let mut has_statement_sep = false;
+                for j in (start_idx + 1)..idx {
+                    if tokens[j].kind == TokenKind::Newline {
+                        has_newline = true;
+                    } else {
+                        non_newline_tokens.push(j);
+                        if matches!(
+                            tokens[j].kind,
+                            TokenKind::Let
+                                | TokenKind::Const
+                                | TokenKind::Fn
+                                | TokenKind::Return
+                                | TokenKind::If
+                                | TokenKind::While
+                                | TokenKind::For
+                        ) {
+                            has_statement_sep = true;
+                        }
+                    }
+                }
+                let is_simple_expr = non_newline_tokens.is_empty()
+                    || (non_newline_tokens.len() == 1 && !has_statement_sep);
+                let is_inline = (!has_newline && !has_statement_sep) || is_simple_expr;
+                if is_inline {
+                    inline_braces[start_idx] = true;
+                    inline_braces[idx] = true;
+                    for j in start_idx..=idx {
+                        inside_inline_braces[j] = true;
+                    }
+                }
+            }
+        }
+    }
+
+    for idx in 0..tokens.len() {
+        if tokens[idx].kind == TokenKind::Lt && !is_generic_lt_gt[idx] {
+            if idx + 1 < tokens.len() && tokens[idx + 1].kind == TokenKind::Slash
+                && idx + 2 < tokens.len() && matches!(tokens[idx + 2].kind, TokenKind::Identifier | TokenKind::Type)
+            {
+                is_jsx_lt[idx] = true;
+                is_jsx_slash[idx + 1] = true;
+                is_jsx_tag_name[idx + 2] = true;
+                let mut opened_on_same_line = false;
+                let mut prev = idx;
+                while prev > 0 {
+                    prev -= 1;
+                    if tokens[prev].kind == TokenKind::Newline {
+                        break;
+                    }
+                    if is_jsx_lt[prev] {
+                        opened_on_same_line = true;
+                        break;
+                    }
+                }
+                if !opened_on_same_line {
+                    jsx_unindent_before_lt[idx] = true;
+                }
+                if idx + 3 < tokens.len() && tokens[idx + 3].kind == TokenKind::Gt {
+                    is_jsx_gt[idx + 3] = true;
+                }
+            } else if idx + 1 < tokens.len() && matches!(tokens[idx + 1].kind, TokenKind::Identifier | TokenKind::Type) {
+                let mut prev = idx;
+                let mut saw_newline = false;
+                let mut prev_token_kind = None;
+                while prev > 0 {
+                    prev -= 1;
+                    if tokens[prev].kind == TokenKind::Newline {
+                        saw_newline = true;
+                    } else {
+                        prev_token_kind = Some(tokens[prev].kind.clone());
+                        break;
+                    }
+                }
+                let is_jsx_pattern = if idx + 2 < tokens.len() {
+                    matches!(tokens[idx + 2].kind, TokenKind::Gt | TokenKind::Slash | TokenKind::Identifier | TokenKind::Type)
+                } else {
+                    false
+                };
+                let is_start = saw_newline || is_jsx_pattern || match prev_token_kind {
+                    None => true,
+                    Some(TokenKind::OpenBrace | TokenKind::OpenParen | TokenKind::Equal | TokenKind::Return | TokenKind::Arrow) => true,
+                    Some(_) => false,
+                };
+                if is_start {
+                    is_jsx_lt[idx] = true;
+                    is_jsx_tag_name[idx + 1] = true;
+                    let mut k = idx + 2;
+                    let mut b_depth: usize = 0;
+                    while k < tokens.len() {
+                        if tokens[k].kind == TokenKind::OpenBrace {
+                            b_depth += 1;
+                        } else if tokens[k].kind == TokenKind::CloseBrace {
+                            b_depth = b_depth.saturating_sub(1);
+                        } else if b_depth == 0 {
+                            if tokens[k].kind == TokenKind::Gt {
+                                is_jsx_gt[k] = true;
+                                let mut nxt = k + 1;
+                                while nxt < tokens.len() && tokens[nxt].kind == TokenKind::Newline {
+                                    nxt += 1;
+                                }
+                                if nxt > k + 1 {
+                                    jsx_indent_after_gt[k] = true;
+                                }
+                                break;
+                            } else if tokens[k].kind == TokenKind::Slash && k + 1 < tokens.len() && tokens[k + 1].kind == TokenKind::Gt {
+                                is_jsx_slash[k] = true;
+                                is_jsx_gt[k + 1] = true;
+                                break;
+                            } else if tokens[k].kind == TokenKind::Equal {
+                                is_jsx_attr_eq[k] = true;
+                            }
+                        }
+                        k += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut is_in_jsx_text = vec![false; tokens.len()];
+    let mut jsx_tag_depth: usize = 0;
+    let mut in_jsx_tag = false;
+    let mut jsx_expr_depth: usize = 0;
+
+    for (idx, tok) in tokens.iter().enumerate() {
+        if is_jsx_lt[idx] {
+            in_jsx_tag = true;
+            if idx + 1 < tokens.len() && is_jsx_slash[idx + 1] {
+                // closing tag: </tag>
+            } else {
+                // opening tag
+                jsx_tag_depth += 1;
+            }
+        }
+
+        let was_in_tag = in_jsx_tag;
+        if in_jsx_tag {
+            if is_jsx_slash[idx] && idx + 1 < tokens.len() && is_jsx_gt[idx + 1] {
+                // self-closing: />
+                jsx_tag_depth = jsx_tag_depth.saturating_sub(1);
+            } else if is_jsx_gt[idx] {
+                in_jsx_tag = false;
+                if idx >= 2 && is_jsx_tag_name[idx - 1] && is_jsx_slash[idx - 2] {
+                    // </tag> closing tag
+                    jsx_tag_depth = jsx_tag_depth.saturating_sub(1);
+                }
+            }
+        }
+
+        if jsx_tag_depth > 0 {
+            if tok.kind == TokenKind::OpenBrace {
+                jsx_expr_depth += 1;
+            } else if tok.kind == TokenKind::CloseBrace {
+                jsx_expr_depth = jsx_expr_depth.saturating_sub(1);
+            }
+        } else {
+            jsx_expr_depth = 0;
+        }
+
+        if jsx_tag_depth > 0 && !was_in_tag && !in_jsx_tag && jsx_expr_depth == 0 {
+            if tok.kind != TokenKind::Newline && !is_jsx_lt[idx] && !is_jsx_gt[idx] && !is_jsx_slash[idx] && !is_jsx_tag_name[idx] {
+                is_in_jsx_text[idx] = true;
+            }
+        }
+    }
+
     let mut out = String::new();
     let mut indent_level: usize = 0;
     let mut needs_indent = true;
     let mut last_tok: Option<crate::lexer::Token> = None;
     let mut last_tok_was_generic = false;
     let mut in_multiline_paren_count: usize = 0;
-    let mut empty_line_pending = false;
 
     let mut grouping_depth: usize = 0;
     let mut brace_stack: Vec<bool> = Vec::new(); // true = object, false = block
@@ -141,69 +324,86 @@ pub fn format_code(source: &str) -> String {
         let tok = &tokens[i];
 
         if tok.kind == TokenKind::Newline {
-            let last_kind = last_tok
-                .as_ref()
-                .map(|t| t.kind.clone())
-                .unwrap_or(TokenKind::EOF);
+            let run_start = i;
+            let mut run_end = i;
+            while run_end < tokens.len() && tokens[run_end].kind == TokenKind::Newline {
+                run_end += 1;
+            }
+            let newline_count = run_end - run_start;
+            i = run_end;
 
-            let is_continuation = matches!(
-                last_kind,
-                TokenKind::OpenParen
-                    | TokenKind::OpenBracket
-                    | TokenKind::OpenBrace
-                    | TokenKind::Comma
-                    | TokenKind::Equal
-                    | TokenKind::Plus
-                    | TokenKind::Minus
-                    | TokenKind::Star
-                    | TokenKind::Slash
-                    | TokenKind::Percent
-                    | TokenKind::Dot
-                    | TokenKind::Ampersand2
-                    | TokenKind::Pipe2
-                    | TokenKind::EqualEqual
-                    | TokenKind::ExclamationEqual
-                    | TokenKind::Lt
-                    | TokenKind::Le
-                    | TokenKind::Gt
-                    | TokenKind::Ge
-                    | TokenKind::Colon
-                    | TokenKind::Return
-            );
+            if run_end < tokens.len() && is_jsx_gt[run_end] {
+                continue;
+            }
 
-            if last_kind != TokenKind::Newline
-                || empty_line_pending
-                || Some(i) == last_import_line_end_idx
-            {
-                while out.ends_with(' ') || out.ends_with('\t') {
+            if inside_inline_braces[run_start] {
+                continue;
+            }
+
+            while out.ends_with(' ') || out.ends_with('\t') {
+                out.pop();
+            }
+
+            if out.is_empty() {
+                needs_indent = true;
+                continue;
+            }
+
+            let next_tok = tokens.get(run_end);
+            let next_is_close_brace = next_tok
+                .map(|t| t.kind == TokenKind::CloseBrace && !inline_braces[run_end])
+                .unwrap_or(false);
+
+            let is_after_import = if let Some(import_line_end) = last_import_line_end_idx {
+                run_start <= import_line_end && import_line_end < run_end
+            } else {
+                false
+            };
+
+            if is_after_import {
+                while out.ends_with("\n\n") {
                     out.pop();
                 }
-
-                if Some(i) == last_import_line_end_idx {
-                    if !out.ends_with('\n') {
-                        out.push_str("\n\n\n\n");
-                    } else {
-                        out.push_str("\n\n\n");
-                    }
-                } else if empty_line_pending && grouping_depth == 0 && !is_continuation {
-                    if !out.ends_with("\n\n") {
-                        if !out.ends_with('\n') {
-                            out.push_str("\n\n");
-                        } else {
-                            out.push('\n');
-                        }
-                    }
-                    empty_line_pending = false;
+                if !out.ends_with('\n') {
+                    out.push_str("\n\n");
                 } else {
-                    if !out.ends_with('\n') {
+                    out.push('\n');
+                }
+            } else if next_is_close_brace {
+                while out.ends_with("\n\n") {
+                    out.pop();
+                }
+                if !out.ends_with('\n') {
+                    out.push('\n');
+                }
+            } else if indent_level == 0
+                && matches!(last_tok.as_ref().map(|t| &t.kind), Some(TokenKind::CloseBrace))
+            {
+                while out.ends_with("\n\n") {
+                    out.pop();
+                }
+                if !out.ends_with('\n') {
+                    out.push_str("\n\n");
+                } else {
+                    out.push('\n');
+                }
+            } else {
+                let last_ended_with_newline = out.ends_with('\n');
+                if last_ended_with_newline {
+                    if newline_count >= 2 && !out.ends_with("\n\n") {
+                        out.push('\n');
+                    }
+                } else {
+                    if newline_count >= 2 {
+                        out.push_str("\n\n");
+                    } else {
                         out.push('\n');
                     }
                 }
-
-                needs_indent = true;
             }
-            last_tok = Some(tok.clone());
-            i += 1;
+
+            last_tok = Some(tokens[run_end - 1].clone());
+            needs_indent = true;
             continue;
         }
 
@@ -237,16 +437,23 @@ pub fn format_code(source: &str) -> String {
         }
 
         if tok.kind == TokenKind::CloseBrace {
-            if let Some(is_object) = brace_stack.pop() {
-                if is_object {
-                    grouping_depth = grouping_depth.saturating_sub(1);
+            if inline_braces[i] {
+                // Inline brace: keep on same line
+            } else {
+                if let Some(is_object) = brace_stack.pop() {
+                    if is_object {
+                        grouping_depth = grouping_depth.saturating_sub(1);
+                    }
                 }
+                indent_level = indent_level.saturating_sub(1);
+                while out.ends_with("\n\n") {
+                    out.pop();
+                }
+                if !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                needs_indent = true;
             }
-            indent_level = indent_level.saturating_sub(1);
-            if !out.ends_with('\n') {
-                out.push('\n');
-            }
-            needs_indent = true;
         } else if tok.kind == TokenKind::CloseParen && multiline_parens[i] {
             indent_level = indent_level.saturating_sub(1);
             in_multiline_paren_count = in_multiline_paren_count.saturating_sub(1);
@@ -256,9 +463,42 @@ pub fn format_code(source: &str) -> String {
             needs_indent = true;
         }
 
+        if jsx_unindent_before_lt[i] {
+            indent_level = indent_level.saturating_sub(1);
+            let prev_indent = indent_str(indent_level + 1);
+            if out.ends_with(&prev_indent) {
+                out.truncate(out.len() - prev_indent.len());
+                out.push_str(&indent_str(indent_level));
+            }
+        }
+
         if needs_indent {
             out.push_str(&indent_str(indent_level));
             needs_indent = false;
+        }
+
+        if is_in_jsx_text[i] {
+            let run_start = i;
+            let mut run_end = i;
+            while run_end < tokens.len() && is_in_jsx_text[run_end] && tokens[run_end].kind != TokenKind::Newline {
+                run_end += 1;
+            }
+
+            if run_start > 0 {
+                let prev_tok = &tokens[run_start - 1];
+                let gap = &source[prev_tok.span.end..tokens[run_start].span.start];
+                if gap.chars().any(|c| c == ' ' || c == '\t') && !out.ends_with(' ') && !out.ends_with('\n') {
+                    out.push(' ');
+                }
+            }
+
+            let raw_slice = &source[tokens[run_start].span.start..tokens[run_end - 1].span.end];
+            out.push_str(raw_slice);
+
+            last_tok = Some(tokens[run_end - 1].clone());
+            last_tok_was_generic = false;
+            i = run_end;
+            continue;
         }
 
         let original_text = &source[tok.span.start..tok.span.end];
@@ -269,12 +509,34 @@ pub fn format_code(source: &str) -> String {
 
         // Spacing before
         match tok.kind {
-            TokenKind::OpenBrace
-            | TokenKind::Equal
-            | TokenKind::EqualEqual
+            TokenKind::OpenBrace => {
+                let is_jsx_eq_before = i > 0 && is_jsx_attr_eq[i - 1];
+                if !is_jsx_eq_before {
+                    if !out.ends_with(' ') && !out.ends_with('\n') {
+                        out.push(' ');
+                    }
+                }
+            }
+            TokenKind::Equal => {
+                if !is_jsx_attr_eq[i] {
+                    if !out.ends_with(' ') && !out.ends_with('\n') {
+                        out.push(' ');
+                    }
+                }
+            }
+            TokenKind::EqualEqual
             | TokenKind::ExclamationEqual
+            | TokenKind::PlusEqual
+            | TokenKind::MinusEqual
+            | TokenKind::StarEqual
+            | TokenKind::SlashEqual
+            | TokenKind::PercentEqual
+            | TokenKind::AmpersandEqual
+            | TokenKind::PipeEqual
+            | TokenKind::CaretEqual
+            | TokenKind::ShlEqual
+            | TokenKind::ShrEqual
             | TokenKind::Star
-            | TokenKind::Slash
             | TokenKind::Percent
             | TokenKind::Le
             | TokenKind::Ge
@@ -285,6 +547,19 @@ pub fn format_code(source: &str) -> String {
             | TokenKind::Ampersand2 => {
                 if !out.ends_with(' ') && !out.ends_with('\n') {
                     out.push(' ');
+                }
+            }
+            TokenKind::Slash => {
+                if is_jsx_slash[i] {
+                    if last_kind != TokenKind::Lt {
+                        if !out.ends_with(' ') && !out.ends_with('\n') {
+                            out.push(' ');
+                        }
+                    }
+                } else {
+                    if !out.ends_with(' ') && !out.ends_with('\n') {
+                        out.push(' ');
+                    }
                 }
             }
             TokenKind::Plus | TokenKind::Minus => {
@@ -321,8 +596,21 @@ pub fn format_code(source: &str) -> String {
                     }
                 }
             }
-            TokenKind::Lt | TokenKind::Gt => {
-                if !is_generic_lt_gt[i] {
+            TokenKind::Lt => {
+                if is_jsx_lt[i] {
+                    if last_kind == TokenKind::Equal {
+                        if !out.ends_with(' ') && !out.ends_with('\n') {
+                            out.push(' ');
+                        }
+                    }
+                } else if !is_generic_lt_gt[i] {
+                    if !out.ends_with(' ') && !out.ends_with('\n') {
+                        out.push(' ');
+                    }
+                }
+            }
+            TokenKind::Gt => {
+                if !is_jsx_gt[i] && !is_generic_lt_gt[i] {
                     if !out.ends_with(' ') && !out.ends_with('\n') {
                         out.push(' ');
                     }
@@ -430,6 +718,16 @@ pub fn format_code(source: &str) -> String {
                         | TokenKind::Equal
                         | TokenKind::EqualEqual
                         | TokenKind::ExclamationEqual
+                        | TokenKind::PlusEqual
+                        | TokenKind::MinusEqual
+                        | TokenKind::StarEqual
+                        | TokenKind::SlashEqual
+                        | TokenKind::PercentEqual
+                        | TokenKind::AmpersandEqual
+                        | TokenKind::PipeEqual
+                        | TokenKind::CaretEqual
+                        | TokenKind::ShlEqual
+                        | TokenKind::ShrEqual
                         | TokenKind::Plus
                         | TokenKind::Minus
                         | TokenKind::Star
@@ -445,7 +743,9 @@ pub fn format_code(source: &str) -> String {
                 );
 
                 if last_kind == TokenKind::Lt || last_kind == TokenKind::Gt {
-                    if !last_tok_was_generic {
+                    let prev_was_jsx_lt = i > 0 && is_jsx_lt[i - 1];
+                    let prev_was_jsx_gt = i > 0 && is_jsx_gt[i - 1];
+                    if !last_tok_was_generic && !prev_was_jsx_lt && !prev_was_jsx_gt {
                         is_last_keyword = true;
                     }
                 }
@@ -489,6 +789,25 @@ pub fn format_code(source: &str) -> String {
                     needs_space = true;
                 }
 
+                if is_jsx_tag_name[i] && (last_kind == TokenKind::Lt || last_kind == TokenKind::Slash) {
+                    needs_space = false;
+                }
+                if is_jsx_slash[i] && last_kind == TokenKind::Lt {
+                    needs_space = false;
+                }
+                if is_jsx_attr_eq[i] {
+                    needs_space = false;
+                }
+                if i > 0 && is_jsx_attr_eq[i - 1] {
+                    needs_space = false;
+                }
+                if tok.kind == TokenKind::OpenBrace && i > 0 && is_jsx_attr_eq[i - 1] {
+                    needs_space = false;
+                }
+                if tok.kind == TokenKind::Gt && is_jsx_gt[i] {
+                    needs_space = false;
+                }
+
                 if tok.kind != TokenKind::Dot && last_kind != TokenKind::Dot && !out.ends_with('.')
                 {
                     if needs_space {
@@ -505,77 +824,22 @@ pub fn format_code(source: &str) -> String {
 
         out.push_str(original_text);
 
-        // Check if this token requires an empty line after it
-        if tok.kind == TokenKind::CloseBrace {
-            // Function or block finished, add empty line gap unless followed by else
-            let mut next_is_else = false;
-            let mut j = i + 1;
-            while j < tokens.len() && tokens[j].kind == TokenKind::Newline {
-                j += 1;
-            }
-            if j < tokens.len()
-                && (tokens[j].kind == TokenKind::Else || tokens[j].kind == TokenKind::CloseParen)
-            {
-                next_is_else = true;
-            }
-            if !next_is_else {
-                empty_line_pending = true;
-            }
-        }
-        if tok.kind == TokenKind::Let
-            || (tok.kind == TokenKind::Identifier
-                && (original_text == "print" || original_text == "println"))
-        {
-            let is_start = i == 0
-                || matches!(
-                    tokens[i - 1].kind,
-                    TokenKind::Newline | TokenKind::OpenBrace
-                );
-            if is_start {
-                let mut next_start = None;
-                let mut j = i + 1;
-                while j < tokens.len() {
-                    if tokens[j].kind == TokenKind::Newline {
-                        let mut k = j + 1;
-                        while k < tokens.len() && tokens[k].kind == TokenKind::Newline {
-                            k += 1;
-                        }
-                        if k < tokens.len()
-                            && tokens[k].kind != TokenKind::CloseBrace
-                            && tokens[k].kind != TokenKind::CloseParen
-                        {
-                            next_start = Some(&tokens[k]);
-                        }
-                        break;
-                    }
-                    j += 1;
-                }
-                if let Some(nst) = next_start {
-                    let nst_text = &source[nst.span.start..nst.span.end];
-                    let same_group = if tok.kind == TokenKind::Let {
-                        nst.kind == TokenKind::Let
-                    } else {
-                        nst.kind == TokenKind::Identifier
-                            && (nst_text == "print" || nst_text == "println")
-                    };
-                    if !same_group {
-                        empty_line_pending = true;
-                    }
-                } else {
-                    empty_line_pending = true;
-                }
-            }
-        }
-
         last_tok = Some(tok.clone());
         last_tok_was_generic = is_generic_lt_gt[i];
 
         // Spacing/newlines after
         match tok.kind {
             TokenKind::OpenBrace => {
-                indent_level += 1;
-                out.push('\n');
-                needs_indent = true;
+                if !inline_braces[i] {
+                    indent_level += 1;
+                    out.push('\n');
+                    needs_indent = true;
+                }
+            }
+            TokenKind::Gt => {
+                if jsx_indent_after_gt[i] {
+                    indent_level += 1;
+                }
             }
             TokenKind::OpenParen => {
                 if multiline_parens[i] {

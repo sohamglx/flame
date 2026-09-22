@@ -1,0 +1,519 @@
+package web
+@Docs("Marks this application as targeting the web browser environment, directing Blaze to compile UI and DOM operations into optimized fine-grained JavaScript.\n\n**Example:**\n```flame\nimport std.web\n\n@Web\nfn main() {\n    @Page(\"/\")\n    fn index() {\n        <h1>Hello Web</h1>\n    }\n}\n```")
+export annotation Web() {
+}
+
+@Docs("Binds a function as a routable page view mounted at the specified URL path.\n\n**Parameters:**\n- `path: String`: The URL route path (e.g. `\"/\"`, `\"/about\"`, `\"/users/:id\"`).\n\n**Example:**\n```flame\n@Page(\"/\")\nfn index() {\n    <main><h1>Welcome</h1></main>\n}\n```")
+export annotation Page(path: String = "/") {
+}
+
+@Docs("Marks this function or block as strictly client-side browser code, directing the compiler to target the browser environment.\n\n**Example:**\n```flame\n@Client\nfn logout() {\n    navigate(\"/login\")\n}\n```")
+export annotation Client() {
+}
+
+@Docs("Declares a fine-grained reactive state variable. Changes to this variable automatically update only the dependent DOM text nodes and attributes without re-rendering the surrounding component.\n\n**Example:**\n```flame\n@State\nlet count = 0\n```")
+export annotation State() {
+}
+
+@Docs("Directs the compiler to compile heavy computational routines to WebAssembly (WASM) rather than JavaScript.\n\n**Example:**\n```flame\n@Wasm\nfn calculate_hash(data: [Byte]) -> String {\n    // intensive computation\n}\n```")
+export annotation Wasm() {
+}
+
+@Docs("Marks a reusable UI component that returns JSX/DOM nodes.\n\n**Example:**\n```flame\n@Component\nfn Card(title: String, body: String) {\n    <div class=\"card\">\n        <h3>{title}</h3>\n        <p>{body}</p>\n    </div>\n}\n```")
+export annotation Component() {
+}
+
+@Docs("Declares an HTTP route endpoint for fullstack or server-side Flame web apps.")
+export annotation Route(path: String = "/", method: String = "GET") {
+}
+
+@Docs("Defines a shared outer layout wrapper for nested page views.")
+export annotation Layout() {
+}
+
+@Docs("Declares a function containing CSS styling rules compiled directly into the application stylesheet.\n\n**Example:**\n```flame\n@Style\nfn theme() {\n    \"body { margin: 0; background: #0f172a; }\"\n}\n```")
+export annotation Style() {
+}
+
+@Docs("Registers a computed reactive value derived from one or more `@State` variables.")
+export annotation Computed() {
+}
+
+@Docs("Registers a side-effect that automatically runs whenever its accessed reactive `@State` dependencies update.")
+export annotation Effect() {
+}
+
+@Docs("Represents a rendered HTML DOM node with tag name, attributes, and child elements.")
+export struct HtmlNode {
+    tag: String,
+    attributes: Unknown,
+    children: [Unknown],
+}
+
+@Docs("Represents an interactive DOM Element.")
+export struct Element {
+    id: String,
+    tagName: String,
+    className: String,
+    innerText: String,
+    innerHTML: String,
+    value: String,
+}
+
+impl Element {
+    @Docs("Sets the value of an attribute on this element.")
+    fn setAttribute(name: String, value: String) {
+    }
+
+    @Docs("Retrieves the string value of the specified attribute.")
+    fn getAttribute(name: String) -> String {
+        return ""
+    }
+
+    @Docs("Removes an attribute from this element.")
+    fn removeAttribute(name: String) {
+    }
+
+    @Docs("Appends a child node to this element.")
+    fn appendChild(child: Unknown) {
+    }
+
+    @Docs("Removes a child node from this element.")
+    fn removeChild(child: Unknown) {
+    }
+
+    @Docs("Adds an event listener for the specified event name.")
+    fn addEventListener(event: String, handler: Unknown) {
+    }
+
+    @Docs("Removes an event listener from this element.")
+    fn removeEventListener(event: String, handler: Unknown) {
+    }
+
+    @Docs("Gives keyboard focus to this element.")
+    fn focus() {
+    }
+
+    @Docs("Removes keyboard focus from this element.")
+    fn blur() {
+    }
+
+}
+
+@Docs("Base DOM event object passed to event handlers.")
+export struct Event {
+    type : String,
+    target: Unknown,
+}
+
+impl Event {
+    @Docs("Cancels the event if it is cancelable.")
+    fn preventDefault() {
+    }
+
+    @Docs("Stops further propagation of the current event in the DOM tree.")
+    fn stopPropagation() {
+    }
+
+}
+
+@Docs("Mouse interaction event (e.g. click, mousedown, mouseup, mousemove).")
+export struct MouseEvent {
+    type : String,
+    clientX: Int,
+    clientY: Int,
+    button: Int,
+    altKey: Bool,
+    ctrlKey: Bool,
+    shiftKey: Bool,
+}
+
+@Docs("Keyboard input event (e.g. keydown, keyup, keypress).")
+export struct KeyboardEvent {
+    type : String,
+    key: String,
+    code: String,
+    altKey: Bool,
+    ctrlKey: Bool,
+    shiftKey: Bool,
+}
+
+@Docs("Form and text input event.")
+export struct InputEvent {
+    type : String,
+    data: String,
+    value: String,
+}
+
+@Docs("Web Storage API wrapper (`localStorage` and `sessionStorage`).")
+export struct Storage {
+}
+
+impl Storage {
+    @Docs("Returns the value associated with the specified storage key.")
+    fn get(key: String) -> String {
+        return web.storage_get(key)
+    }
+
+    @Docs("Sets the value for the specified storage key.")
+    fn set(key: String, value: String) {
+        web.storage_set(key, value)
+    }
+
+    @Docs("Removes the key and its value from storage.")
+    fn remove(key: String) {
+        web.storage_remove(key)
+    }
+
+    @Docs("Clears all keys and values from storage.")
+    fn clear() {
+        web.storage_clear()
+    }
+
+    @Docs("Returns the number of stored keys.")
+    fn length() -> Int {
+        return 0
+    }
+
+}
+
+@Docs("HTTP response returned by `fetch()`.")
+export struct Response {
+    status: Int,
+    statusText: String,
+    ok: Bool,
+    headers: Unknown,
+}
+
+impl Response {
+    @Docs("Parses the response body as JSON.")
+    fn json() -> Unknown {
+        return nil
+    }
+
+    @Docs("Reads the response body as a UTF-8 String.")
+    fn text() -> String {
+        return ""
+    }
+
+}
+
+@Docs("Request configuration options for `fetch()`.")
+export struct RequestInit {
+    method: String,
+    headers: Unknown,
+    body: String,
+    mode: String,
+}
+
+@Docs("Browser location and URL management.")
+export struct Location {
+    href: String,
+    origin: String,
+    protocol: String,
+    host: String,
+    hostname: String,
+    port: String,
+    pathname: String,
+    search: String,
+    hash: String,
+}
+
+impl Location {
+    @Docs("Navigates to the specified URL.")
+    fn assign(url: String) {
+    }
+
+    @Docs("Replaces the current document with the specified URL without adding to session history.")
+    fn replace(url: String) {
+    }
+
+    @Docs("Reloads the current document.")
+    fn reload() {
+    }
+
+}
+
+@Docs("Browser session history management.")
+export struct History {
+    length: Int,
+}
+
+impl History {
+    @Docs("Navigates back one step in session history.")
+    fn back() {
+    }
+
+    @Docs("Navigates forward one step in session history.")
+    fn forward() {
+    }
+
+    @Docs("Moves specified number of steps in session history.")
+    fn go(delta: Int) {
+    }
+
+    @Docs("Pushes a new state to the session history stack.")
+    fn pushState(data: Unknown, title: String, url: String) {
+    }
+
+    @Docs("Replaces the current session history entry.")
+    fn replaceState(data: Unknown, title: String, url: String) {
+    }
+
+}
+
+@Docs("WebSocket client connection in the browser.")
+export struct WebSocketClient {
+    url: String,
+    readyState: Int,
+}
+
+impl WebSocketClient {
+    @Docs("Transmits text or binary data through the WebSocket connection.")
+    fn send(data: String) {
+    }
+
+    @Docs("Closes the WebSocket connection.")
+    fn close(code: Int = 1000, reason: String = "") {
+    }
+
+    @Docs("Registers a callback invoked when the connection opens.")
+    fn onOpen(handler: Unknown) {
+    }
+
+    @Docs("Registers a callback invoked when a message arrives.")
+    fn onMessage(handler: Unknown) {
+    }
+
+    @Docs("Registers a callback invoked on communication error.")
+    fn onError(handler: Unknown) {
+    }
+
+    @Docs("Registers a callback invoked when the connection closes.")
+    fn onClose(handler: Unknown) {
+    }
+
+}
+
+@Docs("Initializes and mounts the Flame Web application.\n\nIn browser builds, sets up client-side routing and fine-grained reactive DOM rendering.\nWhen run locally via `flame run`, launches the local dev server.\n\n**Example:**\n```flame\n@Web\nfn main() {\n    web()\n}\n```")
+export fn web(options: Unknown = nil) {
+}
+
+@Docs("Mounts a component or page to a DOM selector.\n\n**Example:**\n```flame\nmount(\"#app\", index)\n```")
+export fn mount(selector: String, page: Unknown) {
+}
+
+@Docs("Performs client-side programmatic navigation without triggering a full page reload.\n\n**Example:**\n```flame\nnavigate(\"/dashboard\")\n```")
+export fn navigate(path: String) {
+}
+
+@Docs("Performs an asynchronous HTTP fetch request.\n\n**Example:**\n```flame\nlet res = await fetch(\"https://api.example.com/data\")\nlet json = res.json()\n```")
+export fn fetch(url: String, init: Unknown = nil) -> Response {
+}
+
+@Docs("Creates a fine-grained reactive signal containing a value.\n\n**Example:**\n```flame\nlet count = signal(0)\ncount.set(count.get() + 1)\n```")
+export fn signal(initialValue: Unknown) -> Unknown {
+}
+
+@Docs("Creates a derived reactive value that updates automatically when dependent signals change.\n\n**Example:**\n```flame\nlet doubleCount = computed(|| count.get() * 2)\n```")
+export fn computed(computeFn: Unknown) -> Unknown {
+}
+
+@Docs("Runs a reactive side-effect function that automatically re-executes whenever its dependencies change.")
+export fn effect(effectFn: Unknown) {
+}
+
+@Docs("Batches multiple state updates together into a single DOM update pass.")
+export fn batch(action: Unknown) {
+}
+
+@Docs("Repeatedly calls a function with a fixed time delay between each call.\n\n**Returns:** Timer ID handle.")
+export fn setInterval(callback: Unknown, delayMs: Int) -> Int {
+}
+
+@Docs("Cancels a timed repeating action established by `setInterval`.")
+export fn clearInterval(id: Int) {
+}
+
+@Docs("Sets a timer which executes a function once after the delay expires.\n\n**Returns:** Timer ID handle.")
+export fn setTimeout(callback: Unknown, delayMs: Int) -> Int {
+}
+
+@Docs("Cancels a timer action previously established by `setTimeout`.")
+export fn clearTimeout(id: Int) {
+}
+
+@Docs("Requests that the browser call a specified function to update an animation before the next repaint.")
+export fn requestAnimationFrame(callback: Unknown) -> Int {
+}
+
+@Docs("Cancels an animation frame request previously scheduled with `requestAnimationFrame`.")
+export fn cancelAnimationFrame(id: Int) {
+}
+
+@Docs("Creates a generic DOM element node with tag name, attributes formula, and child array.\n\n**Example:**\n```flame\nlet node = tag(\"div\", { class: \"container\" }, [tag(\"p\", {}, [\"Hello\"])])\n```")
+export fn tag(name: String, props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+}
+
+@Docs("Shorthand alias for creating a DOM element node (`h(tag, props, children)`).")
+export fn h(name: String, props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+}
+
+@Docs("Creates a pure text DOM node.")
+export fn text(content: String) -> HtmlNode {
+}
+
+// Built-in DOM tag helper functions
+export fn div(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("div", props, children)
+}
+
+export fn span(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("span", props, children)
+}
+
+export fn p(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("p", props, children)
+}
+
+export fn h1(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("h1", props, children)
+}
+
+export fn h2(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("h2", props, children)
+}
+
+export fn h3(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("h3", props, children)
+}
+
+export fn button(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("button", props, children)
+}
+
+export fn input(props: Unknown = nil) -> HtmlNode {
+    return tag("input", props, [])
+}
+
+export fn a(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("a", props, children)
+}
+
+export fn ul(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("ul", props, children)
+}
+
+export fn li(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("li", props, children)
+}
+
+export fn main(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("main", props, children)
+}
+
+export fn section(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("section", props, children)
+}
+
+export fn header(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("header", props, children)
+}
+
+export fn footer(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("footer", props, children)
+}
+
+export fn form(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("form", props, children)
+}
+
+export fn label(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("label", props, children)
+}
+
+export fn img(props: Unknown = nil) -> HtmlNode {
+    return tag("img", props, [])
+}
+
+export fn table(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("table", props, children)
+}
+
+export fn tr(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("tr", props, children)
+}
+
+export fn td(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("td", props, children)
+}
+
+export fn th(props: Unknown = nil, children: [Unknown] = []) -> HtmlNode {
+    return tag("th", props, children)
+}
+
+// Storage helpers
+fn storage_get(key: String) -> String {
+    return ""
+}
+
+fn storage_set(key: String, value: String) {
+}
+
+fn storage_remove(key: String) {
+}
+
+fn storage_clear() {
+}
+
+@Docs("Represents the browser Document object for DOM querying and element creation.\n\n**Example:**\n```flame\nlet el = web.document.getElementById(\"app\")\nlet div = web.document.createElement(\"div\")\n```")
+export struct Document {
+}
+
+impl Document {
+    @Docs("Returns an Element object matching the specified ID attribute.")
+    fn getElementById(id: String) -> Element {
+        return Element { id: id, tagName: "", className: "", innerText: "", innerHTML: "", value: "" }
+    }
+
+    @Docs("Creates the HTML element specified by tagName.")
+    fn createElement(tagName: String) -> Element {
+        return Element { id: "", tagName: tagName, className: "", innerText: "", innerHTML: "", value: "" }
+    }
+
+    @Docs("Creates a new text node.")
+    fn createTextNode(text: String) -> Unknown {
+        return nil
+    }
+
+    @Docs("Returns the first Element matching the specified selector.")
+    fn querySelector(selector: String) -> Element {
+        return Element { id: "", tagName: "", className: "", innerText: "", innerHTML: "", value: "" }
+    }
+
+    @Docs("Returns all Elements matching the specified selector.")
+    fn querySelectorAll(selector: String) -> [Element] {
+        return []
+    }
+}
+
+@Docs("Represents the browser Window object for event listeners, timers, and viewport APIs.\n\n**Example:**\n```flame\nweb.window.addEventListener(\"mousemove\", (e) {\n    // handle mouse movement\n})\n```")
+export struct Window {
+}
+
+impl Window {
+    @Docs("Registers an event listener callback for the specified event name.")
+    fn addEventListener(event: String, handler: Unknown) {
+    }
+
+    @Docs("Removes a previously registered event listener.")
+    fn removeEventListener(event: String, handler: Unknown) {
+    }
+}
+
+@Docs("The global Document object of the current browser page.")
+export let document = Document {}
+
+@Docs("The global Window object containing the current DOM document.")
+export let window = Window {}
+
