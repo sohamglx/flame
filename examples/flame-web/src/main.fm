@@ -4,15 +4,29 @@ import navbar
 import about
 import projects
 import contact
+import compute
 
 @Web(title: "Flame Web Showcase", port: 3000)
 fn main() {
-
+    
     @State
     let mut count = 0
 
     @State
     let mut btn_color = "#3b82f6"
+
+    @Computed
+    fn double_count() -> Int {
+        return count * 2
+    }
+
+    @Computed
+    fn count_parity() -> String {
+        if count % 2 == 0 {
+            return "Even Number"
+        }
+        return "Odd Number"
+    }
 
     fn toggleColor() {
         if btn_color == "#3b82f6" {
@@ -48,9 +62,9 @@ fn main() {
 
     @Layout
     fn AppLayout(children) {
-        <div class= "app-layout">
+        <div class="app-layout">
             <NavBar />
-            <div class= "app-content">
+            <div class="app-content">
                 {children}
             </div>
         </div>
@@ -63,7 +77,7 @@ fn main() {
                 <div class="hero-badge">Next-Gen Reactive Framework</div>
                 <h1 class="hero-title">High-Performance Web in Flame</h1>
                 <p class="hero-subtitle">
-                    Compile Flame directly into ultra-fast JavaScript DOM code with fine-grained reactivity and zero-overhead routing.
+                    Compile Flame directly into ultra-fast JavaScript DOM code with fine-grained reactivity, WebAssembly (@Wasm), and zero-overhead routing.
                 </p>
                 <div class="interactive-panel">
                     <button onClick={
@@ -75,10 +89,15 @@ fn main() {
                         Active Color: {btn_color}
                     </button>
                 </div>
+                <div class="computed-stats" style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                    <div style="background: rgba(255, 255, 255, 0.05); padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                        ⚡ <strong>@Computed Double:</strong> {double_count()}
+                    </div>
+                    <div style="background: rgba(255, 255, 255, 0.05); padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                        🎯 <strong>Parity:</strong> {count_parity()}
+                    </div>
+                </div>
             </main>
         </div>
     }
-
-    @Style
-    fn appStyles() {""}
 }

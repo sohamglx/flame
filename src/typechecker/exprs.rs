@@ -503,16 +503,45 @@ impl TypeChecker {
                         self.infer_expr_type(val);
                     }
                 }
-                for child in children {
+                fn check_child(checker: &mut TypeChecker, child: &crate::parser::JsxChild) {
                     match child {
                         crate::parser::JsxChild::Expr(e) => {
-                            self.infer_expr_type(e);
+                            checker.infer_expr_type(e);
                         }
                         crate::parser::JsxChild::Element(e) => {
-                            self.infer_expr_type(e);
+                            checker.infer_expr_type(e);
                         }
                         crate::parser::JsxChild::Text(_, _) => {}
+                        crate::parser::JsxChild::For {
+                            var_name,
+                            iterable,
+                            body,
+                            ..
+                        } => {
+                            let item_ty = match checker.infer_expr_type(iterable) {
+                                Type::Tuple(items) => items.first().cloned().unwrap_or(Type::Unknown),
+                                Type::Vector(item) => (*item).clone(),
+                                _ => Type::Unknown,
+                            };
+                            checker.push_scope();
+                            checker.define_var(
+                                var_name.clone(),
+                                VarInfo {
+                                    ty: item_ty,
+                                    is_mut: false,
+                                    hover_doc: None,
+                                },
+                            );
+                            for b in body {
+                                check_child(checker, b);
+                            }
+                            checker.pop_scope();
+                        }
                     }
+                }
+
+                for child in children {
+                    check_child(self, child);
                 }
                 self.insert_hover_info(
                     span.clone(),

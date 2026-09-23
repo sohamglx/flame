@@ -924,7 +924,7 @@ pub fn find_definition(
         // 2a. Standard library module
         let std_names = [
             "os", "fmt", "fs", "byte", "net", "thread", "time", "process", "json", "math", "unit",
-            "window", "desktop", "env", "camera",
+            "window", "desktop", "env", "camera", "web",
         ];
         if std_names.contains(&ns.as_str()) {
             if let Some(blaze) = locate_blaze_dir() {

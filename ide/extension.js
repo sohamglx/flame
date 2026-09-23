@@ -217,8 +217,8 @@ function removeTableBorders(markdown) {
     return result.join('\n');
 }
 
-function toCompletionItem(entry) {
-    let kind = vscode.CompletionItemKind.Function;
+function toCompletionItem(entry, hasTrailingParen = false) {
+    let kind = vscode.CompletionItemKind.Property;
     let isCallable = false;
 
     switch (entry.kind) {
@@ -235,23 +235,26 @@ function toCompletionItem(entry) {
         case 'struct':
         case 'class':
             kind = vscode.CompletionItemKind.Struct;
+            isCallable = false;
             break;
         case 'property':
             kind = vscode.CompletionItemKind.Property;
+            isCallable = false;
+            break;
+        case 'variable':
+            kind = vscode.CompletionItemKind.Variable;
+            isCallable = false;
             break;
         case 'method':
             kind = vscode.CompletionItemKind.Method;
             isCallable = true;
-            break;
-        case 'variable':
-            kind = vscode.CompletionItemKind.Variable;
             break;
         case 'function':
             kind = vscode.CompletionItemKind.Function;
             isCallable = true;
             break;
         default:
-            kind = vscode.CompletionItemKind.Function;
+            kind = vscode.CompletionItemKind.Property;
             if (entry.detail && (entry.detail.includes('fn ') || entry.detail.includes('->') || entry.detail.includes('method') || entry.detail.includes('function'))) {
                 isCallable = true;
             }
@@ -272,12 +275,16 @@ function toCompletionItem(entry) {
     // Fix annotation @@ issue by stripping @ from insertText
     if (entry.kind === 'annotation' && entry.label.startsWith('@')) {
         item.insertText = entry.label.substring(1);
-    } else if (isCallable) {
+    } else if (isCallable && !hasTrailingParen) {
         // Functions and methods are callable with parameter hints
         item.insertText = new vscode.SnippetString(`${entry.label}($0)`);
         item.command = { command: 'editor.action.triggerParameterHints', title: 'Trigger Parameter Hints' };
+    } else {
+        item.insertText = entry.label;
+        if (isCallable) {
+            item.command = { command: 'editor.action.triggerParameterHints', title: 'Trigger Parameter Hints' };
+        }
     }
-    // Default things (variables, keywords, properties, modules, structs) are NOT closables/callables
 
     return item;
 }
@@ -327,7 +334,10 @@ function activate(context) {
         async provideCompletionItems(document, position) {
             const result = await runCheck(document, position);
             if (!result) return [];
-            return (result.completions || []).map(toCompletionItem);
+            const lineText = document.lineAt(position.line).text;
+            const afterCursor = lineText.slice(position.character).trimStart();
+            const hasTrailingParen = afterCursor.startsWith('(');
+            return (result.completions || []).map(entry => toCompletionItem(entry, hasTrailingParen));
         }
     }, '.', '@', ':'));
 

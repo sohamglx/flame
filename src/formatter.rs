@@ -264,6 +264,7 @@ pub fn format_code(source: &str) -> String {
     let mut jsx_tag_depth: usize = 0;
     let mut in_jsx_tag = false;
     let mut jsx_expr_depth: usize = 0;
+    let mut jsx_for_depth: usize = 0;
 
     for (idx, tok) in tokens.iter().enumerate() {
         if is_jsx_lt[idx] {
@@ -291,16 +292,28 @@ pub fn format_code(source: &str) -> String {
         }
 
         if jsx_tag_depth > 0 {
+            if tok.kind == TokenKind::For
+                && idx + 2 < tokens.len()
+                && tokens[idx + 1].kind == TokenKind::Identifier
+                && tokens[idx + 2].kind == TokenKind::In
+            {
+                jsx_for_depth += 1;
+            }
+
             if tok.kind == TokenKind::OpenBrace {
                 jsx_expr_depth += 1;
             } else if tok.kind == TokenKind::CloseBrace {
                 jsx_expr_depth = jsx_expr_depth.saturating_sub(1);
+                if jsx_for_depth > 0 && jsx_expr_depth == 0 {
+                    jsx_for_depth = jsx_for_depth.saturating_sub(1);
+                }
             }
         } else {
             jsx_expr_depth = 0;
+            jsx_for_depth = 0;
         }
 
-        if jsx_tag_depth > 0 && !was_in_tag && !in_jsx_tag && jsx_expr_depth == 0 {
+        if jsx_tag_depth > 0 && !was_in_tag && !in_jsx_tag && jsx_expr_depth == 0 && jsx_for_depth == 0 {
             if tok.kind != TokenKind::Newline && !is_jsx_lt[idx] && !is_jsx_gt[idx] && !is_jsx_slash[idx] && !is_jsx_tag_name[idx] {
                 is_in_jsx_text[idx] = true;
             }

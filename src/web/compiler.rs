@@ -37,7 +37,346 @@ pub struct WebCompiler {
     pub global_stmts: Vec<Stmt>,
     pub css_blocks: Vec<String>,
     pub default_layout: Option<String>,
+    pub computed_deps: HashMap<String, HashSet<String>>,
+    pub effect_functions: Vec<(String, HashSet<String>)>,
+    pub wasm_functions: Vec<(String, Vec<String>, Vec<Stmt>)>,
+    pub wasm_bytes: Option<Vec<u8>>,
     var_counter: usize,
+}
+
+fn write_u32_leb(out: &mut Vec<u8>, mut val: u32) {
+    loop {
+        let mut byte = (val & 0x7F) as u8;
+        val >>= 7;
+        if val != 0 {
+            byte |= 0x80;
+        }
+        out.push(byte);
+        if val == 0 {
+            break;
+        }
+    }
+}
+
+fn write_i32_leb(out: &mut Vec<u8>, mut val: i32) {
+    let mut more = true;
+    while more {
+        let mut byte = (val & 0x7F) as u8;
+        val >>= 7;
+        if (val == 0 && (byte & 0x40) == 0) || (val == -1 && (byte & 0x40) != 0) {
+            more = false;
+        } else {
+            byte |= 0x80;
+        }
+        out.push(byte);
+    }
+}
+
+fn write_section(out: &mut Vec<u8>, section_id: u8, payload: &[u8]) {
+    out.push(section_id);
+    write_u32_leb(out, payload.len() as u32);
+    out.extend_from_slice(payload);
+}
+
+fn compile_wasm_expr(
+    expr: &Expr,
+    locals: &HashMap<String, u32>,
+    func_indices: &HashMap<String, u32>,
+    code: &mut Vec<u8>,
+) -> bool {
+    match expr {
+        Expr::Literal(crate::parser::LiteralValue::Int(i), _) => {
+            code.push(0x41); // i32.const
+            write_i32_leb(code, *i as i32);
+            true
+        }
+        Expr::Literal(crate::parser::LiteralValue::Bool(b), _) => {
+            code.push(0x41); // i32.const
+            write_i32_leb(code, if *b { 1 } else { 0 });
+            true
+        }
+        Expr::Identifier(name, _) => {
+            if let Some(&idx) = locals.get(name) {
+                code.push(0x20); // local.get
+                write_u32_leb(code, idx);
+                true
+            } else {
+                false
+            }
+        }
+        Expr::Unary(crate::parser::UnaryOp::Neg, inner, _) => {
+            code.push(0x41); // i32.const 0
+            write_i32_leb(code, 0);
+            if !compile_wasm_expr(inner, locals, func_indices, code) {
+                return false;
+            }
+            code.push(0x6B); // i32.sub
+            true
+        }
+        Expr::Unary(crate::parser::UnaryOp::Not, inner, _) => {
+            if !compile_wasm_expr(inner, locals, func_indices, code) {
+                return false;
+            }
+            code.push(0x45); // i32.eqz
+            true
+        }
+        Expr::Binary(left, op, right, _) => {
+            if let Expr::Identifier(id, _) = &**left {
+                if *op == crate::parser::BinaryOp::Assign {
+                    if let Some(&idx) = locals.get(id) {
+                        if !compile_wasm_expr(right, locals, func_indices, code) {
+                            return false;
+                        }
+                        code.push(0x21); // local.set
+                        write_u32_leb(code, idx);
+                        return true;
+                    }
+                } else if *op == crate::parser::BinaryOp::PlusAssign {
+                    if let Some(&idx) = locals.get(id) {
+                        code.push(0x20); // local.get
+                        write_u32_leb(code, idx);
+                        if !compile_wasm_expr(right, locals, func_indices, code) {
+                            return false;
+                        }
+                        code.push(0x6A); // i32.add
+                        code.push(0x21); // local.set
+                        write_u32_leb(code, idx);
+                        return true;
+                    }
+                } else if *op == crate::parser::BinaryOp::MinusAssign {
+                    if let Some(&idx) = locals.get(id) {
+                        code.push(0x20); // local.get
+                        write_u32_leb(code, idx);
+                        if !compile_wasm_expr(right, locals, func_indices, code) {
+                            return false;
+                        }
+                        code.push(0x6B); // i32.sub
+                        code.push(0x21); // local.set
+                        write_u32_leb(code, idx);
+                        return true;
+                    }
+                }
+            }
+
+            if !compile_wasm_expr(left, locals, func_indices, code) {
+                return false;
+            }
+            if !compile_wasm_expr(right, locals, func_indices, code) {
+                return false;
+            }
+            match op {
+                crate::parser::BinaryOp::Add => code.push(0x6A),
+                crate::parser::BinaryOp::Sub => code.push(0x6B),
+                crate::parser::BinaryOp::Mul => code.push(0x6C),
+                crate::parser::BinaryOp::Div => code.push(0x6D),
+                crate::parser::BinaryOp::Mod => code.push(0x6F),
+                crate::parser::BinaryOp::Eq => code.push(0x46),
+                crate::parser::BinaryOp::Ne => code.push(0x47),
+                crate::parser::BinaryOp::Lt => code.push(0x48),
+                crate::parser::BinaryOp::Le => code.push(0x4C),
+                crate::parser::BinaryOp::Gt => code.push(0x4A),
+                crate::parser::BinaryOp::Ge => code.push(0x4E),
+                _ => return false,
+            }
+            true
+        }
+        Expr::Call(callee, args, _) => {
+            if let Expr::Identifier(fn_name, _) = &**callee {
+                if let Some(&fn_idx) = func_indices.get(fn_name) {
+                    for (_, arg) in args {
+                        if !compile_wasm_expr(arg, locals, func_indices, code) {
+                            return false;
+                        }
+                    }
+                    code.push(0x10); // call
+                    write_u32_leb(code, fn_idx);
+                    return true;
+                }
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+fn compile_wasm_stmt(
+    stmt: &Stmt,
+    locals: &HashMap<String, u32>,
+    func_indices: &HashMap<String, u32>,
+    code: &mut Vec<u8>,
+) -> bool {
+    match stmt {
+        Stmt::ReturnStmt(Some(expr), _) => {
+            if !compile_wasm_expr(expr, locals, func_indices, code) {
+                return false;
+            }
+            code.push(0x0F); // return
+            true
+        }
+        Stmt::ReturnStmt(None, _) => {
+            code.push(0x0F); // return
+            true
+        }
+        Stmt::IfStmt { cond, then_branch, else_branch, .. } => {
+            if !compile_wasm_expr(cond, locals, func_indices, code) {
+                return false;
+            }
+            code.push(0x04); // if
+            code.push(0x40); // void block
+            for s in then_branch {
+                if !compile_wasm_stmt(s, locals, func_indices, code) {
+                    return false;
+                }
+            }
+            if let Some(eb) = else_branch {
+                code.push(0x05); // else
+                for s in eb {
+                    if !compile_wasm_stmt(s, locals, func_indices, code) {
+                        return false;
+                    }
+                }
+            }
+            code.push(0x0B); // end
+            true
+        }
+        Stmt::WhileStmt { cond, body, .. } => {
+            code.push(0x02); // block void
+            code.push(0x40);
+            code.push(0x03); // loop void
+            code.push(0x40);
+            if !compile_wasm_expr(cond, locals, func_indices, code) {
+                return false;
+            }
+            code.push(0x45); // i32.eqz
+            code.push(0x0D); // br_if 1 (break to block end)
+            code.push(0x01);
+            for s in body {
+                if !compile_wasm_stmt(s, locals, func_indices, code) {
+                    return false;
+                }
+            }
+            code.push(0x0C); // br 0 (repeat loop)
+            code.push(0x00);
+            code.push(0x0B); // end loop
+            code.push(0x0B); // end block
+            true
+        }
+        Stmt::LetDecl { name, value, .. } | Stmt::ConstDecl { name, value, .. } => {
+            if let Some(&idx) = locals.get(name) {
+                if !compile_wasm_expr(value, locals, func_indices, code) {
+                    return false;
+                }
+                code.push(0x21); // local.set
+                write_u32_leb(code, idx);
+                true
+            } else {
+                false
+            }
+        }
+        Stmt::ExprStmt(expr) => {
+            compile_wasm_expr(expr, locals, func_indices, code)
+        }
+        _ => false,
+    }
+}
+
+fn generate_wasm_module(wasm_funcs: &[(String, Vec<String>, Vec<Stmt>)]) -> Option<Vec<u8>> {
+    if wasm_funcs.is_empty() {
+        return None;
+    }
+
+    let mut func_indices: HashMap<String, u32> = HashMap::new();
+    for (idx, (name, _, _)) in wasm_funcs.iter().enumerate() {
+        func_indices.insert(name.clone(), idx as u32);
+    }
+
+    // WASM magic + version 1
+    let mut wasm = vec![0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
+
+    // 1. Type Section (ID 1)
+    let mut type_payload = Vec::new();
+    write_u32_leb(&mut type_payload, wasm_funcs.len() as u32);
+    for (_, params, _) in wasm_funcs {
+        type_payload.push(0x60); // func type
+        write_u32_leb(&mut type_payload, params.len() as u32);
+        for _ in params {
+            type_payload.push(0x7F); // i32
+        }
+        type_payload.push(0x01); // 1 return
+        type_payload.push(0x7F); // i32
+    }
+    write_section(&mut wasm, 1, &type_payload);
+
+    // 2. Function Section (ID 3)
+    let mut func_payload = Vec::new();
+    write_u32_leb(&mut func_payload, wasm_funcs.len() as u32);
+    for idx in 0..wasm_funcs.len() {
+        write_u32_leb(&mut func_payload, idx as u32);
+    }
+    write_section(&mut wasm, 3, &func_payload);
+
+    // 3. Export Section (ID 7)
+    let mut export_payload = Vec::new();
+    write_u32_leb(&mut export_payload, wasm_funcs.len() as u32);
+    for (idx, (name, _, _)) in wasm_funcs.iter().enumerate() {
+        write_u32_leb(&mut export_payload, name.len() as u32);
+        export_payload.extend_from_slice(name.as_bytes());
+        export_payload.push(0x00); // function export
+        write_u32_leb(&mut export_payload, idx as u32);
+    }
+    write_section(&mut wasm, 7, &export_payload);
+
+    // 4. Code Section (ID 10)
+    let mut code_payload = Vec::new();
+    write_u32_leb(&mut code_payload, wasm_funcs.len() as u32);
+    for (_, params, body) in wasm_funcs {
+        let mut locals_map: HashMap<String, u32> = HashMap::new();
+        for (p_idx, p_name) in params.iter().enumerate() {
+            locals_map.insert(p_name.clone(), p_idx as u32);
+        }
+
+        // Collect extra locals declared inside body
+        let mut extra_locals = Vec::new();
+        for s in body {
+            if let Stmt::LetDecl { name, .. } | Stmt::ConstDecl { name, .. } = s {
+                if !locals_map.contains_key(name) {
+                    let next_idx = (params.len() + extra_locals.len()) as u32;
+                    locals_map.insert(name.clone(), next_idx);
+                    extra_locals.push(name.clone());
+                }
+            }
+        }
+
+        let mut body_bytes = Vec::new();
+        if extra_locals.is_empty() {
+            write_u32_leb(&mut body_bytes, 0); // 0 local declarations
+        } else {
+            write_u32_leb(&mut body_bytes, 1); // 1 local vector entry
+            write_u32_leb(&mut body_bytes, extra_locals.len() as u32);
+            body_bytes.push(0x7F); // i32
+        }
+
+        let mut ok = true;
+        for s in body {
+            if !compile_wasm_stmt(s, &locals_map, &func_indices, &mut body_bytes) {
+                ok = false;
+                break;
+            }
+        }
+        body_bytes.push(0x0B); // end of function
+
+        if !ok {
+            return None;
+        }
+
+        let mut fn_code = Vec::new();
+        write_u32_leb(&mut fn_code, body_bytes.len() as u32);
+        fn_code.extend_from_slice(&body_bytes);
+        code_payload.extend_from_slice(&fn_code);
+    }
+    write_section(&mut wasm, 10, &code_payload);
+
+    Some(wasm)
 }
 
 impl WebCompiler {
@@ -52,6 +391,10 @@ impl WebCompiler {
             global_stmts: Vec::new(),
             css_blocks: Vec::new(),
             default_layout: None,
+            computed_deps: HashMap::new(),
+            effect_functions: Vec::new(),
+            wasm_functions: Vec::new(),
+            wasm_bytes: None,
             var_counter: 0,
         }
     }
@@ -67,10 +410,16 @@ impl WebCompiler {
             Stmt::ExportDecl(inner, _) => {
                 self.process_stmt(inner);
             }
-            Stmt::LetDecl { name, annotations, .. } | Stmt::ConstDecl { name, annotations, .. } => {
+            Stmt::LetDecl { name, annotations, value, .. } | Stmt::ConstDecl { name, annotations, value, .. } => {
                 let is_state = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("state"));
+                let is_computed = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("computed"));
                 if is_state {
                     self.state_vars.insert(name.clone());
+                }
+                if is_computed {
+                    let mut deps = HashSet::new();
+                    self.collect_states(value, &mut deps);
+                    self.computed_deps.insert(name.clone(), deps);
                 }
                 self.global_stmts.push(stmt.clone());
             }
@@ -80,6 +429,33 @@ impl WebCompiler {
                 let is_component = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("component"));
                 let is_layout = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("layout"));
                 let is_style = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("style"));
+                let is_wasm = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("wasm"));
+                let is_computed = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("computed"));
+                let is_effect = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("effect"));
+
+                if is_computed {
+                    let mut deps = HashSet::new();
+                    if let Some(body_stmts) = body {
+                        for s in body_stmts {
+                            self.collect_states_in_stmt(s, &mut deps);
+                        }
+                    }
+                    self.computed_deps.insert(name.clone(), deps);
+                }
+                if is_effect {
+                    let mut deps = HashSet::new();
+                    if let Some(body_stmts) = body {
+                        for s in body_stmts {
+                            self.collect_states_in_stmt(s, &mut deps);
+                        }
+                    }
+                    self.effect_functions.push((name.clone(), deps));
+                }
+                if is_wasm {
+                    let param_names = params.iter().map(|p| p.name.clone()).collect();
+                    let body_stmts = body.clone().unwrap_or_default();
+                    self.wasm_functions.push((name.clone(), param_names, body_stmts));
+                }
 
                 if is_web {
                     for ann in annotations {
@@ -370,9 +746,48 @@ const web = {
   fetch: (url, opts) => fetch(url, opts),
 };
 window.web = web;
+function println(...args) { console.log(...args); }
+function print(...args) { console.log(...args); }
+window.println = println;
+window.print = print;
 
 "#,
         );
+
+        if !self.wasm_functions.is_empty() {
+            js.push_str(
+                r#"// WebAssembly Runtime Loader
+let _wasmExports = {};
+let _wasmReady = false;
+async function _initWasm() {
+  try {
+    const res = await fetch("app.wasm");
+    if (res.ok) {
+      const { instance } = await WebAssembly.instantiateStreaming(res, {});
+      _wasmExports = instance.exports;
+      _wasmReady = true;
+      window.wasm = _wasmExports;
+      if (typeof _onWasmReady === 'function') _onWasmReady();
+    }
+  } catch (e) {
+    try {
+      const res = await fetch("app.wasm");
+      const bytes = await res.arrayBuffer();
+      const { instance } = await WebAssembly.instantiate(bytes, {});
+      _wasmExports = instance.exports;
+      _wasmReady = true;
+      window.wasm = _wasmExports;
+      if (typeof _onWasmReady === 'function') _onWasmReady();
+    } catch (err) {
+      console.warn("⚡ [WASM] WebAssembly instantiation failed (using JS fallback):", err);
+    }
+  }
+}
+_initWasm();
+
+"#,
+            );
+        }
 
         let global_stmts = self.global_stmts.clone();
 
@@ -438,17 +853,44 @@ window.web = web;
                     let is_page = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("page"));
                     let is_comp = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("component"));
                     let is_style = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("style"));
+                    let is_wasm = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("wasm"));
+                    let is_compute = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("compute"));
+                    let is_computed = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("computed"));
+
                     if !is_web && !is_page && !is_comp && !is_style {
                         let is_async = Self::body_has_await(body.as_deref().unwrap_or(&[]));
                         let async_prefix = if is_async { "async " } else { "" };
                         let param_str = params.iter().map(|p| p.name.clone()).collect::<Vec<_>>().join(", ");
-                        js.push_str(&format!("\n{}function {}({}) {{\n", async_prefix, name, param_str));
-                        if let Some(body_stmts) = body {
-                            for b in body_stmts {
-                                self.compile_stmt(b, &mut js, 1);
+                        if is_wasm {
+                            let fallback_name = format!("_fallback_{}", name);
+                            js.push_str(&format!("\n{}function {}({}) {{\n", async_prefix, fallback_name, param_str));
+                            if let Some(body_stmts) = body {
+                                for b in body_stmts {
+                                    self.compile_stmt(b, &mut js, 1);
+                                }
                             }
+                            js.push_str("}\n");
+                            js.push_str(&format!(
+                                "function {}({}) {{\n  if (_wasmReady && _wasmExports[\"{}\"]) {{\n    return _wasmExports[\"{}\"]({});\n  }}\n  return {}({});\n}}\nwindow.{} = {};\n",
+                                name, param_str, name, name, param_str, fallback_name, param_str, name, name
+                            ));
+                        } else {
+                            let comment = if is_compute {
+                                "/* @Compute */\n"
+                            } else if is_computed {
+                                "/* @Computed */\n"
+                            } else {
+                                ""
+                            };
+                            js.push_str(&format!("\n{}{}function {}({}) {{\n", comment, async_prefix, name, param_str));
+                            if let Some(body_stmts) = body {
+                                for b in body_stmts {
+                                    self.compile_stmt(b, &mut js, 1);
+                                }
+                            }
+                            js.push_str("}\n");
+                            js.push_str(&format!("window.{} = {};\n", name, name));
                         }
-                        js.push_str("}\n");
                     }
                 }
                 Stmt::ExprStmt(expr) => {
@@ -459,13 +901,33 @@ window.web = web;
             }
         }
 
+        // Initialize reactive effects (@Effect)
+        if !self.effect_functions.is_empty() {
+            js.push_str("\n// Reactive effects (@Effect)\n");
+            for (fn_name, deps) in &self.effect_functions {
+                for s in deps {
+                    js.push_str(&format!("_subscribe(\"{}\", {});\n", s, fn_name));
+                }
+                js.push_str(&format!("{}();\n", fn_name));
+            }
+        }
+
         // Reusable components
         let components = self.components.clone();
         for (comp_name, comp) in &components {
             let is_async = Self::body_has_await(&comp.body);
             let async_prefix = if is_async { "async " } else { "" };
-            let param_str = comp.params.join(", ");
-            js.push_str(&format!("\n{}function {}({}) {{\n", async_prefix, comp_name, param_str));
+            if !comp.params.is_empty() {
+                js.push_str(&format!("\n{}function {}(_props) {{\n", async_prefix, comp_name));
+                for (idx, p) in comp.params.iter().enumerate() {
+                    js.push_str(&format!(
+                        "  let {} = (_props && typeof _props === 'object' && !Array.isArray(_props) && !(typeof Node !== 'undefined' && _props instanceof Node) && _props.constructor === Object && _props[\"{}\"] !== undefined) ? _props[\"{}\"] : arguments[{}];\n",
+                        p, p, p, idx
+                    ));
+                }
+            } else {
+                js.push_str(&format!("\n{}function {}() {{\n", async_prefix, comp_name));
+            }
             let root_var = format!("_root_{}", comp_name.to_lowercase());
             let mut returned_elem = false;
 
@@ -831,56 +1293,7 @@ if (document.readyState === "loading") {
                 }
 
                 for child in children {
-                    match child {
-                        JsxChild::Element(child_expr) => {
-                            self.compile_jsx(child_expr, Some(&el_var), out, indent);
-                        }
-                        JsxChild::Text(txt, _) => {
-                            let t_var = format!("_t{}", self.var_counter);
-                            self.var_counter += 1;
-                            let clean_txt = txt.replace('"', "\\\"").replace('\n', " ");
-                            out.push_str(&format!(
-                                "{pad}const {} = document.createTextNode(\"{}\");\n",
-                                t_var, clean_txt
-                            ));
-                            out.push_str(&format!("{pad}{}.appendChild({});\n", el_var, t_var));
-                        }
-                        JsxChild::Expr(child_expr) => {
-                            let t_var = format!("_t{}", self.var_counter);
-                            self.var_counter += 1;
-                            let refs = self.find_referenced_states(child_expr);
-                            let expr_js = self.expr_to_js(child_expr);
-
-                            if !refs.is_empty() {
-                                let update_fn = format!("_update_{}", t_var);
-                                out.push_str(&format!(
-                                    "{pad}const {} = document.createTextNode(\"\");\n",
-                                    t_var
-                                ));
-                                out.push_str(&format!(
-                                    "{pad}const {} = () => {{ {}.textContent = String({}); }};\n",
-                                    update_fn, t_var, expr_js
-                                ));
-                                for s in &refs {
-                                    out.push_str(&format!(
-                                        "{pad}_subscribe(\"{}\", {});\n",
-                                        s, update_fn
-                                    ));
-                                }
-                                out.push_str(&format!("{pad}{}();\n", update_fn));
-                                out.push_str(&format!("{pad}{}.appendChild({});\n", el_var, t_var));
-                            } else {
-                                let val_temp = format!("_val{}", self.var_counter);
-                                self.var_counter += 1;
-                                out.push_str(&format!("{pad}const {} = {};\n", val_temp, expr_js));
-                                out.push_str(&format!(
-                                    "{pad}if (typeof {val} === 'object' && {val} instanceof Node) {{\n{pad}  {el}.appendChild({val});\n{pad}}} else if (Array.isArray({val})) {{\n{pad}  for (const _item of {val}) {{\n{pad}    if (typeof _item === 'object' && _item instanceof Node) {{\n{pad}      {el}.appendChild(_item);\n{pad}    }} else {{\n{pad}      {el}.appendChild(document.createTextNode(String(_item)));\n{pad}    }}\n{pad}  }}\n{pad}}} else {{\n{pad}  {el}.appendChild(document.createTextNode(String({val})));\n{pad}}}\n",
-                                    val = val_temp,
-                                    el = el_var,
-                                ));
-                            }
-                        }
-                    }
+                    self.compile_jsx_child(child, &el_var, out, indent);
                 }
 
                 if let Some(p) = parent_var {
@@ -904,6 +1317,87 @@ if (document.readyState === "loading") {
         }
     }
 
+    fn compile_jsx_child(
+        &mut self,
+        child: &JsxChild,
+        parent_var: &str,
+        out: &mut String,
+        indent: usize,
+    ) {
+        let pad = "  ".repeat(indent);
+        match child {
+            JsxChild::Element(child_expr) => {
+                self.compile_jsx(child_expr, Some(parent_var), out, indent);
+            }
+            JsxChild::Text(txt, _) => {
+                let t_var = format!("_t{}", self.var_counter);
+                self.var_counter += 1;
+                let clean_txt = txt.replace('"', "\\\"").replace('\n', " ");
+                out.push_str(&format!(
+                    "{pad}const {} = document.createTextNode(\"{}\");\n",
+                    t_var, clean_txt
+                ));
+                out.push_str(&format!("{pad}{}.appendChild({});\n", parent_var, t_var));
+            }
+            JsxChild::Expr(child_expr) => {
+                let t_var = format!("_t{}", self.var_counter);
+                self.var_counter += 1;
+                let refs = self.find_referenced_states(child_expr);
+                let expr_js = self.expr_to_js(child_expr);
+
+                if !refs.is_empty() {
+                    let update_fn = format!("_update_{}", t_var);
+                    out.push_str(&format!(
+                        "{pad}const {} = document.createTextNode(\"\");\n",
+                        t_var
+                    ));
+                    out.push_str(&format!(
+                        "{pad}const {} = () => {{ let _res = {}; if (typeof _res === 'function') _res = _res(); {}.textContent = String(_res); }};\n",
+                        update_fn, expr_js, t_var
+                    ));
+                    for s in &refs {
+                        out.push_str(&format!(
+                            "{pad}_subscribe(\"{}\", {});\n",
+                            s, update_fn
+                        ));
+                    }
+                    out.push_str(&format!("{pad}{}();\n", update_fn));
+                    out.push_str(&format!("{pad}{}.appendChild({});\n", parent_var, t_var));
+                } else {
+                    let val_temp = format!("_val{}", self.var_counter);
+                    self.var_counter += 1;
+                    out.push_str(&format!("{pad}let {} = {};\n", val_temp, expr_js));
+                    out.push_str(&format!("{pad}if (typeof {val} === 'function') {val} = {val}();\n", val = val_temp));
+                    out.push_str(&format!(
+                        "{pad}if (typeof {val} === 'object' && {val} instanceof Node) {{\n{pad}  {el}.appendChild({val});\n{pad}}} else if (Array.isArray({val}) || ({val} && typeof {val} !== 'string' && typeof {val}[Symbol.iterator] === 'function')) {{\n{pad}  for (const _item of {val}) {{\n{pad}    if (typeof _item === 'object' && _item instanceof Node) {{\n{pad}      {el}.appendChild(_item);\n{pad}    }} else {{\n{pad}      {el}.appendChild(document.createTextNode(String(_item)));\n{pad}    }}\n{pad}  }}\n{pad}}} else {{\n{pad}  {el}.appendChild(document.createTextNode(String({val})));\n{pad}}}\n",
+                        val = val_temp,
+                        el = parent_var,
+                    ));
+                }
+            }
+            JsxChild::For {
+                var_name,
+                iterable,
+                body,
+                ..
+            } => {
+                let iter_var = format!("_iter{}", self.var_counter);
+                self.var_counter += 1;
+                let iter_js = self.expr_to_js(iterable);
+                out.push_str(&format!("{pad}const {} = {};\n", iter_var, iter_js));
+                out.push_str(&format!(
+                    "{pad}if (Array.isArray({iter}) || ({iter} && typeof {iter}[Symbol.iterator] === 'function')) {{\n{pad}  for (const {} of {iter}) {{\n",
+                    var_name,
+                    iter = iter_var
+                ));
+                for b_child in body {
+                    self.compile_jsx_child(b_child, parent_var, out, indent + 2);
+                }
+                out.push_str(&format!("{pad}  }}\n{pad}}}\n"));
+            }
+        }
+    }
+
     fn find_referenced_states(&self, expr: &Expr) -> HashSet<String> {
         let mut set = HashSet::new();
         self.collect_states(expr, &mut set);
@@ -915,6 +1409,8 @@ if (document.readyState === "loading") {
             Expr::Identifier(id, _) => {
                 if self.state_vars.contains(id) {
                     set.insert(id.clone());
+                } else if let Some(deps) = self.computed_deps.get(id) {
+                    set.extend(deps.iter().cloned());
                 }
             }
             Expr::Binary(left, _, right, _) => {
@@ -925,6 +1421,11 @@ if (document.readyState === "loading") {
                 self.collect_states(inner, set);
             }
             Expr::Call(callee, args, _) => {
+                if let Expr::Identifier(fn_name, _) = &**callee {
+                    if let Some(deps) = self.computed_deps.get(fn_name) {
+                        set.extend(deps.iter().cloned());
+                    }
+                }
                 self.collect_states(callee, set);
                 for (_, arg) in args {
                     self.collect_states(arg, set);
@@ -937,7 +1438,114 @@ if (document.readyState === "loading") {
                 self.collect_states(inner, set);
                 self.collect_states(idx, set);
             }
+            Expr::InterpolatedString(segments, _) => {
+                for seg in segments {
+                    if let crate::parser::InterpolatedSegment::Expr(e) = seg {
+                        self.collect_states(e, set);
+                    }
+                }
+            }
+            Expr::Tuple(items, _) => {
+                for item in items {
+                    self.collect_states(item, set);
+                }
+            }
+            Expr::Object(fields, _) => {
+                for (_, expr, _) in fields {
+                    self.collect_states(expr, set);
+                }
+            }
+            Expr::StructInit(_, fields, _) => {
+                for (_, expr) in fields {
+                    self.collect_states(expr, set);
+                }
+            }
+            Expr::Formula(fields, _) => {
+                for (_, expr, _, _) in fields {
+                    self.collect_states(expr, set);
+                }
+            }
+            Expr::Cast(inner, _, _)
+            | Expr::Borrow(inner, _, _)
+            | Expr::Await(inner, _)
+            | Expr::ThreadSpawn(inner, _) => {
+                self.collect_states(inner, set);
+            }
+            Expr::Block(stmts, _) => {
+                for s in stmts {
+                    self.collect_states_in_stmt(s, set);
+                }
+            }
+            Expr::Closure { body, .. } => {
+                for s in body {
+                    self.collect_states_in_stmt(s, set);
+                }
+            }
             _ => {}
+        }
+    }
+
+    fn collect_states_in_stmt(&self, stmt: &Stmt, set: &mut HashSet<String>) {
+        match stmt {
+            Stmt::ExprStmt(expr) => self.collect_states(expr, set),
+            Stmt::LetDecl { value, .. } | Stmt::ConstDecl { value, .. } => {
+                self.collect_states(value, set);
+            }
+            Stmt::ReturnStmt(Some(expr), _) => self.collect_states(expr, set),
+            Stmt::IfStmt { cond, then_branch, else_branch, .. } => {
+                self.collect_states(cond, set);
+                for s in then_branch {
+                    self.collect_states_in_stmt(s, set);
+                }
+                if let Some(eb) = else_branch {
+                    for s in eb {
+                        self.collect_states_in_stmt(s, set);
+                    }
+                }
+            }
+            Stmt::WhileStmt { cond, body, .. } => {
+                self.collect_states(cond, set);
+                for s in body {
+                    self.collect_states_in_stmt(s, set);
+                }
+            }
+            Stmt::ForStmt { iterable, body, .. } => {
+                self.collect_states(iterable, set);
+                for s in body {
+                    self.collect_states_in_stmt(s, set);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub fn resolve_computed_deps(&mut self) {
+        let mut changed = true;
+        while changed {
+            changed = false;
+            let keys: Vec<String> = self.computed_deps.keys().cloned().collect();
+            for k in keys {
+                let current_deps = self.computed_deps.get(&k).cloned().unwrap_or_default();
+                let mut new_deps = current_deps.clone();
+                for dep in &current_deps {
+                    if let Some(other_deps) = self.computed_deps.get(dep) {
+                        for od in other_deps {
+                            if new_deps.insert(od.clone()) {
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                self.computed_deps.insert(k, new_deps);
+            }
+        }
+    }
+
+
+
+    pub fn compile_wasm(&mut self) {
+        if !self.wasm_functions.is_empty() {
+            self.wasm_bytes = generate_wasm_module(&self.wasm_functions);
         }
     }
 
@@ -1103,6 +1711,60 @@ if (document.readyState === "loading") {
                 }
                 format!("({}() => {{\n{}}})()", async_prefix, body_str)
             }
+            Expr::InterpolatedString(segments, _) => {
+                let mut parts = Vec::new();
+                for seg in segments {
+                    match seg {
+                        crate::parser::InterpolatedSegment::Text(t) => {
+                            parts.push(format!("\"{}\"", t.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r")));
+                        }
+                        crate::parser::InterpolatedSegment::Expr(e) => {
+                            let e_js = self.expr_to_js(e);
+                            parts.push(format!("({})", e_js));
+                        }
+                    }
+                }
+                if parts.is_empty() {
+                    "\"\"".to_string()
+                } else {
+                    parts.join(" + ")
+                }
+            }
+            Expr::Tuple(items, _) => {
+                let items_js = items
+                    .iter()
+                    .map(|i| self.expr_to_js(i))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("[{}]", items_js)
+            }
+            Expr::Object(fields, _) => {
+                let f_js = fields
+                    .iter()
+                    .map(|(k, v, _)| format!("\"{}\": {}", k, self.expr_to_js(v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{}}}", f_js)
+            }
+            Expr::StructInit(_, fields, _) => {
+                let f_js = fields
+                    .iter()
+                    .map(|(k, v)| format!("\"{}\": {}", k, self.expr_to_js(v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{}}}", f_js)
+            }
+            Expr::Formula(fields, _) => {
+                let f_js = fields
+                    .iter()
+                    .map(|(k, v, _, _)| format!("\"{}\": {}", k, self.expr_to_js(v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{}}}", f_js)
+            }
+            Expr::Borrow(inner, _, _) => self.expr_to_js(inner),
+            Expr::Cast(inner, _, _) => self.expr_to_js(inner),
+            Expr::ThreadSpawn(inner, _) => self.expr_to_js(inner),
             _ => "null".to_string(),
         }
     }
@@ -1201,14 +1863,20 @@ pub fn build_web_project(project_path: &Path) -> Result<WebBuildResult, String> 
                 }
             }
             let mut parser = crate::parser::Parser::new(tokens, p.to_string_lossy().to_string());
-            if let Ok(stmts) = parser.parse() {
-                all_stmts.extend(stmts);
+            match parser.parse() {
+                Ok(stmts) => all_stmts.extend(stmts),
+                Err(err) => {
+                    eprintln!("\x1b[1;31merror:\x1b[0m failed to parse {}: {}", p.display(), err.message);
+                    return Err(format!("failed to parse {}: {}", p.display(), err.message));
+                }
             }
         }
     }
 
     let mut compiler = WebCompiler::new(pkg_name.clone());
     compiler.process_stmts(&all_stmts);
+    compiler.resolve_computed_deps();
+    compiler.compile_wasm();
     let port = compiler.port;
     let app_title = compiler.app_title.clone();
     let routes: Vec<(String, String)> = compiler
@@ -1222,6 +1890,12 @@ pub fn build_web_project(project_path: &Path) -> Result<WebBuildResult, String> 
     // Write dist/app.js
     let app_js_path = dist_dir.join("app.js");
     fs::write(&app_js_path, js_code).map_err(|e| e.to_string())?;
+
+    // Write dist/app.wasm if WASM module was generated
+    if let Some(wasm_bytes) = &compiler.wasm_bytes {
+        let app_wasm_path = dist_dir.join("app.wasm");
+        let _ = fs::write(&app_wasm_path, wasm_bytes);
+    }
 
     // Write dist/index.html
     let html_content = format!(

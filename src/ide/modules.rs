@@ -10,6 +10,10 @@ pub fn get_native_module_def(module: &str) -> Option<crate::vm::NativeModuleDef>
 }
 
 pub fn get_std_module_methods(module: &str) -> Option<Vec<String>> {
+    get_std_module_symbols(module).map(|syms| syms.into_iter().map(|(name, _)| name).collect())
+}
+
+pub fn get_std_module_symbols(module: &str) -> Option<Vec<(String, String)>> {
     let mut parts = module.split('.');
     let base = parts.next()?;
 
@@ -21,10 +25,10 @@ pub fn get_std_module_methods(module: &str) -> Option<Vec<String>> {
                 return Some(
                     vec![
                         "os", "fmt", "fs", "byte", "net", "thread", "time", "process", "json",
-                        "math", "unit", "window", "desktop", "env", "camera",
+                        "math", "unit", "window", "desktop", "env", "camera", "web",
                     ]
                     .into_iter()
-                    .map(String::from)
+                    .map(|s| (s.to_string(), "module".to_string()))
                     .collect(),
                 );
             }
@@ -53,6 +57,7 @@ pub fn get_std_module_methods(module: &str) -> Option<Vec<String>> {
         "env" => Some(crate::native_std::env::init()),
         "camera" => Some(crate::native_std::camera::init()),
         "unit" => Some(crate::native_std::unit::init()),
+        "web" => Some(crate::native_std::web::init()),
         _ => None,
     }?;
 
@@ -65,5 +70,24 @@ pub fn get_std_module_methods(module: &str) -> Option<Vec<String>> {
         }
     }
 
-    Some(map.keys().cloned().collect())
+    let symbols = map
+        .into_iter()
+        .map(|(k, v)| {
+            let kind = match v {
+                crate::vm::Value::NativeCallback(_) | crate::vm::Value::Function { .. } => {
+                    "function".to_string()
+                }
+                _ => {
+                    if k.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
+                        "struct".to_string()
+                    } else {
+                        "property".to_string()
+                    }
+                }
+            };
+            (k, kind)
+        })
+        .collect();
+
+    Some(symbols)
 }

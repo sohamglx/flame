@@ -1,7 +1,14 @@
 import std.web
 
+fn getLinkHref(name: String) -> String {
+    if name == "Home" {
+        return "/"
+    }
+    return "/" + name.toLowerCase()
+}
+
 export @Component
-fn NavBar() {
+fn Nav(elem: [String]) {
     <header class="navbar">
         <div id="cursor-dot" class="cursor-dot"></div>
         <div id="cursor-outline" class="cursor-outline"></div>
@@ -10,10 +17,16 @@ fn NavBar() {
             <span class="brand-text">Flame Web</span>
         </div>
         <nav class="nav-links">
-            <a href="/" class="nav-link">Home</a>
-            <a href="/about" class="nav-link">About</a>
-            <a href="/projects" class="nav-link">Projects</a>
-            <a href="/contact" class="nav-link">Contact</a>
+            {
+                for e in elem {
+                    <a href={getLinkHref(e)} class="nav-link"> {e}</a>
+                }
+            }
         </nav>
     </header>
+}
+
+export @Component
+fn NavBar() {
+    <Nav elem={["Home", "About", "Compute", "Projects", "Contact"]} />
 }

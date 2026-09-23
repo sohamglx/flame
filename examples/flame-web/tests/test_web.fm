@@ -1,0 +1,78 @@
+import std.web
+
+// Test Workspace Struct and Enum (should be highlighted in blue)
+struct TestUser {
+    id: Int,
+    name: String,
+    role: UserRole,
+}
+
+enum UserRole {
+    Admin,
+    Member,
+    Guest,
+}
+
+// Test @Compute and @Computed annotations
+@Compute
+fn calculateTotal(base: Int, tax: Int) -> Int {
+    return base + tax
+}
+
+@Computed
+fn formatUserTitle(user: TestUser) -> String {
+    return "User: " + user.name
+}
+
+fn test_document_api() {
+    println("Testing std.web.document APIs...")
+    let el = web.document.createElement("div")
+    assert(el != nil)
+
+    let txt = web.document.createTextNode("Flame Reactive Web")
+    assert(txt != nil)
+
+    let body = web.document.body
+    assert(body != nil)
+    println("  ✓ document.createElement & createTextNode passed")
+}
+
+fn test_window_api() {
+    println("Testing std.web.window APIs...")
+    let width = web.window.innerWidth
+    let height = web.window.innerHeight
+    assert(width > 0)
+    assert(height > 0)
+
+    let loc = web.window.location
+    assert(loc != nil)
+    println("  ✓ window dimensions & location passed")
+}
+
+fn test_computed_annotations() {
+    println("Testing @Compute and @Computed functions...")
+    let total = calculateTotal(100, 15)
+    assert(total == 115)
+
+    let u = TestUser {
+        id: 1,
+        name: "Alice",
+        role: UserRole.Admin,
+    }
+    let title = formatUserTitle(u)
+    assert(title == "User: Alice")
+    println("  ✓ @Compute and @Computed annotations passed")
+}
+
+@Test
+fn main() {
+    println("==========================================")
+    println("  Running Flame Web (std.web) Tests Suite ")
+    println("==========================================")
+    test_document_api()
+    test_window_api()
+    test_computed_annotations()
+    println("==========================================")
+    println("  All std.web tests passed successfully!  ")
+    println("==========================================")
+}

@@ -110,7 +110,10 @@ pub fn run_definition_command(args: &[String]) {
 
 fn collect_check_files(path: &Path, files: &mut Vec<std::path::PathBuf>) {
     if path.is_file() {
-        if path.extension().map_or(false, |ext| ext == "fm" || ext == "flame") {
+        if path
+            .extension()
+            .map_or(false, |ext| ext == "fm" || ext == "flame")
+        {
             files.push(path.to_path_buf());
         }
     } else if path.is_dir() {
@@ -121,10 +124,17 @@ fn collect_check_files(path: &Path, files: &mut Vec<std::path::PathBuf>) {
                 let p = entry.path();
                 if p.is_dir() {
                     let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    if !name.starts_with('.') && name != "dist" && name != "target" && name != "node_modules" {
+                    if !name.starts_with('.')
+                        && name != "dist"
+                        && name != "target"
+                        && name != "node_modules"
+                    {
                         collect_check_files(&p, files);
                     }
-                } else if p.is_file() && p.extension().map_or(false, |ext| ext == "fm" || ext == "flame") {
+                } else if p.is_file()
+                    && p.extension()
+                        .map_or(false, |ext| ext == "fm" || ext == "flame")
+                {
                     files.push(p);
                 }
             }
@@ -198,21 +208,24 @@ pub fn run_check_command(args: &[String]) {
 
     // Single file mode with IDE cursor query (line/col/stdin)
     if (line.is_some() || col.is_some() || stdin_content.is_some()) && files_to_check.len() <= 1 {
-        let file = files_to_check.first().map(|p| p.to_string_lossy().to_string())
+        let file = files_to_check
+            .first()
+            .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| "unknown.fm".to_string());
-        let output = std::panic::catch_unwind(|| analyze_file_for_json(&file, line, col, stdin_content))
-            .unwrap_or_else(|_| JsonCheckOutput {
-                file: file.clone(),
-                diagnostics: vec![],
-                std_modules: vec![],
-                native_modules: vec![],
-                plugins: vec![],
-                completions: vec![],
-                hover: None,
-                signature_help: None,
-                tokens: vec![],
-                definition: None,
-            });
+        let output =
+            std::panic::catch_unwind(|| analyze_file_for_json(&file, line, col, stdin_content))
+                .unwrap_or_else(|_| JsonCheckOutput {
+                    file: file.clone(),
+                    diagnostics: vec![],
+                    std_modules: vec![],
+                    native_modules: vec![],
+                    plugins: vec![],
+                    completions: vec![],
+                    hover: None,
+                    signature_help: None,
+                    tokens: vec![],
+                    definition: None,
+                });
 
         if json_mode {
             println!(
@@ -261,19 +274,20 @@ pub fn run_check_command(args: &[String]) {
 
     for file_path in &files_to_check {
         let file_str = file_path.to_string_lossy().to_string();
-        let output = std::panic::catch_unwind(|| analyze_file_for_json(&file_str, None, None, None))
-            .unwrap_or_else(|_| JsonCheckOutput {
-                file: file_str.clone(),
-                diagnostics: vec![],
-                std_modules: vec![],
-                native_modules: vec![],
-                plugins: vec![],
-                completions: vec![],
-                hover: None,
-                signature_help: None,
-                tokens: vec![],
-                definition: None,
-            });
+        let output =
+            std::panic::catch_unwind(|| analyze_file_for_json(&file_str, None, None, None))
+                .unwrap_or_else(|_| JsonCheckOutput {
+                    file: file_str.clone(),
+                    diagnostics: vec![],
+                    std_modules: vec![],
+                    native_modules: vec![],
+                    plugins: vec![],
+                    completions: vec![],
+                    hover: None,
+                    signature_help: None,
+                    tokens: vec![],
+                    definition: None,
+                });
 
         for d in &output.diagnostics {
             if d.severity == "warning" {
@@ -337,7 +351,10 @@ pub fn run_check_command(args: &[String]) {
 
         if !had_any_diags {
             if files_to_check.len() == 1 {
-                println!("\x1b[1;32mcheck:\x1b[0m no diagnostics in {}", files_to_check[0].display());
+                println!(
+                    "\x1b[1;32mcheck:\x1b[0m no diagnostics in {}",
+                    files_to_check[0].display()
+                );
             } else {
                 println!(
                     "\x1b[1;32mcheck:\x1b[0m no diagnostics across {} files",
@@ -347,7 +364,9 @@ pub fn run_check_command(args: &[String]) {
         } else {
             println!(
                 "\x1b[1;31mcheck:\x1b[0m {} error(s), {} warning(s) found across {} files",
-                total_errors, total_warnings, files_to_check.len()
+                total_errors,
+                total_warnings,
+                files_to_check.len()
             );
         }
     }
@@ -1214,6 +1233,7 @@ pub fn analyze_file_for_json(
     }
 
     if let Some(namespace) = namespace {
+        completions.clear();
         let mut resolved_as_var = false;
 
         let mut alias_map: HashMap<String, String> = HashMap::new();
@@ -2104,33 +2124,33 @@ pub fn analyze_file_for_json(
                             }
                         }
                     }
-                } else if let Some((std_ns, std_methods)) = lookup_namespaces
+                } else if let Some((std_ns, std_symbols)) = lookup_namespaces
                     .iter()
-                    .find_map(|ns| ide::get_std_module_methods(ns).map(|m| (ns.to_string(), m)))
+                    .find_map(|ns| ide::get_std_module_symbols(ns).map(|m| (ns.to_string(), m)))
                 {
-                    for method in &std_methods {
+                    for (symbol_name, symbol_kind) in &std_symbols {
                         if member_prefix
                             .as_deref()
-                            .map_or(true, |prefix| method.starts_with(prefix))
+                            .map_or(true, |prefix| symbol_name.starts_with(prefix))
                         {
-                            let doc = crate::blaze::get_std_function_doc(&std_ns, method)
+                            let doc = crate::blaze::get_std_function_doc(&std_ns, symbol_name)
                                 .or_else(|| {
                                     effective_mod.as_ref().and_then(|em| {
-                                        crate::blaze::get_std_function_doc(em, method)
+                                        crate::blaze::get_std_function_doc(em, symbol_name)
                                     })
                                 })
-                                .or_else(|| crate::blaze::get_std_function_doc(&namespace, method));
+                                .or_else(|| crate::blaze::get_std_function_doc(&namespace, symbol_name));
                             completions.push(JsonCompletion {
                                 sort_text: None,
-                                label: method.clone(),
-                                kind: "function".to_string(),
+                                label: symbol_name.clone(),
+                                kind: symbol_kind.clone(),
                                 detail: format!("std.{}", namespace),
                                 documentation: doc.map(|d| d.to_string()),
                             });
                         }
                     }
 
-                    if !word_under_cursor.is_empty() && std_methods.contains(&word_under_cursor) {
+                    if !word_under_cursor.is_empty() && std_symbols.iter().any(|(n, _)| n == &word_under_cursor) {
                         let doc = crate::blaze::get_std_function_doc(&std_ns, &word_under_cursor)
                             .or_else(|| {
                                 effective_mod.as_ref().and_then(|em| {
@@ -2149,39 +2169,39 @@ pub fn analyze_file_for_json(
                             hover_found = Some(JsonHover {
                                 label: format!("{namespace}.{word_under_cursor}()"),
                                 documentation: Some(format!(
-                                    "Standard library function: {namespace}.{word_under_cursor}"
+                                    "Standard library member: {namespace}.{word_under_cursor}"
                                 )),
                             });
                         }
                     }
                 }
-            } else if let Some((std_ns, std_methods)) = lookup_namespaces
+            } else if let Some((std_ns, std_symbols)) = lookup_namespaces
                 .iter()
-                .find_map(|ns| ide::get_std_module_methods(ns).map(|m| (ns.to_string(), m)))
+                .find_map(|ns| ide::get_std_module_symbols(ns).map(|m| (ns.to_string(), m)))
             {
-                for method in &std_methods {
+                for (symbol_name, symbol_kind) in &std_symbols {
                     if member_prefix
                         .as_deref()
-                        .map_or(true, |prefix| method.starts_with(prefix))
+                        .map_or(true, |prefix| symbol_name.starts_with(prefix))
                     {
-                        let doc = crate::blaze::get_std_function_doc(&std_ns, method)
+                        let doc = crate::blaze::get_std_function_doc(&std_ns, symbol_name)
                             .or_else(|| {
                                 effective_mod
                                     .as_ref()
-                                    .and_then(|em| crate::blaze::get_std_function_doc(em, method))
+                                    .and_then(|em| crate::blaze::get_std_function_doc(em, symbol_name))
                             })
-                            .or_else(|| crate::blaze::get_std_function_doc(&namespace, method));
+                            .or_else(|| crate::blaze::get_std_function_doc(&namespace, symbol_name));
                         completions.push(JsonCompletion {
                             sort_text: None,
-                            label: method.clone(),
-                            kind: "function".to_string(),
+                            label: symbol_name.clone(),
+                            kind: symbol_kind.clone(),
                             detail: format!("std.{}", namespace),
                             documentation: doc.map(|d| d.to_string()),
                         });
                     }
                 }
 
-                if !word_under_cursor.is_empty() && std_methods.contains(&word_under_cursor) {
+                if !word_under_cursor.is_empty() && std_symbols.iter().any(|(n, _)| n == &word_under_cursor) {
                     let doc = crate::blaze::get_std_function_doc(&std_ns, &word_under_cursor)
                         .or_else(|| {
                             effective_mod.as_ref().and_then(|em| {
@@ -2200,7 +2220,7 @@ pub fn analyze_file_for_json(
                         hover_found = Some(JsonHover {
                             label: format!("{namespace}.{word_under_cursor}()"),
                             documentation: Some(format!(
-                                "Standard library function: {namespace}.{word_under_cursor}"
+                                "Standard library member: {namespace}.{word_under_cursor}"
                             )),
                         });
                     }
@@ -3467,8 +3487,16 @@ pub fn analyze_file_for_json(
         .or_else(|| ide::get_keyword_hover(&word_under_cursor));
 
     if let (Some(l), Some(c)) = (line, col) {
-        fn is_pos_in_jsx_text(stmts: &[crate::parser::ast::Stmt], target_line: usize, target_col: usize) -> bool {
-            fn check_expr(expr: &crate::parser::ast::Expr, target_line: usize, target_col: usize) -> bool {
+        fn is_pos_in_jsx_text(
+            stmts: &[crate::parser::ast::Stmt],
+            target_line: usize,
+            target_col: usize,
+        ) -> bool {
+            fn check_expr(
+                expr: &crate::parser::ast::Expr,
+                target_line: usize,
+                target_col: usize,
+            ) -> bool {
                 match expr {
                     crate::parser::ast::Expr::JsxElement { children, .. } => {
                         for child in children {
@@ -3476,7 +3504,9 @@ pub fn analyze_file_for_json(
                                 crate::parser::ast::JsxChild::Text(_, span) => {
                                     if span.line == target_line {
                                         let len = span.end.saturating_sub(span.start);
-                                        if target_col >= span.col && target_col <= span.col + len + 1 {
+                                        if target_col >= span.col
+                                            && target_col <= span.col + len + 1
+                                        {
                                             return true;
                                         }
                                     }
@@ -3489,6 +3519,19 @@ pub fn analyze_file_for_json(
                                 crate::parser::ast::JsxChild::Expr(e) => {
                                     if check_expr(e, target_line, target_col) {
                                         return true;
+                                    }
+                                }
+                                crate::parser::ast::JsxChild::For { iterable, span, .. } => {
+                                    if check_expr(iterable, target_line, target_col) {
+                                        return true;
+                                    }
+                                    if span.line == target_line {
+                                        let len = span.end.saturating_sub(span.start);
+                                        if target_col >= span.col
+                                            && target_col <= span.col + len + 1
+                                        {
+                                            return true;
+                                        }
                                     }
                                 }
                             }
@@ -3515,9 +3558,15 @@ pub fn analyze_file_for_json(
                 }
             }
 
-            fn check_stmt(stmt: &crate::parser::ast::Stmt, target_line: usize, target_col: usize) -> bool {
+            fn check_stmt(
+                stmt: &crate::parser::ast::Stmt,
+                target_line: usize,
+                target_col: usize,
+            ) -> bool {
                 match stmt {
-                    crate::parser::ast::Stmt::FuncDecl { body: Some(stmts), .. } => {
+                    crate::parser::ast::Stmt::FuncDecl {
+                        body: Some(stmts), ..
+                    } => {
                         for s in stmts {
                             if check_stmt(s, target_line, target_col) {
                                 return true;
@@ -3549,7 +3598,38 @@ pub fn analyze_file_for_json(
         }
     }
 
-    let tokens = ide::get_semantic_tokens(&content);
+    let mut workspace_types = std::collections::HashSet::new();
+    for s in &scanned_structs {
+        workspace_types.insert(s.name.clone());
+    }
+    if let Some(tc) = &tc_opt {
+        for (enum_name, enum_info) in &tc.enums {
+            workspace_types.insert(enum_name.clone());
+            for (var_name, _) in &enum_info.variants {
+                workspace_types.insert(var_name.clone());
+            }
+        }
+    }
+    let search_roots = [manifest_dir.join("src"), manifest_dir.clone()];
+    for root in &search_roots {
+        if let Ok(entries) = fs::read_dir(root) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() && p.extension().map_or(false, |ext| ext == "fm") {
+                    if let Ok(text) = fs::read_to_string(&p) {
+                        for cap in Regex::new(r"(?:struct|enum)\s+([a-zA-Z_]\w*)")
+                            .unwrap()
+                            .captures_iter(&text)
+                        {
+                            workspace_types.insert(cap[1].to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let tokens = ide::get_semantic_tokens_with_types(&content, Some(&workspace_types));
 
     let mut unique_completions = Vec::new();
     let mut seen_labels = std::collections::HashSet::new();
@@ -3599,6 +3679,7 @@ fn list_std_modules(_manifest_dir: &Path) -> Vec<String> {
         "env".to_string(),
         "camera".to_string(),
         "unit".to_string(),
+        "web".to_string(),
     ]
 }
 

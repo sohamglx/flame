@@ -1790,12 +1790,50 @@ impl Parser {
                     text_line,
                     text_col,
                 );
+                while self.check(TokenKind::Newline) {
+                    self.advance();
+                }
+                if self.check(TokenKind::For) {
+                    let for_child = self.parse_jsx_for_block()?;
+                    children.push(for_child);
+                    while self.check(TokenKind::Newline) {
+                        self.advance();
+                    }
+                    self.consume(
+                        TokenKind::CloseBrace,
+                        "expected '}' after JSX child expression",
+                    )?;
+                    prev_token_end = 0;
+                    continue;
+                }
                 let expr = self.parse_expr()?;
+                while self.check(TokenKind::Newline) {
+                    self.advance();
+                }
                 self.consume(
                     TokenKind::CloseBrace,
                     "expected '}' after JSX child expression",
                 )?;
                 children.push(JsxChild::Expr(expr));
+                prev_token_end = 0;
+                continue;
+            }
+
+            if self.check(TokenKind::For)
+                && self.index + 2 < self.tokens.len()
+                && self.tokens[self.index + 1].kind == TokenKind::Identifier
+                && self.tokens[self.index + 2].kind == TokenKind::In
+            {
+                flush_text(
+                    &mut children,
+                    &mut text_buf,
+                    text_start,
+                    prev_token_end,
+                    text_line,
+                    text_col,
+                );
+                let for_child = self.parse_jsx_for_block()?;
+                children.push(for_child);
                 prev_token_end = 0;
                 continue;
             }
@@ -1850,6 +1888,158 @@ impl Parser {
                 line: lt_tok.span.line,
                 col: lt_tok.span.col,
             },
+        })
+    }
+
+    fn parse_jsx_for_block(&mut self) -> Result<JsxChild, Diagnostic> {
+        let for_tok = self.consume(TokenKind::For, "expected 'for'")?;
+        let var_tok = self.consume(TokenKind::Identifier, "expected variable name after 'for'")?;
+        let var_name = var_tok.lexeme.clone();
+        self.consume(TokenKind::In, "expected 'in' after variable name in 'for' loop")?;
+        let iterable = self.parse_expr()?;
+        while self.check(TokenKind::Newline) {
+            self.advance();
+        }
+        self.consume(TokenKind::OpenBrace, "expected '{' after for loop iterable")?;
+
+        let mut body = Vec::new();
+        let mut text_buf = String::new();
+        let mut text_start = 0;
+        let mut text_line = 0;
+        let mut text_col = 0;
+        let mut prev_token_end = 0;
+
+        let flush_text = |children: &mut Vec<JsxChild>,
+                          text_buf: &mut String,
+                          text_start: usize,
+                          prev_token_end: usize,
+                          text_line: usize,
+                          text_col: usize| {
+            let trimmed = text_buf.trim();
+            if !trimmed.is_empty() {
+                children.push(JsxChild::Text(
+                    trimmed.to_string(),
+                    Span {
+                        start: text_start,
+                        end: prev_token_end,
+                        line: text_line,
+                        col: text_col,
+                    },
+                ));
+            }
+            text_buf.clear();
+        };
+
+        while !self.check(TokenKind::CloseBrace) && !self.check(TokenKind::EOF) {
+            if self.check(TokenKind::Newline) && text_buf.trim().is_empty() {
+                text_buf.clear();
+                self.advance();
+                continue;
+            }
+
+            if self.check(TokenKind::Lt) && self.check_next(TokenKind::Identifier) {
+                flush_text(
+                    &mut body,
+                    &mut text_buf,
+                    text_start,
+                    prev_token_end,
+                    text_line,
+                    text_col,
+                );
+                let child_elem = self.parse_jsx_element()?;
+                body.push(JsxChild::Element(Box::new(child_elem)));
+                prev_token_end = 0;
+                continue;
+            }
+
+            if self.match_token(TokenKind::OpenBrace) {
+                flush_text(
+                    &mut body,
+                    &mut text_buf,
+                    text_start,
+                    prev_token_end,
+                    text_line,
+                    text_col,
+                );
+                while self.check(TokenKind::Newline) {
+                    self.advance();
+                }
+                if self.check(TokenKind::For) {
+                    let child = self.parse_jsx_for_block()?;
+                    body.push(child);
+                    while self.check(TokenKind::Newline) {
+                        self.advance();
+                    }
+                    self.consume(TokenKind::CloseBrace, "expected '}' after JSX expression")?;
+                    prev_token_end = 0;
+                    continue;
+                }
+                let expr = self.parse_expr()?;
+                while self.check(TokenKind::Newline) {
+                    self.advance();
+                }
+                self.consume(TokenKind::CloseBrace, "expected '}' after JSX child expression")?;
+                body.push(JsxChild::Expr(expr));
+                prev_token_end = 0;
+                continue;
+            }
+
+            if self.check(TokenKind::For)
+                && self.index + 2 < self.tokens.len()
+                && self.tokens[self.index + 1].kind == TokenKind::Identifier
+                && self.tokens[self.index + 2].kind == TokenKind::In
+            {
+                flush_text(
+                    &mut body,
+                    &mut text_buf,
+                    text_start,
+                    prev_token_end,
+                    text_line,
+                    text_col,
+                );
+                let child = self.parse_jsx_for_block()?;
+                body.push(child);
+                prev_token_end = 0;
+                continue;
+            }
+
+            let tok = self.advance();
+            if text_buf.is_empty() {
+                text_start = tok.span.start;
+                text_line = tok.span.line;
+                text_col = tok.span.col;
+            } else if prev_token_end > 0 && tok.span.start > prev_token_end {
+                text_buf.push(' ');
+            }
+            text_buf.push_str(&tok.lexeme);
+            prev_token_end = tok.span.end;
+        }
+
+        flush_text(
+            &mut body,
+            &mut text_buf,
+            text_start,
+            prev_token_end,
+            text_line,
+            text_col,
+        );
+
+        while self.check(TokenKind::Newline) {
+            self.advance();
+        }
+        let close_brace = self.consume(TokenKind::CloseBrace, "expected '}' to close for loop body")?;
+        let span = Span {
+            start: for_tok.span.start,
+            end: close_brace.span.end,
+            line: for_tok.span.line,
+            col: for_tok.span.col,
+        };
+
+        Ok(JsxChild::For {
+            var_name,
+            iterable,
+            body,
+            span,
         })
     }
 
@@ -2171,12 +2361,23 @@ impl Parser {
         false
     }
 
-    fn is_struct_init_lookahead(&self) -> bool {
+    fn is_struct_init_lookahead(&self, target: &Expr) -> bool {
         if !self.check(TokenKind::OpenBrace) {
             return false;
         }
         if self.index + 1 < self.tokens.len() {
             let next = &self.tokens[self.index + 1];
+            if next.kind == TokenKind::CloseBrace {
+                return match target {
+                    Expr::Identifier(name, _) => {
+                        name.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false)
+                    }
+                    Expr::Dot(_, member, _) => {
+                        member.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false)
+                    }
+                    _ => false,
+                };
+            }
             if Self::is_field_name_token(&next.kind) {
                 if self.index + 2 < self.tokens.len() {
                     let next2 = &self.tokens[self.index + 2];
@@ -2454,7 +2655,7 @@ impl Parser {
                     col: expr.span().col,
                 };
                 expr = Expr::Call(Box::new(expr), args, span);
-            } else if self.is_struct_init_lookahead() {
+            } else if self.is_struct_init_lookahead(&expr) {
                 self.advance(); // consume '{'
                 let mut fields = Vec::new();
                 while !self.check(TokenKind::CloseBrace) && !self.check(TokenKind::EOF) {

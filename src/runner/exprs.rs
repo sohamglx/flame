@@ -3935,19 +3935,51 @@ impl Runner {
                     attrs_map.insert(attr.name.clone(), val);
                 }
 
-                let mut children_vals = Vec::new();
-                for child in children {
+                fn eval_child(
+                    runner: &mut Runner,
+                    child: &crate::parser::JsxChild,
+                    env: Arc<Mutex<Env>>,
+                    out: &mut Vec<Value>,
+                ) -> Result<(), String> {
                     match child {
                         crate::parser::JsxChild::Text(t, _) => {
-                            children_vals.push(Value::String(t.clone()));
+                            out.push(Value::String(t.clone()));
                         }
                         crate::parser::JsxChild::Expr(e) => {
-                            children_vals.push(self.eval_expr(e, env.clone())?);
+                            out.push(runner.eval_expr(e, env)?);
                         }
                         crate::parser::JsxChild::Element(e) => {
-                            children_vals.push(self.eval_expr(e, env.clone())?);
+                            out.push(runner.eval_expr(e, env)?);
+                        }
+                        crate::parser::JsxChild::For {
+                            var_name,
+                            iterable,
+                            body,
+                            ..
+                        } => {
+                            let iter_val = runner.eval_expr(iterable, env.clone())?;
+                            let items = match iter_val {
+                                Value::Tuple(items) => items,
+                                _ => Vec::new(),
+                            };
+                            for item in items {
+                                let child_env = Arc::new(Mutex::new(Env::new_child(env.clone())));
+                                child_env
+                                    .lock()
+                                    .unwrap()
+                                    .define(var_name.clone(), item, false);
+                                for b in body {
+                                    eval_child(runner, b, child_env.clone(), out)?;
+                                }
+                            }
                         }
                     }
+                    Ok(())
+                }
+
+                let mut children_vals = Vec::new();
+                for child in children {
+                    eval_child(self, child, env.clone(), &mut children_vals)?;
                 }
 
                 let mut node_obj = HashMap::new();

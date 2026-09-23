@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 #[derive(serde::Serialize)]
 pub struct SemanticToken {
     pub line: usize,
@@ -8,6 +10,13 @@ pub struct SemanticToken {
 }
 
 pub fn get_semantic_tokens(source: &str) -> Vec<SemanticToken> {
+    get_semantic_tokens_with_types(source, None)
+}
+
+pub fn get_semantic_tokens_with_types(
+    source: &str,
+    extra_types: Option<&HashSet<String>>,
+) -> Vec<SemanticToken> {
     let mut tokens = Vec::new();
     let mut lexer = crate::lexer::Lexer::new(source);
     let mut raw_tokens = Vec::new();
@@ -21,6 +30,34 @@ pub fn get_semantic_tokens(source: &str) -> Vec<SemanticToken> {
     }
 
     let len = raw_tokens.len();
+
+    // Pass 1: Collect locally declared structs, enums, and functions
+    let mut local_types = HashSet::new();
+    let mut local_funcs = HashSet::new();
+
+    // Standard library and built-in type names
+    for std_t in &[
+        "Element", "NodeList", "Storage", "Location", "History", "Document", "Window",
+        "Option", "Result", "Vector", "Map", "Array", "String", "Int", "Num", "Float", "Bool", "Byte",
+    ] {
+        local_types.insert(std_t.to_string());
+    }
+
+    for k in 0..len {
+        if (raw_tokens[k].kind == crate::lexer::TokenKind::Struct
+            || raw_tokens[k].kind == crate::lexer::TokenKind::Enum)
+            && k + 1 < len
+            && raw_tokens[k + 1].kind == crate::lexer::TokenKind::Identifier
+        {
+            local_types.insert(raw_tokens[k + 1].lexeme.clone());
+        } else if raw_tokens[k].kind == crate::lexer::TokenKind::Fn
+            && k + 1 < len
+            && raw_tokens[k + 1].kind == crate::lexer::TokenKind::Identifier
+        {
+            local_funcs.insert(raw_tokens[k + 1].lexeme.clone());
+        }
+    }
+
     let mut i = 0;
     let mut jsx_tag_depth: usize = 0;
     let mut in_jsx_tag = false;
@@ -31,7 +68,7 @@ pub fn get_semantic_tokens(source: &str) -> Vec<SemanticToken> {
         let mut token_type = None;
         let modifiers = 0;
 
-        // Check JSX tag entry
+        // Check JSX tag entry - avoid false positives on comparison operators like `a < b`
         if t.kind == crate::lexer::TokenKind::Lt {
             if i + 1 < len && raw_tokens[i + 1].kind == crate::lexer::TokenKind::Slash {
                 in_jsx_tag = true;
@@ -39,8 +76,34 @@ pub fn get_semantic_tokens(source: &str) -> Vec<SemanticToken> {
                 && (raw_tokens[i + 1].kind == crate::lexer::TokenKind::Identifier
                     || raw_tokens[i + 1].kind == crate::lexer::TokenKind::Type)
             {
-                in_jsx_tag = true;
-                jsx_tag_depth += 1;
+                let is_jsx_start = if i == 0 {
+                    true
+                } else {
+                    matches!(
+                        raw_tokens[i - 1].kind,
+                        crate::lexer::TokenKind::Return
+                            | crate::lexer::TokenKind::Yield
+                            | crate::lexer::TokenKind::Await
+                            | crate::lexer::TokenKind::Equal
+                            | crate::lexer::TokenKind::OpenParen
+                            | crate::lexer::TokenKind::OpenBracket
+                            | crate::lexer::TokenKind::OpenBrace
+                            | crate::lexer::TokenKind::Comma
+                            | crate::lexer::TokenKind::Colon
+                            | crate::lexer::TokenKind::Arrow
+                            | crate::lexer::TokenKind::FatArrow
+                            | crate::lexer::TokenKind::Question
+                            | crate::lexer::TokenKind::Ampersand2
+                            | crate::lexer::TokenKind::Pipe2
+                            | crate::lexer::TokenKind::Newline
+                            | crate::lexer::TokenKind::Gt
+                    )
+                };
+
+                if is_jsx_start {
+                    in_jsx_tag = true;
+                    jsx_tag_depth += 1;
+                }
             }
         }
 
@@ -133,8 +196,6 @@ pub fn get_semantic_tokens(source: &str) -> Vec<SemanticToken> {
                         token_type = Some(0); // keyword
                     } else if i > 0 && raw_tokens[i - 1].kind == crate::lexer::TokenKind::At {
                         token_type = Some(0); // annotation identifier colored like tags (keyword)
-                    } else if i > 0 && raw_tokens[i - 1].kind == crate::lexer::TokenKind::Fn {
-                        token_type = Some(1); // function declaration name (blue)
                     } else if i > 0 && raw_tokens[i - 1].kind == crate::lexer::TokenKind::Lt {
                         // JSX opening tag name colored like keyword (pink)
                         token_type = Some(0); // JSX tag name
@@ -144,8 +205,35 @@ pub fn get_semantic_tokens(source: &str) -> Vec<SemanticToken> {
                     {
                         // JSX closing tag name colored like keyword (pink)
                         token_type = Some(0); // JSX tag name
-                    } else if i + 1 < len && raw_tokens[i + 1].kind == crate::lexer::TokenKind::OpenParen {
-                        token_type = Some(1); // function call
+                    } else if i > 0 && raw_tokens[i - 1].kind == crate::lexer::TokenKind::Fn {
+                        token_type = Some(1); // function declaration name (blue)
+                    } else if i > 0
+                        && matches!(
+                            raw_tokens[i - 1].kind,
+                            crate::lexer::TokenKind::Struct | crate::lexer::TokenKind::Enum
+                        )
+                    {
+                        token_type = Some(1); // struct / enum declaration name (blue)
+                    } else if local_types.contains(&t.lexeme)
+                        || extra_types.map_or(false, |et| et.contains(&t.lexeme))
+                    {
+                        token_type = Some(1); // declared workspace struct / enum (blue)
+                    } else if i + 1 < len
+                        && raw_tokens[i + 1].kind == crate::lexer::TokenKind::OpenParen
+                    {
+                        token_type = Some(1); // function call (blue)
+                    } else if i + 2 < len
+                        && raw_tokens[i + 1].kind == crate::lexer::TokenKind::Exclamation
+                        && raw_tokens[i + 2].kind == crate::lexer::TokenKind::OpenParen
+                    {
+                        token_type = Some(1); // macro call like println!(...) (blue)
+                    } else if matches!(
+                        t.lexeme.as_str(),
+                        "println" | "print" | "eprintln" | "assert" | "panic" | "todo"
+                    ) {
+                        token_type = Some(1); // built-in function (blue)
+                    } else if local_funcs.contains(&t.lexeme) {
+                        token_type = Some(1); // local function reference (blue)
                     } else if t.lexeme.starts_with("on") && t.lexeme.len() > 2 {
                         token_type = Some(1); // function color (blue) for event handlers like onClick
                     }

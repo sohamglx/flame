@@ -1,13 +1,13 @@
 ---
 title: Web Applications (std.web)
-description: Fine-grained reactive web development in Flame with direct JavaScript DOM compilation, zero Virtual DOM diffing, multi-file architecture, built-in SPA router, layout engine, and live reload server.
+description: Complete, production-grade guide to Flame's std.web module with fine-grained reactive DOM compilation, WebAssembly (@Wasm), pure algorithms (@Compute), reactive signals (@State, @Computed, @Effect), SPA routing, layout engine, and zero-overhead Virtual DOM-free performance.
 ---
 
 import { Aside, Tabs, TabItem, Card, CardGrid } from '@astrojs/starlight/components';
 
 The `std.web` module is Flame's official framework and compiler toolchain for building high-performance, reactive web applications.
 
-Instead of shipping a heavy runtime framework or forcing bulky WebAssembly binaries for simple UI updates, Flame compiles your UI and component declarations directly into **clean, fine-grained reactive JavaScript, HTML5, and CSS**.
+Instead of shipping a heavy runtime framework (like React or Angular) or forcing bulky WebAssembly binaries for simple UI updates, Flame compiles your UI and component declarations directly into **clean, fine-grained reactive JavaScript, HTML5, and CSS**. When heavy mathematical computations are needed, Flame compiles functions marked with `@Wasm` into **genuine WebAssembly bytecode (`dist/app.wasm`)** and streams it directly to the browser.
 
 ---
 
@@ -29,6 +29,7 @@ Flame cleanly divides responsibilities between JavaScript and WebAssembly (WASM)
           UI / DOM               Computation
               │                       │
          JavaScript                  WASM
+       (Fine-Grained)            (dist/app.wasm)
               │                       │
               └───────────┬───────────┘
                           ↓
@@ -36,7 +37,9 @@ Flame cleanly divides responsibilities between JavaScript and WebAssembly (WASM)
 ```
 
 - **UI & DOM Manipulation**: Compiles to minimal, human-readable JavaScript with direct DOM node updates.
-- **Browser APIs**: Maps 1:1 with native browser globals (`window`, `document`, `localStorage`).
+- **WebAssembly Engine (`@Wasm`)**: Compiles CPU-intensive routines into native `.wasm` binaries.
+- **Pure Algorithms (`@Compute`)**: High-efficiency mathematical evaluation without runtime overhead.
+- **Browser APIs**: Maps 1:1 with native browser globals (`web.window`, `web.document`, `localStorage`).
 - **Networking**: Idiomatic `std.net.http` client compiled to high-speed asynchronous requests.
 - **Zero Heavy Runtimes**: Output bundle `dist/app.js` is typically under **2 KB** before minification!
 
@@ -66,153 +69,448 @@ The surrounding `<main>`, `<h1>`, and `<button>` elements are untouched, and no 
 
 ---
 
-## Multi-File Project Architecture
+## Complete Web Annotations Reference
 
-Large web applications should be modular. Flame provides native multi-file support with automatic file discovery, modular imports/exports, tag-like component instantiation, and auto-registered routing.
+Flame provides 12 specialized web annotations that control compilation, routing, reactivity, layout wrapping, styling, and WebAssembly execution:
 
-### Directory Structure
-
-A typical multi-file Flame web project is structured as follows:
-
-```text
-my-web-app/
-├── flame.toml             # Project manifest
-├── src/
-│   ├── main.fm           # App entrypoint (@Web, @Layout, root @Page("/"))
-│   ├── navbar.fm         # Shared navigation bar (export @Component fn NavBar)
-│   ├── about.fm          # About page (export @Page("/about") fn about)
-│   ├── projects.fm       # Projects page + API fetching (export @Page("/projects"))
-│   └── contact.fm        # Contact form (export @Page("/contact") fn contact)
-└── dist/                 # Auto-generated static web bundle
-    ├── index.html        # HTML5 entry mounting to #app
-    ├── app.js            # Standalone reactive signals + SPA router + compiled UI
-    └── app.css           # Preserved custom stylesheet + @Style injections
-```
-
-### Automatic File Discovery & Bundling
-
-When compiling or running a web project (`flame run --web` or `flame build --web`), Flame's compiler:
-1. Automatically scans the entire `src/` directory recursively for all `.fm` and `.flame` source files.
-2. Processes all exported declarations (`export @Component`, `export @Page`, `export fn`).
-3. Seamlessly links modular dependencies (`import navbar`, `import about`, etc.) without requiring external bundlers like Webpack, Vite, or Rollup.
+| Annotation | Target | Parameters | Description |
+| :--- | :--- | :--- | :--- |
+| **`@Web`** | Entry Function | `title: String`, `port: Int` | Marks the application entrypoint. Configures the HTML page title and local dev server port. |
+| **`@Page`** | Function | `path: String` | Declares a client-side routable page view (e.g. `@Page("/")`, `@Page("/compute")`). Automatically registered in the SPA router. |
+| **`@Layout`** | Function | `children: Node` | Defines an application shell wrapping page content. Preserves persistent chrome across route transitions. |
+| **`@Component`** | Function | `props...` | Declares a reusable UI component that returns JSX elements. Can be instantiated like HTML tags (`<NavBar />`). |
+| **`@State`** | `let mut var` | None | Declares a fine-grained reactive signal. Mutations directly update dependent DOM nodes. |
+| **`@Computed`** | Function / Variable | None | Declares a derived reactive calculation. Automatically tracks dependencies on `@State` variables and recalculates on demand. |
+| **`@Effect`** | Function | None | Declares a reactive side-effect that automatically executes whenever its referenced `@State` dependencies change. |
+| **`@Compute`** | Function | None | Marks high-performance mathematical and algorithmic functions for maximum optimization. |
+| **`@Wasm`** | Function | None | Compiles heavy computational routines directly into WebAssembly binary bytecode (`dist/app.wasm`). |
+| **`@Style`** | Function | None | Declares CSS styling rules compiled directly into `dist/app.css` without overwriting custom styles. |
+| **`@Client`** | Function / Block | None | Marks code as strictly client-side browser code for the compiler's frontend pass. |
+| **`@Route`** | Function | `path: String`, `method: String` | Declares a server or client route endpoint with explicit HTTP method matching. |
 
 ---
 
-## Exports, Components & Auto-Routing
+## Detailed Annotation Guide
 
-Flame enables seamless modularity through the `export` keyword:
+### 1. `@Web` (Application Entrypoint)
 
-### 1. Reusable Tag Components (`export @Component`)
-
-Declare reusable UI components in dedicated files with `export @Component`:
+Marks the entry function as targeting the web browser environment. Accepts optional configuration parameters:
 
 ```flame
-// src/navbar.fm
 import std.web
 
-export @Component
-fn NavBar() {
-    <header class="navbar">
-        <div class="nav-brand">⚡ Flame Web</div>
-        <nav class="nav-links">
-            <a href="/" class="nav-link">Home</a>
-            <a href="/about" class="nav-link">About</a>
-            <a href="/projects" class="nav-link">Projects</a>
-            <a href="/contact" class="nav-link">Contact</a>
-        </nav>
-    </header>
+@Web(title: "Flame Showcase", port: 3000)
+fn main() {
+    // Application setup, global state, cursor initialization, and layout definition
 }
 ```
 
-Once imported, components can be rendered anywhere in your UI like standard tags:
+- **`title`**: Sets the default `<title>` tag in `dist/index.html`.
+- **`port`**: Specifies the local dev server listening port (defaults to `3000`).
+
+---
+
+### 2. `@Page` (Client-Side SPA Routing)
+
+Binds a function as a routable page view mounted at the specified URL path. Flame's compiler automatically extracts all `@Page` annotations across the workspace and injects them into the built-in SPA router:
+
 ```flame
-<NavBar />
-```
-
-### 2. Auto-Integrated SPA Routing (`export @Page`)
-
-In Flame, any function annotated with `export @Page("/path")` in any `.fm` file in `src/` is **automatically registered into the client-side SPA router**:
-
-```flame
-// src/about.fm
-import std.web
-import navbar
-
 export @Page("/about")
 fn about() {
     <div class="page-container">
-        <main class="content-section">
-            <h1 class="section-title">About Flame Web</h1>
-            <p>Fine-grained reactivity with zero virtual DOM.</p>
-        </main>
+        <h1>About Us</h1>
+        <p>Built with fine-grained Flame reactivity.</p>
     </div>
 }
 ```
 
-<Aside type="tip" title="Zero Route Boilerplate">
-You do not need to configure an explicit route table or router object in `main.fm`. Simply exporting `@Page("/about")` causes Flame's compiler to register `/about` into the router and link navigation from any `<a href="/about">` tag automatically.
-</Aside>
-
-### 3. Pages Usable as Tag-Like Components
-
-Every `@Page` is also registered as a reusable component. You can mount a page directly inside another component or layout:
-
-```flame
-<About />
-```
+- When the user navigates to `/about` via `<a href="/about">` or `web.navigate("/about")`, the page mounts instantly without a full browser reload.
+- Any `@Page` function is also usable as a tag-like component (`<About />`).
 
 ---
 
-## App Shells with `@Layout`
+### 3. `@Layout` (Persistent App Shell)
 
-Web applications often require a consistent layout shell (such as a top navigation bar, sidebar, and footer) that wraps all page content.
-
-Flame provides the `@Layout` annotation:
+Defines a shared outer layout wrapper for all pages. Receives `children` as a parameter representing the active page view:
 
 ```flame
-// src/main.fm
 @Layout
 fn AppLayout(children) {
     <div class="app-layout">
         <NavBar />
-        <div class="app-content">
+        <main class="page-body">
             {children}
-        </div>
+        </main>
+        <Footer />
     </div>
 }
 ```
 
-### How `@Layout` Works
-- **Automatic Wrapping**: Pages that do not specify a custom layout are automatically wrapped inside the `@Layout` component.
-- **Dynamic Slot Interpolation**: The `{children}` expression automatically injects the active `@Page` content into the layout container.
-- **Persistent Chrome**: When switching routes via the client-side router, the layout shell remains intact while only the `{children}` DOM node updates.
+- **Persistent State**: The layout container (such as navigation bars, background canvases, and music players) remains mounted during route changes.
+- **Dynamic Slot Interpolation**: The `{children}` slot dynamically updates with the active `@Page` DOM tree.
 
 ---
 
-## Networking & Asynchronous Functions (`std.net.http`)
+### 4. `@Component` (Reusable UI Elements)
 
-Flame Web projects use Flame's native networking module `std.net.http` rather than browser-specific APIs:
+Marks a function as a reusable UI component that returns JSX elements. Components accept typed parameters as props, which map directly to JSX tag attributes:
+
+```flame
+export @Component
+fn Button(label: String, primary: Bool) {
+    <button class={if primary { "btn btn-primary" } else { "btn btn-secondary" }}>
+        {label}
+    </button>
+}
+
+// Instantiation:
+<Button label="Submit" primary={true} />
+```
+
+---
+
+### 5. `@State` (Fine-Grained Reactive Signals)
+
+Marks a mutable variable as a reactive signal. When a `@State` variable is modified, Flame updates **only** the exact DOM text nodes and attributes that reference it:
+
+```flame
+@State
+let mut count = 0
+
+fn increment() {
+    count += 1
+}
+
+<button onClick={increment}>
+    Clicked: {count} times
+</button>
+```
+
+Under the hood, Flame compiles `@State` variables into signal getters and setters (`_getSignal` and `_setSignal`), subscribing DOM text nodes at compile-time with zero virtual DOM overhead.
+
+---
+
+### 6. `@Computed` (Reactive Derived State)
+
+Declares a derived computation that depends on one or more `@State` variables. Flame's compiler automatically analyzes the function body, traces all referenced `@State` variables, and subscribes dependent UI nodes directly to the underlying signals:
+
+```flame
+@State
+let mut count = 10
+
+@Computed
+export fn double_count() -> Int {
+    return count * 2
+}
+
+@Computed
+export fn count_parity() -> String {
+    if count % 2 == 0 {
+        return "Even"
+    }
+    return "Odd"
+}
+
+// In JSX:
+<div>Double: {double_count()}</div>
+<div>Parity: {count_parity()}</div>
+```
+
+When `count` changes, `double_count()` and `count_parity()` are re-evaluated and their text nodes update automatically.
+
+---
+
+### 7. `@Effect` (Reactive Side-Effects)
+
+Registers a side-effect function that automatically executes whenever its accessed `@State` dependencies update. Flame statically inspects the function body (including string interpolations and conditions) to register subscriptions:
+
+```flame
+@State
+let mut query = ""
+
+@Effect
+export fn on_query_change() {
+    web.window.console.log($"Search query updated to: {query}")
+}
+```
+
+- Runs once on initial application load.
+- Re-runs automatically whenever `query` is mutated.
+
+---
+
+### 8. `@Compute` (Pure Algorithmic Optimization)
+
+Directs the compiler to optimize mathematical and computational algorithms:
+
+```flame
+@Compute
+export fn is_prime(n: Int) -> Bool {
+    if n <= 1 { return false }
+    let mut d = 2
+    while d * d <= n {
+        if n % d == 0 { return false }
+        d += 1
+    }
+    return true
+}
+
+@Compute
+export fn collatz_steps(n: Int) -> Int {
+    let mut steps = 0
+    let mut val = n
+    while val > 1 && steps < 1000 {
+        if val % 2 == 0 { val = val / 2 } else { val = 3 * val + 1 }
+        steps += 1
+    }
+    return steps
+}
+```
+
+---
+
+### 9. `@Wasm` (WebAssembly Bytecode Engine)
+
+Compiles heavy computational functions directly into **WebAssembly binary bytecode (`dist/app.wasm`)**.
+
+```flame
+@Wasm
+export fn wasm_fib(n: Int) -> Int {
+    if n <= 1 {
+        return n
+    }
+    return wasm_fib(n - 1) + wasm_fib(n - 2)
+}
+
+@Wasm
+export fn wasm_factorial(n: Int) -> Int {
+    if n <= 1 {
+        return 1
+    }
+    return n * wasm_factorial(n - 1)
+}
+```
+
+#### How Flame Executes WebAssembly:
+1. **Compilation**: During `flame build --web` or `flame run --web`, Flame compiles `@Wasm` functions into genuine WebAssembly MVP binary modules.
+2. **Streaming Loader**: In the generated `dist/app.js`, Flame sets up an asynchronous streaming loader:
+   ```javascript
+   const { instance } = await WebAssembly.instantiateStreaming(fetch("app.wasm"), {});
+   _wasmExports = instance.exports;
+   window.wasm = _wasmExports;
+   ```
+3. **Graceful Fallback**: If the browser environment restricts WebAssembly, Flame automatically delegates calls to an equivalent JavaScript fallback function without throwing runtime errors.
+4. **Benchmarking**: Benchmark native WASM vs JavaScript execution using `web.window.performance.now()`.
+
+---
+
+### 10. `@Style` (Component & Global CSS Injection)
+
+Injects CSS rules into `dist/app.css` without overwriting custom styles:
+
+```flame
+@Style
+fn componentStyles() -> String {
+    ".badge-wasm { background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 0.25rem 0.75rem; border-radius: 9999px; }"
+}
+```
+
+Flame merges all `@Style` return strings into the application stylesheet while preserving any manual styles in `dist/app.css`.
+
+---
+
+### 11. `@Client` (Client-Side Isolation)
+
+Explicitly marks functions, event listeners, or code blocks as client-side browser code:
+
+```flame
+@Client
+export fn on_sign_out() {
+    web.window.localStorage.removeItem("session_token")
+    web.navigate("/login")
+}
+```
+
+---
+
+### 12. `@Route` (Explicit Route Declaration)
+
+Defines an HTTP route endpoint for fullstack or client-side routing with HTTP method constraints:
+
+```flame
+@Route(path = "/api/v1/health", method = "GET")
+export fn healthCheck() {
+    // Endpoint logic
+}
+```
+
+---
+
+## Native JSX Templating Rules
+
+Flame provides native JSX-style syntax directly inside the language grammar without needing Babel, TypeScript, or JSX pragma transforms:
+
+### 1. Element Tags and Attributes
+```flame
+<div id="hero" class="container">
+    <h1 class="title">Welcome to Flame</h1>
+</div>
+```
+
+### 2. Expression Interpolation `{expr}`
+Dynamic Flame expressions are evaluated inside single curly braces:
+```flame
+<div class="result">
+    Active Count: {count}
+    Double Count: {double_count()}
+    Calculated: {wasm_fib(10)}
+</div>
+```
+
+### 3. Native JSX Loops (`for .. in ..`)
+Flame natively supports iterating over arrays and collections directly inside JSX elements:
+```flame
+<nav class="nav-links">
+    {
+        for e in elem {
+            <a href={getLinkHref(e)} class="nav-link">{e}</a>
+        }
+    }
+</nav>
+```
+
+Loops can also be declared directly within child elements without surrounding braces:
+```flame
+<ul class="task-list">
+    for task in tasks {
+        <li class="task-item">{task}</li>
+    }
+</ul>
+```
+
+### 4. Native String Interpolation in Handlers
+Flame supports `$"..."` interpolated strings inside event handlers, effects, and signals:
+```flame
+export fn runWasmFib() {
+    let start = web.window.performance.now()
+    let res = wasm_fib(compute_num)
+    let end = web.window.performance.now()
+    let elapsed = end - start
+    wasm_output = $"Fibonacci({compute_num}) = {res}"
+    wasm_speed_badge = $"⚡ WASM executed in {elapsed.toFixed(3)} ms"
+}
+```
+
+### 5. Event Handlers
+Attach event listeners using camelCase event attributes (`onClick`, `onInput`, `onChange`, `onKeyDown`):
+```flame
+// Direct state mutation:
+<button onClick={count += 1}>Increment</button>
+
+// Function reference:
+<button onClick={fetchProjects}>Fetch Data</button>
+
+// Multi-statement block:
+<button onClick={
+    count += 1
+    toggleColor()
+}>Update</button>
+```
+
+### 6. Dynamic Inline Styles
+```flame
+<button style={"background-color: " + btn_color + "; color: white;"}>
+    Dynamic Button
+</button>
+```
+
+---
+
+## Standard Library Web APIs (`std.web`)
+
+The `std.web` package provides comprehensive, type-safe structures mapping to native browser capabilities:
+
+### Structs and Interfaces
+
+#### `Document` (`web.document`)
+The browser `Document` instance provides DOM querying and node creation:
+- `getElementById(id: String) -> Element`
+- `createElement(tagName: String) -> Element`
+- `createTextNode(text: String) -> HtmlNode`
+- `querySelector(selector: String) -> Element`
+- `querySelectorAll(selector: String) -> [Element]`
+- `addEventListener(event: String, handler: Unknown)`
+- `removeEventListener(event: String, handler: Unknown)`
+
+#### `Window` (`web.window`)
+The global browser `Window` instance provides window management, navigation, timers, and dialogs:
+- `addEventListener(event: String, handler: Unknown)`
+- `removeEventListener(event: String, handler: Unknown)`
+- `alert(message: String)`
+- `prompt(message: String, defaultText: String = "") -> String`
+- `confirm(message: String) -> Bool`
+- `setTimeout(callback: Unknown, delayMs: Int) -> Int`
+- `clearTimeout(id: Int)`
+- `setInterval(callback: Unknown, delayMs: Int) -> Int`
+- `clearInterval(id: Int)`
+- `requestAnimationFrame(callback: Unknown) -> Int`
+- `cancelAnimationFrame(id: Int)`
+- `performance.now() -> Float`
+- `location: Location`
+- `history: History`
+- `localStorage: Storage`
+- `sessionStorage: Storage`
+- `innerWidth: Int`, `innerHeight: Int`
+
+#### `Element`
+Interactive DOM element wrapper:
+- `setAttribute(name: String, value: String)`
+- `getAttribute(name: String) -> String`
+- `removeAttribute(name: String)`
+- `appendChild(child: Unknown)`
+- `removeChild(child: Unknown)`
+- `addEventListener(event: String, handler: Unknown)`
+- `removeEventListener(event: String, handler: Unknown)`
+- `focus()`
+- `blur()`
+
+#### `Storage` (`localStorage` / `sessionStorage`)
+Web Storage API wrapper:
+- `get(key: String) -> String`
+- `set(key: String, value: String)`
+- `remove(key: String)`
+- `clear()`
+- `length() -> Int`
+
+#### `Event`, `MouseEvent`, `KeyboardEvent`, `InputEvent`
+Event objects passed to event handlers with event cancellation (`preventDefault()`, `stopPropagation()`) and pointer / key coordinates (`clientX`, `clientY`, `key`, `code`).
+
+---
+
+## Networking & Asynchronous HTTP (`std.net.http`)
+
+Flame Web projects leverage Flame's standard networking module `std.net.http` for asynchronous REST API communication:
 
 ```flame
 import std.net.http
 
-export fn fetchProjects() {
-    let container = web.document.getElementById("projects-grid")
+export fn fetchLivePosts() {
+    let container = web.document.getElementById("posts-container")
     if container {
-        container.innerHTML = "<div class='loading'>Loading live projects...</div>"
+        container.innerHTML = "<div class='loading'>Loading live posts...</div>"
     }
 
-    // High-level HTTP GET request with await
-    let data = await http.get("https://jsonplaceholder.typicode.com/posts")
+    // Native asynchronous HTTP GET request
+    let posts = await http.get("https://jsonplaceholder.typicode.com/posts")
 
     if container {
         container.innerHTML = ""
         let mut i = 0
-        while i < 6 && i < data.length {
-            let post = data[i]
+        while i < 5 && i < posts.length {
+            let p = posts[i]
             let card = web.document.createElement("div")
-            card.className = "project-card"
-            card.innerHTML = "<h3>" + post.title + "</h3><p>" + post.body + "</p>"
+            card.className = "post-card"
+            card.innerHTML = "<h3>" + p.title + "</h3><p>" + p.body + "</p>"
             container.appendChild(card)
             i += 1
         }
@@ -221,165 +519,36 @@ export fn fetchProjects() {
 ```
 
 ### Automatic `async function` Generation
-Flame's compiler performs static AST analysis to detect any use of `await` inside functions, components, event handlers, and closures. When `await` is present, Flame automatically marks the compiled JavaScript declaration as `async function`:
-
-```javascript
-// Compiled output in dist/app.js
-async function fetchProjects() {
-    // ...
-    let data = await http.get("https://jsonplaceholder.typicode.com/posts");
-    // ...
-}
-```
-
-This ensures full compliance with JavaScript syntax specifications and prevents browser `SyntaxError: Unexpected reserved word` errors.
+Flame's compiler statically analyzes functions and closures. When `await` is present within any function, event handler, or closure, Flame automatically compiles the declaration into a native JavaScript `async function`.
 
 ---
 
-## DOM & Window Interop (`std.web`)
+## Multi-File Project Architecture
 
-The `std.web` module exposes direct, type-safe access to browser globals through `web.document` and `web.window`:
-
-### Custom Animated Cursor Example
-
-```flame
-fn setupCursor() {
-    web.window.addEventListener("mousemove", (e) {
-        let dot = web.document.getElementById("cursor-dot")
-        let outline = web.document.getElementById("cursor-outline")
-        if dot {
-            dot.style.left = e.clientX + "px"
-            dot.style.top = e.clientY + "px"
-        }
-        if outline {
-            outline.style.left = e.clientX + "px"
-            outline.style.top = e.clientY + "px"
-        }
-    })
-}
-```
-
----
-
-## Running and Developing Web Applications
-
-Flame provides a built-in HTTP server, live-reload watcher, and static bundler:
-
-### 1. Development Server (`run --web`)
-
-Start a local development server:
-
-```bash
-fmp run --web src/main.fm
-```
-
-This compiles your project into `dist/` and serves it at `http://localhost:3000/`.
-
-### 2. Live Hot Reload (`run --watch --web`)
-
-Enable hot reloading during active development:
-
-```bash
-fmp run --watch --web src/main.fm
-```
-
-The watcher listens for filesystem changes across your source files, automatically recompiles `dist/app.js` and `dist/app.css`, and immediately refreshes the browser without losing scroll state.
-
-### 3. Production Build (`build --web`)
-
-Generate an optimized static distribution:
-
-```bash
-fmp build --web src/main.fm
-```
-
----
-
-## Anatomy of the `dist/` Output
-
-When Flame builds your web application, it produces a self-contained static directory ready for instant deployment:
+Large web applications in Flame are structured into modular components and routes:
 
 ```text
-dist/
-├── index.html   # HTML5 entry point mounting the app to #app
-├── app.js       # Standalone reactive runtime, router, and compiled UI (<2 KB)
-└── app.css      # Merged styles (custom styles preserved + @Style injections)
-```
-
-### Stylesheet Preservation
-When you customize `dist/app.css`, subsequent `flame build --web` or `flame run --web` runs **never overwrite** your custom CSS rules. Instead, Flame merges custom CSS with any `@Style` declarations in your code.
-
----
-
-## Core Annotations Reference
-
-| Annotation | Target | Description |
-| :--- | :--- | :--- |
-| `@Web` | `fn main()` | Marks the application entrypoint. Accepts optional parameters `title` and `port` (e.g. `@Web(title: "My App", port: 3000)`). |
-| `@Layout` | Function | Declares an application shell wrapping page content. Receives `(children)` as parameter. |
-| `@Page(path)` | Function | Declares a client-side routable page (e.g. `@Page("/")`, `@Page("/about")`). Automatically integrated into the SPA router. |
-| `@Component` | Function | Declares a reusable UI component that returns JSX elements. Usable as a tag (`<NavBar />`). |
-| `@State` | `let mut var` | Marks a variable as reactive. Compiles to an observable signal; mutations instantly update dependent DOM nodes. |
-| `@Style` | Function | Injects CSS rules into `dist/app.css` without overwriting existing stylesheet content. |
-
----
-
-## JSX Syntax Rules & Behavior
-
-### Clean Text Handling
-Text placed inside JSX tags behaves as plain text:
-
-```flame
-<p>Compile Flame's source directly into high-speed native JavaScript.</p>
-```
-
-- Plain words are treated as text content without erroneous keyword or function highlighting.
-- Apostrophes (such as in `Flame's`) do not break strings across lines or create unwanted auto-closing quote pairs.
-
-### Expression Interpolation `{expr}`
-Dynamic Flame code is placed inside curly braces:
-
-```flame
-<h1>Counter: {count}</h1>
-```
-
-### Event Handlers (`onClick`, `onInput`, `onChange`, `onKeyDown`)
-JSX attributes starting with `on` register native DOM event listeners:
-
-1. **Inline Signal Mutations**:
-   ```flame
-   <button onClick={count += 1}>Increment</button>
-   ```
-
-2. **Function References**:
-   ```flame
-   <button onClick={fetchProjects}>Fetch Data</button>
-   ```
-
-3. **Multi-Statement Event Blocks**:
-   ```flame
-   <button onClick={
-       count += 1
-       toggleColor()
-   }>
-       Update
-   </button>
-   ```
-
-### Dynamic Inline Styles
-Use curly braces with dynamic string expressions:
-
-```flame
-<button style={"background-color: " + btn_color + "; color: white;"}>
-    Active Color: {btn_color}
-</button>
+my-web-app/
+├── flame.toml             # Project manifest
+├── src/
+│   ├── main.fm           # App entrypoint (@Web, @Layout, root @Page("/"))
+│   ├── navbar.fm         # Shared navigation bar (export @Component fn NavBar)
+│   ├── compute.fm        # WebAssembly & Math Showcase (@Wasm, @Compute, @State, @Effect)
+│   ├── about.fm          # About page (export @Page("/about"))
+│   ├── projects.fm       # Live API page with std.net.http (export @Page("/projects"))
+│   └── contact.fm        # Form with reactive @State (export @Page("/contact"))
+└── dist/                 # Auto-generated static web bundle
+    ├── index.html        # HTML5 entry mounting to #app
+    ├── app.js            # Standalone reactive signals + SPA router + compiled UI (<2 KB)
+    ├── app.wasm          # Generated WebAssembly binary for @Wasm routines
+    └── app.css           # Preserved custom stylesheet + @Style injections
 ```
 
 ---
 
 ## Complete Multi-File Showcase Application
 
-Below is the complete, working implementation of a 4-page responsive web application with custom cursor, live API fetching, and layout wrapping:
+Below is the complete, working implementation of a multi-file responsive web application demonstrating all web annotations, WebAssembly, reactive signals, and API integration:
 
 <Tabs>
   <TabItem label="src/main.fm">
@@ -390,15 +559,29 @@ import navbar
 import about
 import projects
 import contact
+import compute
 
 @Web(title: "Flame Web Showcase", port: 3000)
 fn main() {
-
+    
     @State
     let mut count = 0
 
     @State
     let mut btn_color = "#3b82f6"
+
+    @Computed
+    fn double_count() -> Int {
+        return count * 2
+    }
+
+    @Computed
+    fn count_parity() -> String {
+        if count % 2 == 0 {
+            return "Even Number"
+        }
+        return "Odd Number"
+    }
 
     fn toggleColor() {
         if btn_color == "#3b82f6" {
@@ -449,24 +632,254 @@ fn main() {
                 <div class="hero-badge">Next-Gen Reactive Framework</div>
                 <h1 class="hero-title">High-Performance Web in Flame</h1>
                 <p class="hero-subtitle">
-                    Compile Flame directly into ultra-fast JavaScript DOM code with fine-grained reactivity and zero-overhead routing.
+                    Compile Flame directly into ultra-fast JavaScript DOM code with fine-grained reactivity, WebAssembly (@Wasm), and zero-overhead routing.
                 </p>
                 <div class="interactive-panel">
-                    <button onClick={
-                        count += 1
-                    } class="btn-counter">
+                    <button onClick={count += 1} class="btn-counter">
                         Counter: {count}
                     </button>
                     <button onClick={toggleColor} style={"background-color: " + btn_color + ";"} class="btn-color-toggle">
                         Active Color: {btn_color}
                     </button>
                 </div>
+                <div class="computed-stats" style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                    <div style="background: rgba(255, 255, 255, 0.05); padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                        ⚡ <strong>@Computed Double:</strong> {double_count()}
+                    </div>
+                    <div style="background: rgba(255, 255, 255, 0.05); padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                        🎯 <strong>Parity:</strong> {count_parity()}
+                    </div>
+                </div>
             </main>
         </div>
     }
+}
+```
+  </TabItem>
 
-    @Style
-    fn appStyles() {""}
+  <TabItem label="src/compute.fm">
+```flame
+import std.web
+import navbar
+
+// 1. @Wasm: Compiled directly to WebAssembly bytecode (dist/app.wasm)
+@Wasm
+export fn wasm_fib(n: Int) -> Int {
+    if n <= 1 {
+        return n
+    }
+    return wasm_fib(n - 1) + wasm_fib(n - 2)
+}
+
+@Wasm
+export fn wasm_factorial(n: Int) -> Int {
+    if n <= 1 {
+        return 1
+    }
+    return n * wasm_factorial(n - 1)
+}
+
+@Wasm
+export fn wasm_add(a: Int, b: Int) -> Int {
+    return a + b
+}
+
+// 2. @Compute: High-performance mathematical / numerical algorithms
+@Compute
+export fn compute_is_prime(n: Int) -> Bool {
+    if n <= 1 {
+        return false
+    }
+    let mut d = 2
+    while d * d <= n {
+        if n % d == 0 {
+            return false
+        }
+        d += 1
+    }
+    return true
+}
+
+@Compute
+export fn compute_collatz_steps(n: Int) -> Int {
+    let mut steps = 0
+    let mut val = n
+    while val > 1 && steps < 1000 {
+        if val % 2 == 0 {
+            val = val / 2
+        } else {
+            val = 3 * val + 1
+        }
+        steps += 1
+    }
+    return steps
+}
+
+// 3. @State: Fine-grained reactive state
+@State
+let mut compute_num = 10
+
+@State
+let mut wasm_output = "Run WebAssembly computation below"
+
+@State
+let mut wasm_speed_badge = "⚡ Native WASM Engine"
+
+// 4. @Computed: Reactive derived state (tracks dependencies on @State)
+@Computed
+export fn double_compute_num() -> Int {
+    return compute_num * 2
+}
+
+@Computed
+export fn square_compute_num() -> Int {
+    return compute_num * compute_num
+}
+
+@Computed
+export fn compute_num_parity() -> String {
+    if compute_num % 2 == 0 {
+        return "Even"
+    }
+    return "Odd"
+}
+
+@Computed
+export fn prime_status() -> String {
+    if compute_is_prime(compute_num) {
+        return "Yes (Prime)"
+    }
+    return "No (Composite)"
+}
+
+// 5. @Effect: Automatic reactive side-effect triggered on state updates
+@Effect
+export fn on_compute_num_change() {
+    web.window.console.log($"⚡ [Flame @Effect] compute_num updated: {compute_num}")
+}
+
+export fn incrementNum() {
+    compute_num += 1
+}
+
+export fn decrementNum() {
+    if compute_num > 1 {
+        compute_num -= 1
+    }
+}
+
+export fn setPrimeTest() {
+    compute_num = 29
+}
+
+export fn setCollatzTest() {
+    compute_num = 27
+}
+
+export fn runWasmFib() {
+    let start = web.window.performance.now()
+    let res = wasm_fib(compute_num)
+    let end = web.window.performance.now()
+    let elapsed = end - start
+    wasm_output = $"Fibonacci({compute_num}) = {res}"
+    wasm_speed_badge = $"⚡ WASM executed in {elapsed.toFixed(3)} ms"
+}
+
+export fn runWasmFactorial() {
+    let start = web.window.performance.now()
+    let res = wasm_factorial(compute_num)
+    let end = web.window.performance.now()
+    let elapsed = end - start
+    wasm_output = $"Factorial({compute_num}) = {res}"
+    wasm_speed_badge = $"⚡ WASM executed in {elapsed.toFixed(3)} ms"
+}
+
+// 6. @Style: CSS rules compiled directly into application stylesheet
+@Style
+fn compute_styles() -> String {
+    ".compute-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-top: 2rem; } .compute-card { background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; padding: 1.75rem; backdrop-filter: blur(12px); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2); } .badge-wasm { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.75rem; border-radius: 9999px; background: rgba(16, 185, 129, 0.15); color: #34d399; font-size: 0.85rem; font-weight: 600; border: 1px solid rgba(16, 185, 129, 0.3); } .badge-compute { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.75rem; border-radius: 9999px; background: rgba(99, 102, 241, 0.15); color: #818cf8; font-size: 0.85rem; font-weight: 600; border: 1px solid rgba(99, 102, 241, 0.3); } .badge-computed { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.75rem; border-radius: 9999px; background: rgba(236, 72, 153, 0.15); color: #f472b6; font-size: 0.85rem; font-weight: 600; border: 1px solid rgba(236, 72, 153, 0.3); } .compute-val { font-size: 1.5rem; font-weight: 700; color: #f8fafc; margin: 0.75rem 0; font-family: monospace; } .compute-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem; } .btn-calc { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 8px; font-weight: 600; cursor: pointer; } .stats-row { display: flex; gap: 1rem; margin-top: 0.75rem; flex-wrap: wrap; } .stat-pill { background: rgba(255, 255, 255, 0.05); padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08); font-size: 0.9rem; }"
+}
+
+// 7. @Page: Routable Page View
+export @Page("/compute")
+fn compute() {
+    <div class="page-container">
+        <main class="content-section">
+            <h1 class="section-title">⚡ WebAssembly, Compute & Web Annotations</h1>
+            <p class="section-description">
+                Flame combines fine-grained reactive HTML with high-speed WebAssembly routines and pure mathematical evaluation.
+            </p>
+
+            <div class="compute-grid">
+                // WASM Card
+                <div class="compute-card">
+                    <span class="badge-wasm">@Wasm · WebAssembly</span>
+                    <h2 class="card-title">Native WASM VM Engine</h2>
+                    <p class="card-desc">
+                        Heavy mathematical routines are compiled directly to WebAssembly binary bytecode and instantiated in the browser.
+                    </p>
+                    <div class="compute-val">{wasm_output}</div>
+                    <div class="stats-row">
+                        <span class="badge-wasm">{wasm_speed_badge}</span>
+                    </div>
+                    <div class="compute-actions">
+                        <button onClick={runWasmFib} class="btn-calc">
+                            Run Fib({compute_num})
+                        </button>
+                        <button onClick={runWasmFactorial} class="btn-calc">
+                            Run Factorial({compute_num})
+                        </button>
+                    </div>
+                </div>
+
+                // Computed & State Card
+                <div class="compute-card">
+                    <span class="badge-computed">@Computed · Reactive Signals</span>
+                    <h2 class="card-title">Reactive Derived Computations</h2>
+                    <p class="card-desc">
+                        Automatically tracks dependencies on @State variables and recalculates with zero virtual DOM overhead.
+                    </p>
+                    <div class="compute-val">Active Value: {compute_num}</div>
+                    <div class="stats-row">
+                        <div class="stat-pill">Double: {double_compute_num()}</div>
+                        <div class="stat-pill">Squared: {square_compute_num()}</div>
+                        <div class="stat-pill">Parity: {compute_num_parity()}</div>
+                    </div>
+                    <div class="compute-actions">
+                        <button onClick={incrementNum} class="btn-calc">
+                            Increment (+1)
+                        </button>
+                        <button onClick={decrementNum} class="btn-calc">
+                            Decrement (-1)
+                        </button>
+                    </div>
+                </div>
+
+                // Compute Card
+                <div class="compute-card">
+                    <span class="badge-compute">@Compute · Pure Algorithms</span>
+                    <h2 class="card-title">Optimized Math Routines</h2>
+                    <p class="card-desc">
+                        Optimized mathematical calculations executed with maximum efficiency.
+                    </p>
+                    <div class="stats-row">
+                        <div class="stat-pill">Prime Test: {prime_status()}</div>
+                    </div>
+                    <div class="stats-row">
+                        <div class="stat-pill">Collatz Sequence: {compute_collatz_steps(compute_num)} steps</div>
+                    </div>
+                    <div class="compute-actions">
+                        <button onClick={setPrimeTest} class="btn-calc">
+                            Test Prime (29)
+                        </button>
+                        <button onClick={setCollatzTest} class="btn-calc">
+                            Test Collatz (27)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
 }
 ```
   </TabItem>
@@ -475,8 +888,15 @@ fn main() {
 ```flame
 import std.web
 
+fn getLinkHref(name: String) -> String {
+    if name == "Home" {
+        return "/"
+    }
+    return "/" + name.toLowerCase()
+}
+
 export @Component
-fn NavBar() {
+fn Nav(elem: [String]) {
     <header class="navbar">
         <div id="cursor-dot" class="cursor-dot"></div>
         <div id="cursor-outline" class="cursor-outline"></div>
@@ -485,12 +905,18 @@ fn NavBar() {
             <span class="brand-text">Flame Web</span>
         </div>
         <nav class="nav-links">
-            <a href="/" class="nav-link">Home</a>
-            <a href="/about" class="nav-link">About</a>
-            <a href="/projects" class="nav-link">Projects</a>
-            <a href="/contact" class="nav-link">Contact</a>
+            {
+                for e in elem {
+                    <a href={getLinkHref(e)} class="nav-link"> {e}</a>
+                }
+            }
         </nav>
     </header>
+}
+
+export @Component
+fn NavBar() {
+    <Nav elem={["Home", "About", "Compute", "Projects", "Contact"]} />
 }
 ```
   </TabItem>
@@ -520,9 +946,9 @@ fn about() {
                     <p>Multi-page navigation with client-side history state and instant page switches.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">🎨</div>
-                    <h3>Scoped & Dynamic Styling</h3>
-                    <p>Inline style attributes and @Style functions provide complete styling power.</p>
+                    <div class="feature-icon">⚙️</div>
+                    <h3>Native WebAssembly</h3>
+                    <p>Execute heavy mathematical computations at near-native hardware speed via @Wasm.</p>
                 </div>
             </div>
         </main>
@@ -925,6 +1351,57 @@ body {
 ```
   </TabItem>
 </Tabs>
+
+---
+
+## Running and Developing Web Applications
+
+Flame provides a built-in development HTTP server, live-reload watcher, and static bundler:
+
+### 1. Development Server (`run --web`)
+
+Start a local development server:
+
+```bash
+fmp run --web src/main.fm
+```
+
+This compiles your project into `dist/` and serves it at `http://localhost:3000/`.
+
+### 2. Live Hot Reload (`run --watch --web`)
+
+Enable hot reloading during active development:
+
+```bash
+fmp run --watch --web src/main.fm
+```
+
+The watcher listens for filesystem changes across your source files, automatically recompiles `dist/app.js`, `dist/app.wasm`, and `dist/app.css`, and immediately refreshes the browser without losing scroll state.
+
+### 3. Production Build (`build --web`)
+
+Generate an optimized static distribution:
+
+```bash
+fmp build --web src/main.fm
+```
+
+---
+
+## Anatomy of the `dist/` Output
+
+When Flame builds your web application, it produces a self-contained static directory ready for instant deployment:
+
+```text
+dist/
+├── index.html   # HTML5 entry point mounting the app to #app
+├── app.js       # Standalone reactive runtime, router, and compiled UI (<2 KB)
+├── app.wasm     # Native WebAssembly binary module compiled from @Wasm routines
+└── app.css      # Merged styles (custom styles preserved + @Style injections)
+```
+
+### Stylesheet Preservation
+When you customize `dist/app.css`, subsequent `flame build --web` or `flame run --web` runs **never overwrite** your custom CSS rules. Instead, Flame merges custom CSS with any `@Style` declarations in your code.
 
 ---
 

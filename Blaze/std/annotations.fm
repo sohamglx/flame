@@ -95,6 +95,14 @@ export annotation State() {
 export annotation Wasm() {
 }
 
+@Docs("Directs the compiler to optimize mathematical and computational routines, enabling high-performance evaluation.\n\n**Example:**\n```flame\n@Compute\nfn fibonacci(n: Int) -> Int {\n    if n <= 1 { return n }\n    return fibonacci(n - 1) + fibonacci(n - 2)\n}\n```")
+export annotation Compute() {
+}
+
+@Docs("Declares a reactive computed value derived from fine-grained reactive `@State` variables. Automatically tracks dependencies and re-evaluates when dependencies change.\n\n**Example:**\n```flame\n@State\nlet count = 2\n\n@Computed\nfn double_count() -> Int {\n    return count * 2\n}\n```")
+export annotation Computed() {
+}
+
 @Docs("Marks a reusable UI component that returns JSX/DOM nodes.\n\n**Example:**\n```flame\n@Component\nfn Card(title: String, body: String) {\n    <div class=\"card\">\n        <h3>{title}</h3>\n        <p>{body}</p>\n    </div>\n}\n```")
 export annotation Component() {
 }
@@ -106,5 +114,14 @@ export annotation Style() {
 @Docs("Defines a shared layout component wrapping page routes.\n\n**Example:**\n```flame\n@Layout\nfn DefaultLayout(children: Unknown) {\n    <div class=\"layout\">\n        <nav><a href=\"/\">Home</a></nav>\n        <main>{children}</main>\n    </div>\n}\n```")
 export annotation Layout() {
 }
+
+@Docs("Declares an HTTP route endpoint for fullstack or server-side Flame web apps.")
+export annotation Route(path: String = "/", method: String = "GET") {
+}
+
+@Docs("Registers a side-effect that automatically runs whenever its accessed reactive `@State` dependencies update.")
+export annotation Effect() {
+}
+
 
 

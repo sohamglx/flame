@@ -29,6 +29,18 @@ Flame features a comprehensive suite of **built-in PascalCase annotations** that
 | **`@AfterAll`** | **Testing** | `@AfterAll` | Runs once after all module tests complete execution. |
 | **`@Ignore`** | **Testing** | `@Ignore` | Skips test execution when running `flame test`. |
 | **`@Parameterized`** | **Testing** | `@Parameterized([ [arg1, arg2, ...] ])` | Executes a test case repeatedly across an array matrix of arguments. |
+| **`@Web`** | **Web / DOM** | `@Web(title: String, port: Int)` | Marks application entry point for web compilation. See [std.web](/std/web). |
+| **`@Page`** | **Web / DOM** | `@Page(path: String)` | Registers client-side routable SPA page view. See [std.web](/std/web). |
+| **`@Layout`** | **Web / DOM** | `@Layout` | Defines persistent outer layout wrapping page content. See [std.web](/std/web). |
+| **`@Component`** | **Web / DOM** | `@Component` | Reusable tag-like UI component returning JSX. See [std.web](/std/web). |
+| **`@State`** | **Reactivity** | `@State` | Declares fine-grained reactive signal updating exact DOM nodes. See [std.web](/std/web). |
+| **`@Computed`** | **Reactivity** | `@Computed` | Reactive derived calculation with auto dependency tracking. See [std.web](/std/web). |
+| **`@Effect`** | **Reactivity** | `@Effect` | Reactive side-effect triggered on state updates. See [std.web](/std/web). |
+| **`@Compute`** | **Algorithms** | `@Compute` | High-performance mathematical optimization. See [std.web](/std/web). |
+| **`@Wasm`** | **WebAssembly** | `@Wasm` | Compiles heavy functions to WebAssembly bytecode (`dist/app.wasm`). See [std.web](/std/web). |
+| **`@Style`** | **Web / Styling** | `@Style` | Injects CSS rules into the application stylesheet. See [std.web](/std/web). |
+| **`@Client`** | **Web / Client** | `@Client` | Marks code as strictly client-side browser code. See [std.web](/std/web). |
+| **`@Route`** | **Web / Routing** | `@Route(path: String, method: String)` | Explicit route endpoint with HTTP method. See [std.web](/std/web). |
 
 ---
 

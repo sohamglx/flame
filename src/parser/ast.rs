@@ -131,6 +131,12 @@ pub enum JsxChild {
     Text(String, Span),
     Expr(Expr),
     Element(Box<Expr>),
+    For {
+        var_name: String,
+        iterable: Expr,
+        body: Vec<JsxChild>,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone)]

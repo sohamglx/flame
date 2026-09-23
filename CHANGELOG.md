@@ -2,6 +2,60 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.5.5] - 2026-09-23 (Codename: *Fifth Spark*)
+
+### ⚡ Native WebAssembly Bytecode Compiler (`@Wasm`)
+
+- **Direct WebAssembly MVP Bytecode Generation**:
+  - Integrated an in-tree WebAssembly binary compiler into `src/web/compiler.rs` capable of emitting genuine `.wasm` modules (`dist/app.wasm`).
+  - Supports compilation of mathematical and computational algorithms (e.g. `wasm_fib`, `wasm_factorial`, `wasm_add`) with variable LEB128 integer encoding, local variable allocation, arithmetic/logic instructions, branch conditions, and function table exports.
+- **Asynchronous Streaming WASM Loader & Graceful Fallback**:
+  - Generated web runtime automatically instantiates WebAssembly using `WebAssembly.instantiateStreaming` (with `WebAssembly.instantiate` array buffer fallback).
+  - Automatically exports the instantiated module to `window.wasm` for programmatic browser console access.
+  - Implemented automatic, zero-latency JavaScript fallback functions ensuring functions execute smoothly even if WebAssembly instantiation is unavailable or delayed.
+- **WASM Initialization Cleanup**:
+  - Removed verbose debug console logging from `_initWasm()` to keep the browser developer console clean.
+
+### 🔄 Reactive Primitives (`@Computed` & `@Effect`)
+
+- **Derived Reactive Computations (`@Computed`)**:
+  - Introduced the `@Computed` annotation for functions and variables whose values derive from one or more `@State` signals.
+  - Flame's compiler performs static AST dependency analysis and transitive closure resolution (`resolve_computed_deps`), binding dependent DOM text nodes directly to the underlying root state signals.
+  - Dependent DOM nodes re-evaluate on demand with zero Virtual DOM overhead.
+- **Reactive Side-Effects (`@Effect`)**:
+  - Introduced the `@Effect` annotation for functions that react automatically to state changes.
+  - Fixed dependency collection in compound AST expressions (`collect_states`) so `@Effect` functions referencing `@State` variables inside interpolated strings (`$"..."`), calls, or nested statements accurately register subscriptions (`_subscribe`).
+  - Functions annotated with `@Effect` automatically run once during initial application mount and re-trigger whenever their referenced `@State` dependencies update.
+- **Dynamic JSX Child Evaluation**:
+  - Enhanced JSX expression interpolation in `compile_jsx_child` to dynamically resolve function-based expressions (`typeof _res === 'function' ? _res() : _res`), enabling computed getter functions to render seamlessly in JSX children.
+
+### ⚡ Algorithmic Optimization (`@Compute`)
+
+- **High-Performance Pure Routines**:
+  - Added the `@Compute` annotation for mathematical and numerical algorithms (e.g. prime testing, Collatz conjecture sequences).
+  - Compiles computational routines with maximum efficiency, making them easily callable from reactive signals, buttons, and computed badges.
+
+### 🌐 Web Runtime & AST Expression Compilation Fixes
+
+- **String Interpolation AST Translation (`$"..."`)**:
+  - Implemented `Expr::InterpolatedString` translation in `expr_to_js`, preventing interpolated strings from falling back to `null`.
+  - Added comprehensive AST code generation in `expr_to_js` for `Expr::Tuple`, `Expr::Object`, `Expr::StructInit`, `Expr::Formula`, `Expr::Borrow`, `Expr::Cast`, and `Expr::ThreadSpawn`.
+- **Runtime Preload Globals**:
+  - Added `println(...args)` and `print(...args)` to the generated browser runtime preamble, mapping directly to `console.log` and enabling standard Flame logging in client-side code.
+- **Explicit Route Annotations (`@Route`)**:
+  - Added `@Route(path, method)` annotation to `Blaze/std/annotations.fm` and `Blaze/std/web.fm` for fullstack and client route declarations.
+
+### 📚 Comprehensive Documentation (`std.web`)
+
+- **Complete `std.web` Overhaul (`docs/src/content/docs/std/web.mdx`)**:
+  - Fully documented all 12 web annotations (`@Web`, `@Page`, `@Layout`, `@Component`, `@State`, `@Computed`, `@Effect`, `@Compute`, `@Wasm`, `@Style`, `@Client`, `@Route`) with detailed parameter tables, semantics, and code snippets.
+  - Documented DOM and Window APIs (`web.document`, `web.window`, `web.navigate`, `web.http`, timers, storage, dialogs, events).
+  - Added a complete multi-file showcase tab matrix featuring `src/main.fm`, `src/navbar.fm`, `src/compute.fm`, `src/about.fm`, `src/projects.fm`, `src/contact.fm`, and `dist/app.css`.
+- **Built-in Annotations Reference Alignment**:
+  - Updated `docs/src/content/docs/annotations-and-testing/builtin-annotations.mdx` to cross-reference all Web Application and Reactivity annotations with direct links to `std.web`.
+
+---
+
 ## [0.5.4] - 2026-09-22 (Codename: *Fifth Spark*)
 
 ### 🌐 Native Web Subsystem (`std.web`) & Reactive DOM Architecture
