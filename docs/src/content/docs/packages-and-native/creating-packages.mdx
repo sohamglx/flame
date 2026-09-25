@@ -99,13 +99,13 @@ When a user imports your package, only the `export`ed symbols will be available 
 Flame makes it incredibly easy to bundle native Rust plugins inside your package. 
 
 <Steps>
-1. **Create the Rust Plugin**: Run `flame new --plugin <plugin_name>` (or `flame new -p <plugin_name>`) to scaffold a new Rust plugin in the `./native` directory. *(Note: Ensure the plugin name is different from your Flame package name).*
-2. **Register it**: Run `flame add --plugin ./native` (or `flame add -p ./native`) to register the plugin in `flame.toml` under `[plugins]`. The plugin name is automatically read from `native/Cargo.toml`.
+1. **Create the Rust Plugin**: Run `fmp new --plugin <plugin_name>` (or `fmp new -p <plugin_name>`) to scaffold a new Rust plugin in the `./native` directory. *(Note: Ensure the plugin name is different from your Flame package name).*
+2. **Register it**: Run `fmp add --plugin ./native` (or `fmp add -p ./native`) to register the plugin in `flame.toml` under `[plugins]`. The plugin name is automatically read from `native/Cargo.toml`.
 3. **Use it**: Import it in your Flame scripts using the `native.` prefix and its registered name (e.g., `import native.core`).
 </Steps>
 
 <Aside type="tip">
-**Auto-Resolution & Interfaces**: When you run `flame build`, Flame will automatically compile your local Rust plugin. It also leverages the `flame-macro` crate to generate an Interface File (`.fmi`). This `.fmi` is packaged alongside your Flame scripts, ensuring that anyone who consumes your package gets **instant IDE autocomplete and hover documentation** for your native Rust methods, without needing to compile the Rust code themselves first!
+**Auto-Resolution & Interfaces**: When you run `fmp build`, Flame will automatically compile your local Rust plugin. It also leverages the `flame-macro` crate to generate an Interface File (`.fmi`). This `.fmi` is packaged alongside your Flame scripts, ensuring that anyone who consumes your package gets **instant IDE autocomplete and hover documentation** for your native Rust methods, without needing to compile the Rust code themselves first!
 </Aside>
 
 ---
@@ -133,7 +133,7 @@ fn test_process_data() {
 Run your tests using the Flame CLI:
 
 ```bash
-flame test
+fmp test
 ```
 
 Flame's package resolution system is smart enough to resolve `import main` inside the `test/` folder directly to your `src/main.fm` file, providing full IDE autocomplete and diagnostics during test development.
@@ -145,7 +145,7 @@ Flame's package resolution system is smart enough to resolve `import main` insid
 When you are ready to distribute your package, simply run:
 
 ```bash
-flame build
+fmp build
 ```
 
 Because `type = "pkg"`, Flame acts as a package bundler. It will create a directory at `target/pkg/my_package` containing:
@@ -160,10 +160,10 @@ You don't need a centralized package registry to distribute your package! Just p
 Consumers can install your package using the package manager:
 
 ```bash title="bash"
-flame add github.com/username/my_package@v1.0.0
+fmp add github.com/username/my_package@v1.0.0
 # or declare in flame.toml and run:
-flame install
+fmp install
 ```
 
-Flame fetches the package natively, caches the Flame sources and `.fmi` interface files, and makes your package functionality instantly available. Consumers **never need to manually copy Rust source code or manage Cargo files in their applications**. During `flame build`, Flame's dependency analysis automatically integrates only the required native plugins into that application's specialized runtime.
+Flame fetches the package natively, caches the Flame sources and `.fmi` interface files, and makes your package functionality instantly available. Consumers **never need to manually copy Rust source code or manage Cargo files in their applications**. During `fmp build`, Flame's dependency analysis automatically integrates only the required native plugins into that application's specialized runtime.
 

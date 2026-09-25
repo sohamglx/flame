@@ -154,13 +154,13 @@ You can depend on external Flame packages by adding them to the `[dependencies]`
 flamer = "https://github.com/shoya-129/flamer"
 ```
 
-Run `flame install` to resolve and cache dependencies into `.flame/pkg/`:
+Run `fmp install` to resolve and cache dependencies into `.flame/pkg/`:
 
 ```bash title="bash"
-flame install
+fmp install
 ```
 
-During `flame build`, Blaze performs dependency analysis and constructs an **application-specific native runtime** containing only the packages and native components your application actually imports and uses.
+During `fmp build`, Blaze performs dependency analysis and constructs an **application-specific native runtime** containing only the packages and native components your application actually imports and uses.
 
 <Aside type="tip" title="Zero-History Archive Resolution">
 When fetching dependencies (e.g., from GitHub), Flame's package manager **does not clone the full Git repository history**. Instead, it uses a lightweight archive resolution engine to download and extract a raw archive snapshot of the target branch or tag, providing lightning-fast dependency resolution comparable to Go modules.
