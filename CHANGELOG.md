@@ -2,6 +2,35 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.5.6] - 2026-09-25 (Codename: *Fifth Spark*)
+
+### 🎨 IDE Syntax Highlighting & Grammar Precision
+
+- **Unified Function Call & Type Coloring**:
+  - Eliminated conflicting semantic token overrides in `src/ide/semantic_tokens.rs`, granting full precedence to the refined TextMate grammar (`flame.tmLanguage.json`).
+  - Standardized function call highlighting (`support.function.flame`) across all invocation styles:
+    - Global and standard library calls (e.g. `println()`, `print()`, `assert()`).
+    - Object and instance method invocations (e.g. `name.toLowerCase()`, `str.trim()`).
+    - Dynamic embedded JSX expression function calls (e.g. `<a href={getLinkHref(e)} ...>`).
+  - Full type highlighting (`support.type.flame`) across primitive types (`String`, `Int`, `Float`, `Bool`, etc.), bracketed array type signatures (e.g. `elem: [String]`), return types (`-> String`), and workspace-declared structs and enums.
+
+### 🌐 Reactive DOM & Multi-File Component Integration
+
+- **HTMLCollection & Array Child Element Unpacking**:
+  - Resolved reactive DOM tree mounting bug where rendering multi-element collections or loops inside JSX expression containers (`{ for e in elem { ... } }`) resulted in `[object HTMLCollection]` string coercion.
+  - Child fragments and element collections are now recursively unwrapped and appended as direct DOM nodes.
+- **Cross-Module Component Usability**:
+  - Verified and stabilized exported `@Component` functions across multi-file structures (e.g. `NavBar` in `navbar.fm` rendering `Nav` with array properties inside parent layouts).
+
+### 📦 Toolchain & Extension Upgrades
+
+- **Flame Language Support Extension (`v0.3.4`)**:
+  - Updated extension manifest and bundled grammars.
+- **Flame Compiler Version Bump**:
+  - Upgraded toolchain package version to `0.5.6` in `Cargo.toml`.
+
+---
+
 ## [0.5.5] - 2026-09-23 (Codename: *Fifth Spark*)
 
 ### ⚡ Native WebAssembly Bytecode Compiler (`@Wasm`)
