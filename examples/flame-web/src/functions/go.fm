@@ -1,0 +1,6 @@
+package functions
+import std.web
+
+export fn go(link: String) {
+    web.navigate($"/{link}")
+}

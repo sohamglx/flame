@@ -1,0 +1,7 @@
+import functions
+import std.web
+
+@Component
+fn Btn(link: String, title: String) {
+    <button onClick={go(link)}>{title}</button>
+}

@@ -1,0 +1,9 @@
+import std.web
+
+@Page("/", "home")
+fn index() {
+    <div>
+        <h1>Welcome, Home</h1>
+        <Btn link="about" title="about" />
+    </div>
+}

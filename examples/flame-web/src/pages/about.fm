@@ -1,0 +1,10 @@
+import std.web
+import components
+
+@Page("/about", "about")
+fn about() {
+    <div>
+        <h1>Welcome, about</h1>
+        <Btn link="home" title="home" />
+    </div>
+}
