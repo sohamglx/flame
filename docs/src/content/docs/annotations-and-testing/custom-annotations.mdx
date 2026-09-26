@@ -93,6 +93,10 @@ When decorating a function with `@MyAnnotation(...)`, the evaluated return data 
 
 Flame provides a metaprogramming standard library module (`std.annotation`) enabling custom annotations to inspect targets, retrieve callable references, and dynamically transform or wrap functions.
 
+<Aside type="tip" title="Full Standard Library Reference">
+For more details, complete struct definitions, and advanced use cases, see the [std.annotation Standard Library Documentation](/std/annotation).
+</Aside>
+
 ### Accessing `AnnotationContext`
 
 Inside any custom `annotation` body, call `annotation.context()` to retrieve structured context:

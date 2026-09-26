@@ -1,0 +1,427 @@
+---
+title: Annotations & Metaprogramming (std.annotation)
+description: Complete guide to compile-time and runtime metaprogramming, target reflection, function references, and function transformation in Flame.
+---
+
+import { Aside, Tabs, TabItem, Card, CardGrid } from '@astrojs/starlight/components';
+
+The `std.annotation` module delivers Flame's built-in metaprogramming engine. It provides custom annotations with deep reflection capabilities, allowing them to inspect declarations, extract callable function references, and dynamically wrap or transform function behavior.
+
+<Aside type="tip" title="Related Guide">
+To learn how custom annotations declare parameters, inject return values into function scope, and decorate code, see the [Custom Annotations & Scope Injection Guide](/annotations-and-testing/custom-annotations).
+</Aside>
+
+---
+
+## 1. Quick Start
+
+Inside any custom `annotation` declaration, call `annotation.context()` to retrieve the current `AnnotationContext`:
+
+```flame
+import std.annotation
+
+annotation Route(path: String) {
+    let ctx = annotation.context()
+
+    print($"Decorated symbol: {ctx.target.name}")
+    print($"Declaration kind: {ctx.target.kind}")
+    print($"Compiler version: {ctx.compiler.version}")
+    print($"Target platform:  {ctx.build.platform}")
+}
+
+@Route(path = "/users")
+fn list_users() -> String {
+    return "users"
+}
+```
+
+<Aside type="caution" title="Declaration Boundary Enforcement">
+`annotation.context()` is strictly scoped to custom annotation declarations (`annotation Name { ... }`). Invoking it from a standard function or top-level script triggers a compile-time typechecker diagnostic error and causes a runtime panic.
+</Aside>
+
+---
+
+## 2. API Reference
+
+### `annotation.context() -> AnnotationContext`
+
+Returns the active `AnnotationContext` populated with metadata about the annotated target declaration and the compilation environment.
+
+```flame
+import std.annotation
+
+annotation Example {
+    let ctx: AnnotationContext = annotation.context()
+}
+```
+
+---
+
+### `AnnotationContext`
+
+The root metadata object returned by `annotation.context()`:
+
+```flame
+export struct AnnotationContext {
+    target: TargetMetadata
+    compiler: CompilerInfo
+    module: ModuleInfo
+    build: BuildInfo
+}
+```
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `target` | `TargetMetadata` | Reflection metadata and operations on the decorated declaration. |
+| `compiler` | `CompilerInfo` | Information about the active Flame compiler toolchain. |
+| `module` | `ModuleInfo` | Identification and path of the current module file. |
+| `build` | `BuildInfo` | Compilation target, release mode, platform OS, and architecture. |
+
+---
+
+### `TargetMetadata`
+
+Represents the symbol (function, struct, enum, or variable) to which the annotation is applied:
+
+```flame
+export struct TargetMetadata {
+    name: String
+    kind: String
+    parameters: [ParameterInfo]
+    return_type: String
+    annotations: [AnnotationInfo]
+}
+```
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `name` | `String` | The identifier of the annotated symbol (e.g. `"fetch_user"`). |
+| `kind` | `String` | The declaration kind: `"function"`, `"struct"`, `"enum"`, or `"variable"`. |
+| `parameters` | `[ParameterInfo]` | An ordered list of parameter metadata (for functions). |
+| `return_type` | `String` | Return type signature string (e.g. `"String"`, `"Int"`, or `"Nil"`). |
+| `annotations` | `[AnnotationInfo]` | Array of all annotations attached to this target declaration. |
+
+#### Methods on `TargetMetadata`
+
+#### `ref() -> Unknown`
+Returns a callable reference to the annotated function.
+
+- When invoked, `ref()` executes the target function's underlying body without re-triggering attached annotations (preventing recursive re-entrancy).
+- Ideal for web router registration, event dispatchers, and task queues.
+
+```flame
+annotation Route(path: String) {
+    let ctx = annotation.context()
+    let handler = ctx.target.ref()
+    // handler can now be stored in a router table and called on demand
+}
+```
+
+#### `transform(transformer: Unknown) -> Unknown`
+Wraps or transforms the annotated function. Flame supports two transformer signatures:
+
+1. **Direct Interceptor Closure**: Receives the original callable reference as its first argument, followed by the target function's parameters:
+   ```flame
+   ctx.target.transform((ref, arg1: String) {
+       print($"Before calling {ctx.target.name}")
+       let result = ref(arg1)
+       print($"After calling {ctx.target.name}")
+       return result
+   })
+   ```
+
+2. **Higher-Order Factory Closure**: Receives the original callable reference and returns a replacement closure:
+   ```flame
+   ctx.target.transform((ref) {
+       return (arg1: String) {
+           let result = ref(arg1)
+           return $"[WRAPPED: {result}]"
+       }
+   })
+   ```
+
+---
+
+### `ParameterInfo`
+
+Describes a parameter declared on the annotated function:
+
+```flame
+export struct ParameterInfo {
+    name: String
+    type: String
+    has_default: Bool
+    is_ref: Bool
+    is_mut: Bool
+}
+```
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `name` | `String` | Parameter name identifier. |
+| `type` | `String` | Type annotation as written in code (or `"Unknown"` if untyped). |
+| `has_default` | `Bool` | Whether a default value expression is specified. |
+| `is_ref` | `Bool` | `true` if passed by reference (`&`). |
+| `is_mut` | `Bool` | `true` if mutable (`mut` or `&mut`). |
+
+---
+
+### `AnnotationInfo`
+
+Describes an annotation attached to the declaration:
+
+```flame
+export struct AnnotationInfo {
+    name: String
+    args: [String]
+}
+```
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `name` | `String` | Annotation name (e.g. `"Route"`, `"Logged"`). |
+| `args` | `[String]` | List of argument expressions supplied to the annotation. |
+
+---
+
+### `CompilerInfo`
+
+Reflects the executing Flame compiler:
+
+```flame
+export struct CompilerInfo {
+    name: String
+    version: String
+}
+```
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `name` | `String` | Always `"flame"`. |
+| `version` | `String` | Toolchain semver string (e.g. `"0.5.7"`). |
+
+---
+
+### `ModuleInfo`
+
+Reflects the current source file module:
+
+```flame
+export struct ModuleInfo {
+    name: String
+    filepath: String
+}
+```
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `name` | `String` | Name of the current file or module. |
+| `filepath` | `String` | File system path to the declaring `.fm` file. |
+
+---
+
+### `BuildInfo`
+
+Reflects target platform compilation settings:
+
+```flame
+export struct BuildInfo {
+    target: String
+    mode: String
+    platform: String
+    arch: String
+    features: [String]
+}
+```
+
+| Field | Type | Example Values | Description |
+| :--- | :--- | :--- | :--- |
+| `target` | `String` | `"native"`, `"web"`, `"wasm"` | Compilation target architecture. |
+| `mode` | `String` | `"debug"`, `"release"` | Active build optimization mode. |
+| `platform` | `String` | `"linux"`, `"darwin"`, `"windows"` | Host operating system. |
+| `arch` | `String` | `"x86_64"`, `"aarch64"` | CPU architecture. |
+| `features` | `[String]` | `["threads", "simd"]` | Enabled compiler feature flags. |
+
+---
+
+## 3. Real-World Use Cases
+
+### Use Case 1: Web Router Handler Registration (`target.ref()`)
+
+In modern backend frameworks, annotations are used to register route endpoints directly into a routing table without manual boilerplate:
+
+```flame
+import std.annotation
+
+let route_table: [Formula] = []
+
+export annotation GET(path: String) {
+    let ctx = annotation.context()
+    let handler = ctx.target.ref()
+
+    route_table.push(formula {
+        method: "GET",
+        path: path,
+        name: ctx.target.name,
+        handler: handler
+    })
+}
+
+// Declare endpoints
+@GET(path = "/api/v1/health")
+fn get_health() -> String {
+    return "ok"
+}
+
+@GET(path = "/api/v1/users")
+fn get_users() -> String {
+    return "{\"users\": [\"Alice\", \"Bob\"]}"
+}
+
+// Dispatch incoming request
+fn dispatch_request(path: String) -> String {
+    for route in route_table {
+        if route.path == path {
+            let handler = route.handler
+            return handler()
+        }
+    }
+    return "404 Not Found"
+}
+
+print(dispatch_request("/api/v1/health")) // Output: "ok"
+```
+
+---
+
+### Use Case 2: Function Wrapping & Interception (`target.transform()`)
+
+Use `ctx.target.transform()` to wrap functions with logging, authentication checks, or result formatting:
+
+```flame
+import std.annotation
+
+export annotation Logged {
+    let ctx = annotation.context()
+
+    ctx.target.transform(
+        (ref, msg: String) {
+            print($"[AUDIT START] Invoking '{ctx.target.name}' with payload: {msg}")
+            let result = ref(msg)
+            print($"[AUDIT END] '{ctx.target.name}' completed.")
+            return $"[LOGGED: {result}]"
+        }
+    )
+}
+
+@Logged
+fn submit_order(order_id: String) -> String {
+    return $"Order #{order_id} processed"
+}
+
+let res = submit_order("9942")
+print(res)
+// Output:
+// [AUDIT START] Invoking 'submit_order' with payload: 9942
+// [AUDIT END] 'submit_order' completed.
+// [LOGGED: Order #9942 processed]
+```
+
+---
+
+### Use Case 3: Performance Timing & Profiling
+
+Automatically time any function execution with zero boilerplate:
+
+```flame
+import std.annotation
+import std.time
+
+export annotation Benchmark {
+    let ctx = annotation.context()
+
+    ctx.target.transform(
+        (ref, n: Int) {
+            let start = time.now()
+            let result = ref(n)
+            let elapsed = time.since(start)
+            print($"[BENCHMARK] {ctx.target.name}({n}) finished in {elapsed}ms")
+            return result
+        }
+    )
+}
+
+@Benchmark
+fn compute_fibonacci(n: Int) -> Int {
+    if n <= 1 { return n }
+    return compute_fibonacci(n - 1) + compute_fibonacci(n - 2)
+}
+```
+
+---
+
+### Use Case 4: Struct & Model Reflection
+
+Annotations can decorate structs and enums to inspect schema structures for ORMs or serializers:
+
+```flame
+import std.annotation
+
+let registered_entities: [Formula] = []
+
+export annotation Entity(table: String) {
+    let ctx = annotation.context()
+
+    registered_entities.push(formula {
+        symbol: ctx.target.name,
+        kind: ctx.target.kind,
+        table: table
+    })
+}
+
+@Entity(table = "accounts")
+struct Account {
+    id: Int
+    email: String
+    is_active: Bool
+}
+
+print($"Registered table: {registered_entities[0].table} for struct {registered_entities[0].symbol}")
+// Output: Registered table: accounts for struct Account
+```
+
+---
+
+### Use Case 5: Platform & Architecture Guards
+
+Use `ctx.build` and `ctx.compiler` to validate target platform requirements at declaration time:
+
+```flame
+import std.annotation
+
+export annotation LinuxOnly {
+    let ctx = annotation.context()
+
+    if ctx.build.platform != "linux" {
+        panic($"Function '{ctx.target.name}' is only supported on Linux! Current OS: {ctx.build.platform}")
+    }
+}
+
+@LinuxOnly
+fn initialize_epoll_driver() {
+    print("Linux epoll driver initialized.")
+}
+```
+
+---
+
+## 4. Summary
+
+| Feature | Description |
+| :--- | :--- |
+| `annotation.context()` | Retrieves active `AnnotationContext` (restricted to `annotation` declarations). |
+| `ctx.target.ref()` | Extracts a callable function reference without re-triggering annotations. |
+| `ctx.target.transform()` | Wraps target functions with direct interceptor or factory closures. |
+| `ctx.target.*` | Introspects target symbol `name`, `kind`, `parameters`, `return_type`, and `annotations`. |
+| `ctx.compiler.*` | Accesses toolchain name and version. |
+| `ctx.build.*` | Inspects target architecture, OS platform (`linux`, `darwin`, `windows`), and build mode. |

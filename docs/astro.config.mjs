@@ -135,7 +135,7 @@ export default defineConfig({
                 collapsed: true,
                 items: [
                     { label: 'Overview', slug: 'std/overview' },
-                    {label: "Formatting (std.fmt)", slug: 'std/fmt'},
+                    { label: "Formatting (std.fmt)", slug: 'std/fmt' },
                     { label: 'Environment Variables (std.env)', slug: 'std/env' },
                     { label: 'File System (std.fs)', slug: 'std/filesystem' },
                     { label: 'Networking (std.net)', slug: 'std/net' },
@@ -149,6 +149,7 @@ export default defineConfig({
                     { label: 'Time (std.time)', slug: 'std/time' },
                     { label: 'Math (std.math)', slug: 'std/math' },
                     {label: 'Unit System (std.unit)', slug: 'std/unit'},
+                    { label: 'Annotations & Metaprogramming (std.annotation)', slug: 'std/annotation' },
                     { label: 'Camera (std.camera)', slug: 'std/camera' },
                     { label: 'Web Applications (std.web)', slug: 'std/web' },
                 ],
