@@ -2,6 +2,8 @@ import functions
 import std.web
 
 @Component
-fn Btn(link: String, title: String) {
-    <button onClick={go(link)}>{title}</button>
+fn Btn(link: String, title: String) -> HtmlNode {
+    return (
+        <button onClick={go(link)}> {title}</button>
+    )
 }

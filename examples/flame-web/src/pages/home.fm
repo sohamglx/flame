@@ -1,9 +1,12 @@
 import std.web
+import components
 
 @Page("/", "home")
-fn index() {
+fn index() -> HtmlNode {
+    return (
     <div>
         <h1>Welcome, Home</h1>
         <Btn link="about" title="about" />
     </div>
+    )
 }

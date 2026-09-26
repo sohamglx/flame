@@ -4,11 +4,14 @@ import pages
 @Web
 fn main() {
     @Layout
-    fn AppLayout(children: Unknown) {
-        <main>
-            {children}
-        </main>
+    fn AppLayout(children: Unknown) -> HtmlNode {
+        return (
+            <main>
+                {children}
+            </main>
+        )
     }
+
     @Style
     fn styles() {"body {
         background-color: black;

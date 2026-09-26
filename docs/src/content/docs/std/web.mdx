@@ -116,11 +116,13 @@ Binds a function as a routable page view mounted at the specified URL path. Flam
 
 ```flame
 export @Page("/about")
-fn about() {
-    <div class="page-container">
-        <h1>About Us</h1>
-        <p>Built with fine-grained Flame reactivity.</p>
-    </div>
+fn about() -> HtmlNode {
+    return (
+        <div class="page-container">
+            <h1>About Us</h1>
+            <p>Built with fine-grained Flame reactivity.</p>
+        </div>
+    )
 }
 ```
 
@@ -135,14 +137,16 @@ Defines a shared outer layout wrapper for all pages. Receives `children` as a pa
 
 ```flame
 @Layout
-fn AppLayout(children) {
-    <div class="app-layout">
-        <NavBar />
-        <main class="page-body">
-            {children}
-        </main>
-        <Footer />
-    </div>
+fn AppLayout(children: Unknown) -> HtmlNode {
+    return (
+        <div class="app-layout">
+            <NavBar />
+            <main class="page-body">
+                {children}
+            </main>
+            <Footer />
+        </div>
+    )
 }
 ```
 
@@ -157,10 +161,12 @@ Marks a function as a reusable UI component that returns JSX elements. Component
 
 ```flame
 export @Component
-fn Button(label: String, primary: Bool) {
-    <button class={if primary { "btn btn-primary" } else { "btn btn-secondary" }}>
-        {label}
-    </button>
+fn Button(label: String, primary: Bool) -> HtmlNode {
+    return (
+        <button class={if primary { "btn btn-primary" } else { "btn btn-secondary" }}>
+            {label}
+        </button>
+    )
 }
 
 // Instantiation:
@@ -616,42 +622,46 @@ fn main() {
     setupCursor()
 
     @Layout
-    fn AppLayout(children) {
-        <div class="app-layout">
-            <NavBar />
-            <div class="app-content">
-                {children}
+    fn AppLayout(children: Unknown) -> HtmlNode {
+        return (
+            <div class="app-layout">
+                <NavBar />
+                <div class="app-content">
+                    {children}
+                </div>
             </div>
-        </div>
+        )
     }
 
     @Page("/")
-    fn index() {
-        <div class="page-container">
-            <main class="hero-section">
-                <div class="hero-badge">Next-Gen Reactive Framework</div>
-                <h1 class="hero-title">High-Performance Web in Flame</h1>
-                <p class="hero-subtitle">
-                    Compile Flame directly into ultra-fast JavaScript DOM code with fine-grained reactivity, WebAssembly (@Wasm), and zero-overhead routing.
-                </p>
-                <div class="interactive-panel">
-                    <button onClick={count += 1} class="btn-counter">
-                        Counter: {count}
-                    </button>
-                    <button onClick={toggleColor} style={"background-color: " + btn_color + ";"} class="btn-color-toggle">
-                        Active Color: {btn_color}
-                    </button>
-                </div>
-                <div class="computed-stats" style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-                    <div style="background: rgba(255, 255, 255, 0.05); padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
-                        ⚡ <strong>@Computed Double:</strong> {double_count()}
+    fn index() -> HtmlNode {
+        return (
+            <div class="page-container">
+                <main class="hero-section">
+                    <div class="hero-badge">Next-Gen Reactive Framework</div>
+                    <h1 class="hero-title">High-Performance Web in Flame</h1>
+                    <p class="hero-subtitle">
+                        Compile Flame directly into ultra-fast JavaScript DOM code with fine-grained reactivity, WebAssembly (@Wasm), and zero-overhead routing.
+                    </p>
+                    <div class="interactive-panel">
+                        <button onClick={count += 1} class="btn-counter">
+                            Counter: {count}
+                        </button>
+                        <button onClick={toggleColor} style={"background-color: " + btn_color + ";"} class="btn-color-toggle">
+                            Active Color: {btn_color}
+                        </button>
                     </div>
-                    <div style="background: rgba(255, 255, 255, 0.05); padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
-                        🎯 <strong>Parity:</strong> {count_parity()}
+                    <div class="computed-stats" style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                        <div style="background: rgba(255, 255, 255, 0.05); padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                            ⚡ <strong>@Computed Double:</strong> {double_count()}
+                        </div>
+                        <div style="background: rgba(255, 255, 255, 0.05); padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                            🎯 <strong>Parity:</strong> {count_parity()}
+                        </div>
                     </div>
-                </div>
-            </main>
-        </div>
+                </main>
+            </div>
+        )
     }
 }
 ```
@@ -802,84 +812,86 @@ fn compute_styles() -> String {
 
 // 7. @Page: Routable Page View
 export @Page("/compute")
-fn compute() {
-    <div class="page-container">
-        <main class="content-section">
-            <h1 class="section-title">⚡ WebAssembly, Compute & Web Annotations</h1>
-            <p class="section-description">
-                Flame combines fine-grained reactive HTML with high-speed WebAssembly routines and pure mathematical evaluation.
-            </p>
+fn compute() -> HtmlNode {
+    return (
+        <div class="page-container">
+            <div class="content-section">
+                <h1 class="section-title">⚡ WebAssembly, Compute & Web Annotations</h1>
+                <p class="section-description">
+                    Flame combines fine-grained reactive HTML with high-speed WebAssembly routines and pure mathematical evaluation.
+                </p>
 
-            <div class="compute-grid">
-                // WASM Card
-                <div class="compute-card">
-                    <span class="badge-wasm">@Wasm · WebAssembly</span>
-                    <h2 class="card-title">Native WASM VM Engine</h2>
-                    <p class="card-desc">
-                        Heavy mathematical routines are compiled directly to WebAssembly binary bytecode and instantiated in the browser.
-                    </p>
-                    <div class="compute-val">{wasm_output}</div>
-                    <div class="stats-row">
-                        <span class="badge-wasm">{wasm_speed_badge}</span>
+                <div class="compute-grid">
+                    // WASM Card
+                    <div class="compute-card">
+                        <span class="badge-wasm">@Wasm · WebAssembly</span>
+                        <h2 class="card-title">Native WASM VM Engine</h2>
+                        <p class="card-desc">
+                            Heavy mathematical routines are compiled directly to WebAssembly binary bytecode and instantiated in the browser.
+                        </p>
+                        <div class="compute-val">{wasm_output}</div>
+                        <div class="stats-row">
+                            <span class="badge-wasm">{wasm_speed_badge}</span>
+                        </div>
+                        <div class="compute-actions">
+                            <button onClick={runWasmFib} class="btn-calc">
+                                Run Fib({compute_num})
+                            </button>
+                            <button onClick={runWasmFactorial} class="btn-calc">
+                                Run Factorial({compute_num})
+                            </button>
+                        </div>
                     </div>
-                    <div class="compute-actions">
-                        <button onClick={runWasmFib} class="btn-calc">
-                            Run Fib({compute_num})
-                        </button>
-                        <button onClick={runWasmFactorial} class="btn-calc">
-                            Run Factorial({compute_num})
-                        </button>
-                    </div>
-                </div>
 
-                // Computed & State Card
-                <div class="compute-card">
-                    <span class="badge-computed">@Computed · Reactive Signals</span>
-                    <h2 class="card-title">Reactive Derived Computations</h2>
-                    <p class="card-desc">
-                        Automatically tracks dependencies on @State variables and recalculates with zero virtual DOM overhead.
-                    </p>
-                    <div class="compute-val">Active Value: {compute_num}</div>
-                    <div class="stats-row">
-                        <div class="stat-pill">Double: {double_compute_num()}</div>
-                        <div class="stat-pill">Squared: {square_compute_num()}</div>
-                        <div class="stat-pill">Parity: {compute_num_parity()}</div>
+                    // Computed & State Card
+                    <div class="compute-card">
+                        <span class="badge-computed">@Computed · Reactive Signals</span>
+                        <h2 class="card-title">Reactive Derived Computations</h2>
+                        <p class="card-desc">
+                            Automatically tracks dependencies on @State variables and recalculates with zero virtual DOM overhead.
+                        </p>
+                        <div class="compute-val">Active Value: {compute_num}</div>
+                        <div class="stats-row">
+                            <div class="stat-pill">Double: {double_compute_num()}</div>
+                            <div class="stat-pill">Squared: {square_compute_num()}</div>
+                            <div class="stat-pill">Parity: {compute_num_parity()}</div>
+                        </div>
+                        <div class="compute-actions">
+                            <button onClick={incrementNum} class="btn-calc">
+                                Increment (+1)
+                            </button>
+                            <button onClick={decrementNum} class="btn-calc">
+                                Decrement (-1)
+                            </button>
+                        </div>
                     </div>
-                    <div class="compute-actions">
-                        <button onClick={incrementNum} class="btn-calc">
-                            Increment (+1)
-                        </button>
-                        <button onClick={decrementNum} class="btn-calc">
-                            Decrement (-1)
-                        </button>
-                    </div>
-                </div>
 
-                // Compute Card
-                <div class="compute-card">
-                    <span class="badge-compute">@Compute · Pure Algorithms</span>
-                    <h2 class="card-title">Optimized Math Routines</h2>
-                    <p class="card-desc">
-                        Optimized mathematical calculations executed with maximum efficiency.
-                    </p>
-                    <div class="stats-row">
-                        <div class="stat-pill">Prime Test: {prime_status()}</div>
-                    </div>
-                    <div class="stats-row">
-                        <div class="stat-pill">Collatz Sequence: {compute_collatz_steps(compute_num)} steps</div>
-                    </div>
-                    <div class="compute-actions">
-                        <button onClick={setPrimeTest} class="btn-calc">
-                            Test Prime (29)
-                        </button>
-                        <button onClick={setCollatzTest} class="btn-calc">
-                            Test Collatz (27)
-                        </button>
+                    // Compute Card
+                    <div class="compute-card">
+                        <span class="badge-compute">@Compute · Pure Algorithms</span>
+                        <h2 class="card-title">Optimized Math Routines</h2>
+                        <p class="card-desc">
+                            Optimized mathematical calculations executed with maximum efficiency.
+                        </p>
+                        <div class="stats-row">
+                            <div class="stat-pill">Prime Test: {prime_status()}</div>
+                        </div>
+                        <div class="stats-row">
+                            <div class="stat-pill">Collatz Sequence: {compute_collatz_steps(compute_num)} steps</div>
+                        </div>
+                        <div class="compute-actions">
+                            <button onClick={setPrimeTest} class="btn-calc">
+                                Test Prime (29)
+                            </button>
+                            <button onClick={setCollatzTest} class="btn-calc">
+                                Test Collatz (27)
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
-        </main>
-    </div>
+        </div>
+    )
 }
 ```
   </TabItem>
@@ -896,27 +908,31 @@ fn getLinkHref(name: String) -> String {
 }
 
 export @Component
-fn Nav(elem: [String]) {
-    <header class="navbar">
-        <div id="cursor-dot" class="cursor-dot"></div>
-        <div id="cursor-outline" class="cursor-outline"></div>
-        <div class="nav-brand">
-            <span class="brand-icon">⚡</span>
-            <span class="brand-text">Flame Web</span>
-        </div>
-        <nav class="nav-links">
-            {
-                for e in elem {
-                    <a href={getLinkHref(e)} class="nav-link"> {e}</a>
+fn Nav(elem: [String]) -> HtmlNode {
+    return (
+        <header class="navbar">
+            <div id="cursor-dot" class="cursor-dot"></div>
+            <div id="cursor-outline" class="cursor-outline"></div>
+            <div class="nav-brand">
+                <span class="brand-icon">⚡</span>
+                <span class="brand-text">Flame Web</span>
+            </div>
+            <nav class="nav-links">
+                {
+                    for e in elem {
+                        <a href={getLinkHref(e)} class="nav-link"> {e}</a>
+                    }
                 }
-            }
-        </nav>
-    </header>
+            </nav>
+        </header>
+    )
 }
 
 export @Component
-fn NavBar() {
-    <Nav elem={["Home", "About", "Compute", "Projects", "Contact"]} />
+fn NavBar() -> HtmlNode {
+    return (
+        <Nav elem={["Home", "About", "Compute", "Projects", "Contact"]} />
+    )
 }
 ```
   </TabItem>
@@ -927,32 +943,34 @@ import std.web
 import navbar
 
 export @Page("/about")
-fn about() {
-    <div class="page-container">
-        <main class="content-section">
-            <h1 class="section-title">About Flame Web</h1>
-            <p class="section-description">
-                Flame Web pairs Flame syntax with a reactive DOM runtime. It compiles UI trees into native DOM calls with granular signals.
-            </p>
-            <div class="features-grid">
-                <div class="feature-card">
-                    <div class="feature-icon">⚡</div>
-                    <h3>Fine-Grained Signals</h3>
-                    <p>No virtual DOM overhead. When state changes, only the exact DOM node updates.</p>
+fn about() -> HtmlNode {
+    return (
+        <div class="page-container">
+            <main class="content-section">
+                <h1 class="section-title">About Flame Web</h1>
+                <p class="section-description">
+                    Flame Web pairs Flame syntax with a reactive DOM runtime. It compiles UI trees into native DOM calls with granular signals.
+                </p>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">⚡</div>
+                        <h3>Fine-Grained Signals</h3>
+                        <p>No virtual DOM overhead. When state changes, only the exact DOM node updates.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🌐</div>
+                        <h3>Built-in SPA Router</h3>
+                        <p>Multi-page navigation with client-side history state and instant page switches.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">⚙️</div>
+                        <h3>Native WebAssembly</h3>
+                        <p>Execute heavy mathematical computations at near-native hardware speed via @Wasm.</p>
+                    </div>
                 </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🌐</div>
-                    <h3>Built-in SPA Router</h3>
-                    <p>Multi-page navigation with client-side history state and instant page switches.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">⚙️</div>
-                    <h3>Native WebAssembly</h3>
-                    <p>Execute heavy mathematical computations at near-native hardware speed via @Wasm.</p>
-                </div>
-            </div>
-        </main>
-    </div>
+            </main>
+        </div>
+    )
 }
 ```
   </TabItem>
@@ -984,25 +1002,27 @@ export fn fetchProjects() {
 }
 
 export @Page("/projects")
-fn projects() {
-    <div class="page-container">
-        <main class="content-section">
-            <h1 class="section-title">Live API Projects</h1>
-            <p class="section-description">
-                Demonstrating native std.net.http integration with jsonplaceholder.typicode.com/posts in Flame.
-            </p>
-            <div class="action-bar">
-                <button onClick={fetchProjects} class="btn-primary">
-                    Fetch Live Posts via http.get()
-                </button>
-            </div>
-            <div id="projects-grid" class="projects-container">
-                <div class="empty-state">
-                    Click the button above to load live posts using Flames std.net.http client.
+fn projects() -> HtmlNode {
+    return (
+        <div class="page-container">
+            <main class="content-section">
+                <h1 class="section-title">Live API Projects</h1>
+                <p class="section-description">
+                    Demonstrating native std.net.http integration with jsonplaceholder.typicode.com/posts in Flame.
+                </p>
+                <div class="action-bar">
+                    <button onClick={fetchProjects} class="btn-primary">
+                        Fetch Live Posts via http.get()
+                    </button>
                 </div>
-            </div>
-        </main>
-    </div>
+                <div id="projects-grid" class="projects-container">
+                    <div class="empty-state">
+                        Click the button above to load live posts using Flames std.net.http client.
+                    </div>
+                </div>
+            </main>
+        </div>
+    )
 }
 ```
   </TabItem>
@@ -1020,31 +1040,33 @@ export fn submitContact() {
 }
 
 export @Page("/contact")
-fn contact() {
-    <div class="page-container">
-        <main class="content-section">
-            <h1 class="section-title">Get in Touch</h1>
-            <p class="section-description">
-                Send a message through our reactive contact form.
-            </p>
-            <div class="contact-box">
-                <div class="form-group">
-                    <label>Your Name</label>
-                    <input id="contact-name" type="text" placeholder="e.g. Satoshi Nakamoto" class="input-field" />
+fn contact() -> HtmlNode {
+    return (
+        <div class="page-container">
+            <main class="content-section">
+                <h1 class="section-title">Get in Touch</h1>
+                <p class="section-description">
+                    Send a message through our reactive contact form.
+                </p>
+                <div class="contact-box">
+                    <div class="form-group">
+                        <label>Your Name</label>
+                        <input id="contact-name" type="text" placeholder="e.g. Satoshi Nakamoto" class="input-field" />
+                    </div>
+                    <div class="form-group">
+                        <label>Message</label>
+                        <textarea id="contact-msg" placeholder="Tell us about your project..." class="input-field textarea"></textarea>
+                    </div>
+                    <button onClick={submitContact} class="btn-primary">
+                        Send Message
+                    </button>
+                    <div class="status-banner">
+                        Status: {contact_status}
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label>Message</label>
-                    <textarea id="contact-msg" placeholder="Tell us about your project..." class="input-field textarea"></textarea>
-                </div>
-                <button onClick={submitContact} class="btn-primary">
-                    Send Message
-                </button>
-                <div class="status-banner">
-                    Status: {contact_status}
-                </div>
-            </div>
-        </main>
-    </div>
+            </main>
+        </div>
+    )
 }
 ```
   </TabItem>
