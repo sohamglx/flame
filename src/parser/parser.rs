@@ -762,54 +762,55 @@ impl Parser {
             self.consume(TokenKind::Gt, "expected '>' after generic type parameters")?;
         }
 
-        self.consume(TokenKind::OpenParen, "expected '(' for parameters list")?;
         let mut params = Vec::new();
-        while !self.check(TokenKind::CloseParen) && !self.check(TokenKind::EOF) {
-            let mut is_ref = false;
-            let mut is_mut = false;
+        if self.match_token(TokenKind::OpenParen) {
+            while !self.check(TokenKind::CloseParen) && !self.check(TokenKind::EOF) {
+                let mut is_ref = false;
+                let mut is_mut = false;
 
-            if self.match_token(TokenKind::Ampersand) {
-                is_ref = true;
-                if self.match_token(TokenKind::Mut) {
-                    is_mut = true;
+                if self.match_token(TokenKind::Ampersand) {
+                    is_ref = true;
+                    if self.match_token(TokenKind::Mut) {
+                        is_mut = true;
+                    }
+                }
+
+                let p_name_tok = self.consume(TokenKind::Identifier, "expected parameter name")?;
+                let p_type;
+                if self.match_token(TokenKind::Colon) {
+                    p_type = self.parse_type()?;
+                } else {
+                    return Err(Diagnostic::new_error(
+                        "expected ':' after parameter name".to_string(),
+                        self.filepath.clone(),
+                        p_name_tok.span.clone(),
+                        Some("Add a type annotation for this parameter".to_string()),
+                        Some("Use ': Type' after the parameter name".to_string()),
+                    ));
+                }
+
+                let mut default_val = None;
+                if self.match_token(TokenKind::Equal) {
+                    default_val = Some(self.parse_expr()?);
+                }
+
+                params.push(Param {
+                    name: p_name_tok.lexeme.clone(),
+                    type_name: p_type,
+                    default_val,
+                    is_ref,
+                    is_mut,
+                });
+
+                if !self.match_token(TokenKind::Comma) {
+                    break;
                 }
             }
-
-            let p_name_tok = self.consume(TokenKind::Identifier, "expected parameter name")?;
-            let p_type;
-            if self.match_token(TokenKind::Colon) {
-                p_type = self.parse_type()?;
-            } else {
-                return Err(Diagnostic::new_error(
-                    "expected ':' after parameter name".to_string(),
-                    self.filepath.clone(),
-                    p_name_tok.span.clone(),
-                    Some("Add a type annotation for this parameter".to_string()),
-                    Some("Use ': Type' after the parameter name".to_string()),
-                ));
-            }
-
-            let mut default_val = None;
-            if self.match_token(TokenKind::Equal) {
-                default_val = Some(self.parse_expr()?);
-            }
-
-            params.push(Param {
-                name: p_name_tok.lexeme.clone(),
-                type_name: p_type,
-                default_val,
-                is_ref,
-                is_mut,
-            });
-
-            if !self.match_token(TokenKind::Comma) {
-                break;
-            }
+            self.consume(
+                TokenKind::CloseParen,
+                "expected ')' to close parameters list",
+            )?;
         }
-        self.consume(
-            TokenKind::CloseParen,
-            "expected ')' to close parameters list",
-        )?;
 
         let mut return_type = None;
         if self.match_token(TokenKind::Arrow) {
@@ -2110,7 +2111,7 @@ impl Parser {
                 let expr = Expr::Literal(LiteralValue::Nil, tok.span.clone());
                 self.parse_accessors(expr)
             }
-            TokenKind::Identifier | TokenKind::SelfLower => {
+            TokenKind::Identifier | TokenKind::SelfLower | TokenKind::Annotation => {
                 let peek_tok = self.peek();
                 if self.thread_aliases.contains(&peek_tok.lexeme) && self.check_next(TokenKind::OpenBrace) {
                     let start_tok = self.advance();

@@ -24,8 +24,23 @@ pub fn get_std_module_symbols(module: &str) -> Option<Vec<(String, String)>> {
                 // If it's just "std" or "std.", suggest the standard modules
                 return Some(
                     vec![
-                        "os", "fmt", "fs", "byte", "net", "thread", "time", "process", "json",
-                        "math", "unit", "window", "desktop", "env", "camera", "web",
+                        "os",
+                        "fmt",
+                        "fs",
+                        "byte",
+                        "net",
+                        "thread",
+                        "time",
+                        "process",
+                        "json",
+                        "math",
+                        "unit",
+                        "window",
+                        "desktop",
+                        "env",
+                        "camera",
+                        "web",
+                        "annotation",
                     ]
                     .into_iter()
                     .map(|s| (s.to_string(), "module".to_string()))
@@ -58,6 +73,7 @@ pub fn get_std_module_symbols(module: &str) -> Option<Vec<(String, String)>> {
         "camera" => Some(crate::native_std::camera::init()),
         "unit" => Some(crate::native_std::unit::init()),
         "web" => Some(crate::native_std::web::init()),
+        "annotation" | "annotations" => Some(crate::native_std::annotation::init()),
         _ => None,
     }?;
 

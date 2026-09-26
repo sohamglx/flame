@@ -419,7 +419,7 @@ impl TypeChecker {
                         if let Some((_, e_ret)) = &expected_func {
                             e_ret.clone()
                         } else {
-                            Type::Nil
+                            Type::Unknown
                         }
                     });
 
@@ -1448,6 +1448,29 @@ impl TypeChecker {
             _ => None,
         };
         let func_sig = callee_name.as_ref().and_then(|n| self.functions.get(n).cloned());
+
+        let is_anno_context_call = match callee_name.as_deref() {
+            Some(
+                "annotation.context"
+                | "annoation.context"
+                | "annotations.context"
+                | "std.annotation.context"
+                | "std.annotations.context",
+            ) => true,
+            Some("context") => {
+                self.lookup_var("context").is_none() && self.functions.contains_key("context")
+            }
+            _ => false,
+        };
+
+        if is_anno_context_call && !self.in_annotation_decl && !self.in_expect_panic {
+            self.error(
+                "annotation.context() can only be called inside of a custom annotation".to_string(),
+                span.clone(),
+                Some("AnnotationContext provides reflection and transformation of the annotated target.".to_string()),
+                Some("Move this call inside an `annotation Name(...) { ... }` declaration.".to_string()),
+            );
+        }
 
         if let Type::Function(params, ret) = &callee_ty {
             let (min_args, max_args) = if let Some(sig) = &func_sig {

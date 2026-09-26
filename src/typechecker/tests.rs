@@ -161,3 +161,28 @@ fn check_source(src: &str) -> Result<(), Vec<crate::diagnostics::Diagnostic>> {
         assert!(res.is_ok(), "Closure types and call compatibility should succeed: {:?}", res.err());
     }
 
+    #[test]
+    fn test_annotation_context_outside_annotation_decl_fails() {
+        let src = r#"
+        fn bad() {
+            let ctx = annotation.context()
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_err(), "annotation.context() outside annotation decl must fail typecheck");
+        let diags = res.unwrap_err();
+        assert!(diags.iter().any(|d| d.message.contains("annotation.context() can only be called inside of a custom annotation")));
+    }
+
+    #[test]
+    fn test_annotation_context_inside_annotation_decl_allowed() {
+        let src = r#"
+        annotation Route(path: String) {
+            let ctx = annotation.context()
+            let handler = ctx.target.ref()
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_ok(), "AnnotationContext inside annotation declaration should be valid: {:?}", res.err());
+    }
+

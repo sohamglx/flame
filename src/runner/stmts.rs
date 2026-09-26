@@ -39,89 +39,27 @@ impl Runner {
                 }
 
                 for anno in annotations {
-                    let mut anno_func_opt = env.lock().unwrap().get(&anno.name);
-                    if anno_func_opt.is_none() {
-                        anno_func_opt = self.env.lock().unwrap().get(&anno.name);
-                    }
-                    if anno_func_opt.is_none() {
-                        for (_, mod_env) in &self.modules {
-                            if let Some(f) = mod_env.lock().unwrap().get(&anno.name) {
-                                anno_func_opt = Some(f);
-                                break;
-                            }
-                        }
-                    }
-                    if anno_func_opt.is_none() && anno.name.contains('.') {
-                        let parts: Vec<&str> = anno.name.split('.').collect();
-                        if let Some(mut current) = env.lock().unwrap().get(parts[0]) {
-                            for part in &parts[1..] {
-                                if let Value::Object(map) = &current {
-                                    if let Some(next) = map.get(*part) {
-                                        current = next.clone();
-                                    } else {
-                                        break;
-                                    }
-                                } else if let Value::Formula(map) = &current {
-                                    if let Some(next) = map.get(*part) {
-                                        current = next.clone();
-                                    } else {
-                                        break;
-                                    }
-                                } else {
-                                    break;
-                                }
-                            }
-                            anno_func_opt = Some(current);
-                        }
-                    }
-                    if anno_func_opt.is_none() {
-                        let env_lock = env.lock().unwrap();
-                        for (_, val) in env_lock.variables.iter() {
-                            if let Value::Object(map) = &val.value {
-                                if let Some(exported_anno) = map.get(&anno.name) {
-                                    anno_func_opt = Some(exported_anno.clone());
-                                    break;
-                                }
-                            } else if let Value::Formula(map) = &val.value {
-                                if let Some(exported_anno) = map.get(&anno.name) {
-                                    anno_func_opt = Some(exported_anno.clone());
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    if let Some(anno_func) = anno_func_opt {
-                        let mut anno_args = Vec::new();
-                        for arg_str in &anno.args {
-                            let mut lexer = crate::lexer::Lexer::new(arg_str);
-                            let mut tokens = Vec::new();
-                            loop {
-                                let tok = lexer.next_token();
-                                let is_eof = tok.kind == crate::lexer::TokenKind::EOF;
-                                tokens.push(tok);
-                                if is_eof {
-                                    break;
-                                }
-                            }
-                            if tokens.len() >= 2
-                                && tokens[0].kind == crate::lexer::TokenKind::Identifier
-                                && (tokens[1].kind == crate::lexer::TokenKind::Colon
-                                    || tokens[1].kind == crate::lexer::TokenKind::Equal)
-                            {
-                                tokens.remove(0);
-                                tokens.remove(0);
-                            }
-                            let mut parser =
-                                crate::parser::Parser::new(tokens, "anno_arg".to_string());
-                            if let Ok(expr) = parser.parse_expr() {
-                                if let Ok(arg_val) = self.eval_expr(&expr, env.clone()) {
+                    if let Some(anno_func) = self.find_annotation_func(&anno.name, env.clone()) {
+                        if self.is_executable_annotation(&anno_func) {
+                            let ctx_val = crate::runner::core::build_annotation_context(
+                                name.clone(),
+                                "variable",
+                                &[],
+                                None,
+                                annotations,
+                                Some(val.clone()),
+                                env.clone(),
+                                &self.filepath,
+                            );
+                            let _guard = crate::runner::core::ScopedAnnotationContext::new(ctx_val);
+                            let mut anno_args = Vec::new();
+                            for arg_str in &anno.args {
+                                if let Ok(arg_val) = self.eval_annotation_arg(arg_str, env.clone()) {
                                     anno_args.push(arg_val);
                                 }
                             }
+                            let _ = self.invoke_callback_value(&anno_func, anno_args);
                         }
-
-                        let _ = self.invoke_callback_value(&anno_func, anno_args);
                     }
                 }
 
@@ -212,6 +150,7 @@ impl Runner {
             Stmt::FuncDecl {
                 name,
                 params,
+                return_type,
                 body,
                 annotations,
                 ..
@@ -222,7 +161,34 @@ impl Runner {
                     env: env.clone(),
                     annotations: annotations.clone(),
                 };
-                env.lock().unwrap().define(name.clone(), func, false);
+                env.lock().unwrap().define(name.clone(), func.clone(), false);
+
+                for anno in annotations {
+                    if let Some(anno_func) = self.find_annotation_func(&anno.name, env.clone()) {
+                        if self.is_executable_annotation(&anno_func) {
+                            let ret_type_str = return_type.as_deref();
+                            let current_func = env.lock().unwrap().get(name).unwrap_or_else(|| func.clone());
+                            let ctx_val = crate::runner::core::build_annotation_context(
+                                name.clone(),
+                                "function",
+                                params,
+                                ret_type_str,
+                                annotations,
+                                Some(current_func),
+                                env.clone(),
+                                &self.filepath,
+                            );
+                            let _guard = crate::runner::core::ScopedAnnotationContext::new(ctx_val);
+                            let mut anno_args = Vec::new();
+                            for arg_str in &anno.args {
+                                if let Ok(arg_val) = self.eval_annotation_arg(arg_str, env.clone()) {
+                                    anno_args.push(arg_val);
+                                }
+                            }
+                            let _ = self.invoke_callback_value(&anno_func, anno_args);
+                        }
+                    }
+                }
                 Ok(Value::Nil)
             }
             Stmt::AnnotationDecl {
@@ -237,20 +203,105 @@ impl Runner {
                 env.lock().unwrap().define(name.clone(), func, false);
                 Ok(Value::Nil)
             }
-            Stmt::StructDecl { name, fields, .. } => {
+            Stmt::StructDecl {
+                name,
+                fields,
+                annotations,
+                ..
+            } => {
                 let func = Value::StructConstructor {
                     name: name.clone(),
                     fields: fields.clone(),
                 };
-                env.lock().unwrap().define(name.clone(), func, false);
+                env.lock().unwrap().define(name.clone(), func.clone(), false);
+
+                for anno in annotations {
+                    if let Some(anno_func) = self.find_annotation_func(&anno.name, env.clone()) {
+                        if self.is_executable_annotation(&anno_func) {
+                            let synthetic_params: Vec<crate::parser::Param> = fields
+                                .iter()
+                                .map(|(f_name, f_type)| crate::parser::Param {
+                                    name: f_name.clone(),
+                                    type_name: f_type.clone(),
+                                    default_val: None,
+                                    is_ref: false,
+                                    is_mut: false,
+                                })
+                                .collect();
+                            let ctx_val = crate::runner::core::build_annotation_context(
+                                name.clone(),
+                                "struct",
+                                &synthetic_params,
+                                Some(name),
+                                annotations,
+                                Some(func.clone()),
+                                env.clone(),
+                                &self.filepath,
+                            );
+                            let _guard = crate::runner::core::ScopedAnnotationContext::new(ctx_val);
+                            let mut anno_args = Vec::new();
+                            for arg_str in &anno.args {
+                                if let Ok(arg_val) = self.eval_annotation_arg(arg_str, env.clone()) {
+                                    anno_args.push(arg_val);
+                                }
+                            }
+                            let _ = self.invoke_callback_value(&anno_func, anno_args);
+                        }
+                    }
+                }
                 Ok(Value::Nil)
             }
-            Stmt::EnumDecl { name, variants, .. } => {
+            Stmt::EnumDecl {
+                name,
+                variants,
+                annotations,
+                ..
+            } => {
+                let enum_val = Value::EnumMeta(name.clone(), variants.clone());
                 env.lock().unwrap().define(
                     name.clone(),
-                    Value::EnumMeta(name.clone(), variants.clone()),
+                    enum_val.clone(),
                     false,
                 );
+
+                for anno in annotations {
+                    if let Some(anno_func) = self.find_annotation_func(&anno.name, env.clone()) {
+                        if self.is_executable_annotation(&anno_func) {
+                            let synthetic_params: Vec<crate::parser::Param> = variants
+                                .iter()
+                                .map(|v| crate::parser::Param {
+                                    name: match v {
+                                        crate::parser::EnumVariant::Unit(s) => s.clone(),
+                                        crate::parser::EnumVariant::Tuple(s, _) => s.clone(),
+                                        crate::parser::EnumVariant::Struct(s, _) => s.clone(),
+                                    },
+                                    type_name: "Variant".to_string(),
+                                    default_val: None,
+                                    is_ref: false,
+                                    is_mut: false,
+                                })
+                                .collect();
+                            let ctx_val = crate::runner::core::build_annotation_context(
+                                name.clone(),
+                                "enum",
+                                &synthetic_params,
+                                Some(name),
+                                annotations,
+                                Some(enum_val.clone()),
+                                env.clone(),
+                                &self.filepath,
+                            );
+                            let _guard = crate::runner::core::ScopedAnnotationContext::new(ctx_val);
+                            let mut anno_args = Vec::new();
+                            for arg_str in &anno.args {
+                                if let Ok(arg_val) = self.eval_annotation_arg(arg_str, env.clone()) {
+                                    anno_args.push(arg_val);
+                                }
+                            }
+                            let _ = self.invoke_callback_value(&anno_func, anno_args);
+                        }
+                    }
+                }
                 Ok(Value::Nil)
             }
             Stmt::ImplDecl {
@@ -744,6 +795,7 @@ impl Runner {
                         return Err(error_msg);
                     }
                 }
+                crate::runner::set_global_modules(self.modules.clone());
                 Ok(Value::Nil)
             }
             Stmt::ExportDecl(inner, _) => {
@@ -1062,5 +1114,120 @@ impl Runner {
         }
     }
 
+    pub fn find_annotation_func(&self, name: &str, env: Arc<Mutex<Env>>) -> Option<Value> {
+        if let Some(val) = env.lock().unwrap().get(name) {
+            return Some(val);
+        }
 
+        if name.contains('.') {
+            let parts: Vec<&str> = name.split('.').collect();
+            let mut current = env.lock().unwrap().get(parts[0]);
+            if current.is_none() {
+                if let Some(mod_env) = self.modules.get(parts[0]) {
+                    current = mod_env.lock().unwrap().get(parts[0]);
+                }
+            }
+            if let Some(mut curr) = current {
+                for part in &parts[1..] {
+                    if let Value::Object(map) | Value::Formula(map) = &curr {
+                        if let Some(next) = map.get(*part) {
+                            curr = next.clone();
+                        } else {
+                            return None;
+                        }
+                    } else {
+                        return None;
+                    }
+                }
+                return Some(curr);
+            }
+        }
+
+        {
+            let env_lock = env.lock().unwrap();
+            for (_, var) in env_lock.variables.iter() {
+                if let Value::Object(map) | Value::Formula(map) = &var.value {
+                    if let Some(val) = map.get(name) {
+                        return Some(val.clone());
+                    }
+                }
+            }
+        }
+
+        for (_, mod_env) in &self.modules {
+            if let Some(val) = mod_env.lock().unwrap().get(name) {
+                return Some(val);
+            }
+        }
+
+        for (_, mod_env) in crate::runner::core::get_global_modules() {
+            if let Some(val) = mod_env.lock().unwrap().get(name) {
+                return Some(val);
+            }
+        }
+
+        None
+    }
+
+    pub fn is_executable_annotation(&self, val: &Value) -> bool {
+        matches!(
+            val,
+            Value::Function { .. }
+                | Value::NativeClosure(_)
+                | Value::NativeCallback(_)
+                | Value::NativeFunction(_)
+        )
+    }
+
+    pub fn eval_annotation_arg(&mut self, arg_str: &str, env: Arc<Mutex<Env>>) -> Result<Value, String> {
+        let trimmed = arg_str.trim();
+        let mut lexer = crate::lexer::Lexer::new(trimmed);
+        let mut tokens = Vec::new();
+        loop {
+            let tok = lexer.next_token();
+            let is_eof = tok.kind == crate::lexer::TokenKind::EOF;
+            tokens.push(tok);
+            if is_eof {
+                break;
+            }
+        }
+
+        if tokens.len() >= 2
+            && tokens[0].kind == crate::lexer::TokenKind::Identifier
+            && (tokens[1].kind == crate::lexer::TokenKind::Colon
+                || tokens[1].kind == crate::lexer::TokenKind::Equal)
+        {
+            tokens.remove(0);
+            tokens.remove(0);
+        }
+
+        let mut parser = crate::parser::Parser::new(tokens, "anno_arg".to_string());
+        if let Ok(expr) = parser.parse_expr() {
+            if let Ok(val) = self.eval_expr(&expr, env.clone()) {
+                return Ok(val);
+            }
+        }
+
+        if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+            || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+        {
+            if trimmed.len() >= 2 {
+                return Ok(Value::String(trimmed[1..trimmed.len() - 1].to_string()));
+            }
+        }
+        if let Ok(i) = trimmed.parse::<i64>() {
+            return Ok(Value::Int(i));
+        }
+        if let Ok(f) = trimmed.parse::<f64>() {
+            return Ok(Value::Float(f));
+        }
+        if trimmed == "true" {
+            return Ok(Value::Bool(true));
+        }
+        if trimmed == "false" {
+            return Ok(Value::Bool(false));
+        }
+
+        Ok(Value::String(trimmed.to_string()))
+    }
 }

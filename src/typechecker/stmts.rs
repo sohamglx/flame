@@ -23,7 +23,9 @@ impl TypeChecker {
                     }
                     self.insert_hover_info(name_span.clone(), hover_str);
 
-                    let is_builtin_file = self.filepath.ends_with("builtins.fm");
+                    let is_builtin_file = self.filepath.ends_with("builtins.fm")
+                        || self.filepath.contains("Blaze/std/")
+                        || self.filepath.contains("std/");
                     let platform = get_platform_annotation(annotations);
 
                     if !self.is_importing {
@@ -110,7 +112,9 @@ impl TypeChecker {
                     }
                     self.insert_hover_info(name_span.clone(), hover_str);
 
-                    let is_builtin_file = self.filepath.ends_with("builtins.fm");
+                    let is_builtin_file = self.filepath.ends_with("builtins.fm")
+                        || self.filepath.contains("Blaze/std/")
+                        || self.filepath.contains("std/");
                     let platform = get_platform_annotation(annotations);
 
                     if !self.is_importing {
@@ -1548,11 +1552,16 @@ impl TypeChecker {
                         },
                     );
                 }
+                let prev_expect_panic = self.in_expect_panic;
+                if annotations.iter().any(|a| a.name == "ExpectPanic" || a.name == "expect_panic") {
+                    self.in_expect_panic = true;
+                }
                 if let Some(body_stmts) = body {
                     for stmt in body_stmts {
                         self.check_stmt(stmt);
                     }
                 }
+                self.in_expect_panic = prev_expect_panic;
                 self.pop_scope();
                 self.current_return_type = prev_return;
             }
@@ -1644,9 +1653,12 @@ impl TypeChecker {
                         },
                     );
                 }
+                let prev_in_anno = self.in_annotation_decl;
+                self.in_annotation_decl = true;
                 for stmt in body {
                     self.check_stmt(stmt);
                 }
+                self.in_annotation_decl = prev_in_anno;
                 self.pop_scope();
                 self.current_return_type = prev_return;
             }

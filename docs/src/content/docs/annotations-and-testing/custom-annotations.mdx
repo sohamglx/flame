@@ -89,8 +89,96 @@ When decorating a function with `@MyAnnotation(...)`, the evaluated return data 
 
 ---
 
-## 4. Built-in Annotations & CLI Synthesis
+## 4. Metaprogramming with `std.annotation` & `AnnotationContext`
 
-Flame also comes packed with native annotations for testing (`@Test`, `@Setup`, `@Cleanup`) and declarative CLI building (`@Cli`, `@Command`).
+Flame provides a metaprogramming standard library module (`std.annotation`) enabling custom annotations to inspect targets, retrieve callable references, and dynamically transform or wrap functions.
+
+### Accessing `AnnotationContext`
+
+Inside any custom `annotation` body, call `annotation.context()` to retrieve structured context:
+
+```flame
+import std.annotation
+
+annotation Route(path: String) {
+    let ctx = annotation.context()
+
+    // Access target declaration metadata:
+    let name = ctx.target.name              // String (e.g. "get_users")
+    let kind = ctx.target.kind              // String: "function", "struct", "enum", "variable"
+    let params = ctx.target.parameters      // [ParameterInfo]
+    let ret = ctx.target.return_type        // String
+    let annos = ctx.target.annotations      // [AnnotationInfo]
+
+    // Inspect compiler & build configuration:
+    let compiler = ctx.compiler.name        // "flame"
+    let platform = ctx.build.platform       // e.g. "linux", "darwin", "windows"
+    let arch = ctx.build.arch               // e.g. "x86_64", "aarch64"
+}
+```
+
+<Aside type="note" title="Declaration Boundary Enforcement">
+`annotation.context()` is strictly restricted to custom annotation declarations. Invoking it outside an annotation body produces a compile-time typechecker diagnostic error and panics at runtime.
+</Aside>
+
+### Obtaining Target Function References (`ctx.target.ref()`)
+
+For web frameworks, dependency injection, and router dispatchers, `ctx.target.ref()` yields a callable reference to the annotated function:
+
+```flame
+let routes: [Formula] = []
+
+annotation GET(path: String) {
+    let ctx = annotation.context()
+    let handler = ctx.target.ref()
+
+    routes.push(formula {
+        method: "GET",
+        path: path,
+        handler: handler
+    })
+}
+
+@GET(path = "/api/v1/health")
+fn health_check() -> String {
+    return "ok"
+}
+
+// Router execution:
+let res = routes[0].handler() // returns "ok"
+```
+
+### Transforming Functions (`ctx.target.transform()`)
+
+Custom annotations can wrap, intercept, or modify the execution of the target function using `ctx.target.transform`:
+
+```flame
+annotation Logged {
+    let ctx = annotation.context()
+
+    // Wrap the target with an interceptor closure receiving the original ref and arguments:
+    ctx.target.transform(
+        (ref, text: String) {
+            print($"[LOG] Calling {ctx.target.name} with: {text}")
+            let result = ref(text)
+            return $"[LOGGED: {result}]"
+        }
+    )
+}
+
+@Logged
+fn greet(name: String) -> String {
+    return $"Hello, {name}!"
+}
+
+greet("Flame") // Prints log and returns "[LOGGED: Hello, Flame!]"
+```
+
+---
+
+## 5. Built-in Annotations & CLI Synthesis
+
+Flame also comes packed with native annotations for testing (`@Test`, `@Setup`, `@Cleanup`, `@ExpectPanic`) and declarative CLI building (`@Cli`, `@Command`).
 
 To learn how to use `@Cli` and `@Command` to assemble powerful interactive system utilities and subcommands with zero boilerplate, visit the comprehensive reference on [Built-in Annotations & CLI Builder](/annotations-and-testing/builtin-annotations).
+

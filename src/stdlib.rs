@@ -107,6 +107,32 @@ pub fn register_global_builtins(env: Arc<Mutex<Env>>) {
         Value::EnumValue("Option".to_string(), "None".to_string(), EnumData::Unit),
         false,
     );
+
+    let mut anno_map = std::collections::HashMap::new();
+    anno_map.insert(
+        "context".to_string(),
+        Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(|_args| {
+            if let Some(ctx) = crate::runner::core::get_current_annotation_context() {
+                Ok(ctx)
+            } else {
+                Err(
+                    "annotation.context() can only be called inside of a custom annotation"
+                        .to_string(),
+                )
+            }
+        }))),
+    );
+    e.define(
+        "annotation".to_string(),
+        Value::Formula(anno_map.clone()),
+        false,
+    );
+    e.define("context".to_string(), anno_map["context"].clone(), false);
+    e.define(
+        "__native_annotation_context__".to_string(),
+        anno_map["context"].clone(),
+        false,
+    );
 }
 pub fn locate_import_file(current_file: &Path, import_path: &[String]) -> Option<PathBuf> {
     if import_path.is_empty() {
@@ -279,7 +305,6 @@ pub fn register_std_module(mod_name: &str, env: Arc<Mutex<Env>>) {
         "std.unit" => Some(crate::native_std::unit::init()),
         "std.math" => Some(crate::native_std::math::init()),
         "std.fmt" => Some(crate::native_std::fmt::init()),
-        #[cfg(feature = "utils")]
         "std.json" => Some(crate::native_std::json::init()),
         #[cfg(feature = "os")]
         "std.os" => Some(crate::native_std::os::init()),
@@ -291,6 +316,7 @@ pub fn register_std_module(mod_name: &str, env: Arc<Mutex<Env>>) {
         #[cfg(feature = "camera")]
         "std.camera" => Some(crate::native_std::camera::init()),
         "std.web" => Some(crate::native_std::web::init()),
+        "std.annotation" => Some(crate::native_std::annotation::init()),
         _ => None,
     };
 

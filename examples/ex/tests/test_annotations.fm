@@ -1,0 +1,182 @@
+import std.annotation
+
+// Global registries to verify compile/declaration-time execution
+let mut registered_path = ""
+let mut registered_method = ""
+let mut registered_target_name = ""
+let mut registered_target_kind = ""
+let mut registered_target_ret = ""
+let mut registered_handler: Unknown = nil
+
+let mut logged_target_name = ""
+let mut compiler_name = ""
+let mut build_platform = ""
+let mut build_arch = ""
+
+let mut entity_table_name = ""
+let mut entity_target_kind = ""
+let mut device_target_name = ""
+let mut device_target_kind = ""
+
+// 1. Custom Route annotation extracting target.ref()
+export annotation Route(path: String, method: String = "GET") {
+    let ctx = annotation.context()
+    registered_path = path
+    registered_method = method
+    registered_target_name = ctx.target.name
+    registered_target_kind = ctx.target.kind
+    registered_target_ret = ctx.target.return_type
+
+    // Extract callable reference to the annotated function
+    registered_handler = ctx.target.ref()
+}
+
+@Route(path = "/api/users", method = "GET")
+fn fetch_users() -> String {
+    return "users_payload"
+}
+
+// 2. Custom Logged annotation with target.transform
+export annotation Logged() {
+    let ctx = annotation.context()
+    logged_target_name = ctx.target.name
+    compiler_name = ctx.compiler.name
+    build_platform = ctx.build.platform
+    build_arch = ctx.build.arch
+
+    ctx.target.transform(
+        (handler) -> String {
+            let res = handler()
+            return "[LOGGED: " + res + "]"
+        }
+    )
+}
+
+@Logged
+fn compute_secret() -> String {
+    return "secret42"
+}
+
+// 2b. Custom WrapPrefix annotation testing (handler) -> {...} with arguments
+export annotation WrapPrefix(prefix: String) {
+    let ctx = annotation.context()
+    ctx.target.transform(
+        (handler, 
+        text: String) -> String {
+            let res = handler(text)
+            return prefix + ": " + res
+        }
+    )
+}
+
+@WrapPrefix(prefix = "[AUDIT]")
+fn audit_log(msg: String) -> String {
+    return msg
+}
+
+// 3. Custom Entity annotation for structs
+export annotation Entity(table: String) {
+    let ctx = annotation.context()
+    entity_table_name = table
+    entity_target_kind = ctx.target.kind
+}
+
+@Entity(table = "tbl_accounts")
+struct Account {
+    id: Int,
+    owner: String,
+}
+
+// 4. Custom Device annotation for enums
+export annotation Device {
+    let ctx = annotation.context()
+    device_target_name = ctx.target.name
+    device_target_kind = ctx.target.kind
+}
+
+@Device
+enum BusType {
+    I2C,
+    SPI,
+    UART,
+}
+
+@Test
+fn test_route_annotation_and_target_ref() {
+    if registered_path != "/api/users" {
+        panic("Expected registered_path to be '/api/users', got: " + registered_path)
+    }
+    if registered_method != "GET" {
+        panic("Expected registered_method to be 'GET', got: " + registered_method)
+    }
+    if registered_target_name != "fetch_users" {
+        panic("Expected target name 'fetch_users', got: " + registered_target_name)
+    }
+    if registered_target_kind != "function" {
+        panic("Expected target kind 'function', got: " + registered_target_kind)
+    }
+    if registered_target_ret != "String" {
+        panic("Expected return_type 'String', got: " + registered_target_ret)
+    }
+
+    // Call the extracted callable handler
+    let handler_call_res = registered_handler()
+    if handler_call_res != "users_payload" {
+        panic("Expected handler() to return 'users_payload', got: " + handler_call_res)
+    }
+}
+
+@Test
+fn test_annotation_target_transform() {
+    if logged_target_name != "compute_secret" {
+        panic("Expected logged target 'compute_secret', got: " + logged_target_name)
+    }
+    let res = compute_secret()
+    if res != "[LOGGED: secret42]" {
+        panic("Expected transformed result '[LOGGED: secret42]', got: " + res)
+    }
+}
+
+@Test
+fn test_annotation_transform_with_args_and_fn() {
+    let out = audit_log("user login")
+    if out != "[AUDIT]: user login" {
+        panic("Expected '[AUDIT]: user login', got: " + out)
+    }
+}
+
+@Test
+fn test_annotation_build_and_compiler_context() {
+    if compiler_name != "flame" {
+        panic("Expected compiler name 'flame', got: " + compiler_name)
+    }
+    if build_platform.isEmpty() {
+        panic("Expected non-empty build_platform")
+    }
+    if build_arch.isEmpty() {
+        panic("Expected non-empty build_arch")
+    }
+}
+
+@Test
+fn test_struct_and_enum_annotation_metadata() {
+    if entity_table_name != "tbl_accounts" {
+        panic("Expected entity_table_name 'tbl_accounts', got: " + entity_table_name)
+    }
+    if entity_target_kind != "struct" {
+        panic("Expected entity_target_kind 'struct', got: " + entity_target_kind)
+    }
+    if device_target_name != "BusType" {
+        panic("Expected device_target_name 'BusType', got: " + device_target_name)
+    }
+    if device_target_kind != "enum" {
+        panic("Expected device_target_kind 'enum', got: " + device_target_kind)
+    }
+}
+
+@Test
+@ExpectPanic
+fn test_annotation_context_outside_annotation_fails() {
+    // Calling annotation.context() outside custom annotations must panic
+    let ctx = annotation.context()
+}

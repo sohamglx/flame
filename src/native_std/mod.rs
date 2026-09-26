@@ -1,3 +1,4 @@
+pub mod annotation;
 pub mod byte;
 #[cfg(feature = "camera")]
 pub mod camera;
@@ -28,7 +29,7 @@ use std::sync::{Arc, Mutex};
 
 pub fn get_module_defs() -> Vec<NativeModuleDef> {
     #[allow(unused_mut)]
-    let mut defs = vec![fmt::def()];
+    let mut defs = vec![fmt::def(), annotation::def()];
 
     #[cfg(feature = "utils")]
     defs.push(time::def());

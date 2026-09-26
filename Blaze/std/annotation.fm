@@ -1,0 +1,58 @@
+package std
+
+export struct ParameterInfo {
+    name: String
+    type : String
+    has_default: Bool
+    is_ref: Bool
+    is_mut: Bool
+}
+
+export struct AnnotationInfo {
+    name: String
+    args: [String]
+}
+
+export struct CompilerInfo {
+    name: String
+    version: String
+}
+
+export struct ModuleInfo {
+    name: String
+    filepath: String
+}
+
+export struct BuildInfo {
+    target: String
+    mode: String
+    platform: String
+    arch: String
+    features: [String]
+}
+
+export struct TargetMetadata {
+    name: String
+    kind: String
+    parameters: [ParameterInfo]
+    return_type: String
+    annotations: [AnnotationInfo]
+}
+
+impl TargetMetadata {
+    @Docs("Returns a callable reference to the annotated target declaration.\n\n### Example\n```flame\nlet handler = ctx.target.ref()\n```")
+    fn ref() -> Unknown {}
+
+    @Docs("Wraps the target function with the provided transformer callback.\n\n### Examples\n```flame\nctx.target.transform((handler, text: String) {\n    let res = handler(text)\n    return prefix + \": \" + res\n})\n```")
+    fn transform(transformer: Unknown) -> Unknown {}
+}
+
+export struct AnnotationContext {
+    target: TargetMetadata
+    compiler: CompilerInfo
+    module: ModuleInfo
+    build: BuildInfo
+}
+
+@Docs("Retrieves the active AnnotationContext for the annotated target.\n\nOnly callable inside a custom annotation declaration.\n\n### Example\n```flame\nannotation Route(path: String) {\n    let ctx = annotation.context()\n    let handler = ctx.target.ref()\n}\n```")
+export fn context() -> AnnotationContext {}

@@ -282,6 +282,114 @@ impl TypeChecker {
             ],
             hover_doc: Some("`Error` is a built-in type that represents a standard runtime error.\n\n### Example\n```flame\nlet err = Error { message: \"Not found\", code: 404 }\n```".to_string()),
         });
+
+        self.structs.insert("ParameterInfo".to_string(), StructInfo {
+            fields: vec![
+                ("name".to_string(), Type::String),
+                ("type".to_string(), Type::String),
+                ("hasDefault".to_string(), Type::Bool),
+                ("isRef".to_string(), Type::Bool),
+                ("isMut".to_string(), Type::Bool),
+            ],
+            hover_doc: Some("Parameter reflection info for the annotated target.".to_string()),
+        });
+
+        self.structs.insert("AnnotationInfo".to_string(), StructInfo {
+            fields: vec![
+                ("name".to_string(), Type::String),
+                ("args".to_string(), Type::Vector(Box::new(Type::String))),
+            ],
+            hover_doc: Some("Annotation reflection info applied to a declaration.".to_string()),
+        });
+
+        self.structs.insert("CompilerInfo".to_string(), StructInfo {
+            fields: vec![
+                ("name".to_string(), Type::String),
+                ("version".to_string(), Type::String),
+            ],
+            hover_doc: Some("Compiler reflection info available to custom annotations.".to_string()),
+        });
+
+        self.structs.insert("ModuleInfo".to_string(), StructInfo {
+            fields: vec![
+                ("name".to_string(), Type::String),
+                ("filepath".to_string(), Type::String),
+            ],
+            hover_doc: Some("Current module reflection info available to custom annotations.".to_string()),
+        });
+
+        self.structs.insert("BuildInfo".to_string(), StructInfo {
+            fields: vec![
+                ("target".to_string(), Type::String),
+                ("mode".to_string(), Type::String),
+                ("platform".to_string(), Type::String),
+                ("arch".to_string(), Type::String),
+                ("features".to_string(), Type::Vector(Box::new(Type::String))),
+            ],
+            hover_doc: Some("Target platform and compilation build info available to custom annotations.".to_string()),
+        });
+
+        self.structs.insert("TargetMetadata".to_string(), StructInfo {
+            fields: vec![
+                ("name".to_string(), Type::String),
+                ("kind".to_string(), Type::String),
+                ("parameters".to_string(), Type::Vector(Box::new(Type::Named("ParameterInfo".to_string())))),
+                ("returnType".to_string(), Type::String),
+                ("annotations".to_string(), Type::Vector(Box::new(Type::Named("AnnotationInfo".to_string())))),
+            ],
+            hover_doc: Some("Metadata and callable reference for the annotated declaration.\n\n### Methods\n- `ref()`: Callable reference to the target function\n- `transform(transformer)`: Wraps target function".to_string()),
+        });
+
+        let mut target_methods = HashMap::new();
+        target_methods.insert(
+            "ref".to_string(),
+            FunctionSig {
+                is_static: true,
+                params: vec![],
+                hover_doc: Some("Returns a callable reference to the annotated target declaration.\n\n### Example\n```flame\nlet handler = ctx.target.ref()\n```".to_string()),
+                return_type: Type::Unknown,
+            },
+        );
+        target_methods.insert(
+            "transform".to_string(),
+            FunctionSig {
+                is_static: true,
+                params: vec![ParamInfo {
+                    name: "transformer".to_string(),
+                    ty: Type::Unknown,
+                    is_ref: false,
+                    is_mut: false,
+                    has_default: false,
+                }],
+                hover_doc: Some("Wraps the target function with the provided transformer callback.\n\n### Examples\n```flame\n// Direct wrapper receiving target ref and parameters:\nctx.target.transform((ref, text: String) {\n    let res = ref(text)\n    return prefix + \": \" + res\n})\n\n// No-arg wrapper:\nctx.target.transform((ref) {\n    let res = ref()\n    return \"[LOGGED: \" + res + \"]\"\n})\n```".to_string()),
+                return_type: Type::Unknown,
+            },
+        );
+        self.methods.insert("TargetMetadata".to_string(), target_methods);
+
+        self.structs.insert("AnnotationContext".to_string(), StructInfo {
+            fields: vec![
+                ("target".to_string(), Type::Named("TargetMetadata".to_string())),
+                ("compiler".to_string(), Type::Named("CompilerInfo".to_string())),
+                ("module".to_string(), Type::Named("ModuleInfo".to_string())),
+                ("build".to_string(), Type::Named("BuildInfo".to_string())),
+            ],
+            hover_doc: Some("Context provided to custom annotations exposing target metadata, compiler info, module info, and build configuration.".to_string()),
+        });
+
+        let anno_ctx_sig = FunctionSig {
+            is_static: false,
+            params: vec![],
+            hover_doc: Some("Retrieves the active AnnotationContext for the annotated target.\n\nOnly callable inside a custom annotation declaration.\n\n### Example\n```flame\nannotation Route(path: String) {\n    let ctx = annotation.context()\n    let handler = ctx.target.ref()\n}\n```".to_string()),
+            return_type: Type::Named("AnnotationContext".to_string()),
+        };
+
+        self.functions.insert("context".to_string(), anno_ctx_sig.clone());
+        self.functions.insert("annotation.context".to_string(), anno_ctx_sig.clone());
+        self.functions.insert("annoation.context".to_string(), anno_ctx_sig.clone());
+        self.functions.insert("annotations.context".to_string(), anno_ctx_sig.clone());
+        self.functions.insert("std.annotation.context".to_string(), anno_ctx_sig.clone());
+        self.functions.insert("std.annotations.context".to_string(), anno_ctx_sig);
     }
 
     pub(crate) fn get_std_module_type(&self, mod_name: &str) -> Type {
@@ -592,6 +700,30 @@ impl TypeChecker {
                         docs.insert(name.to_string(), doc.to_string());
                     }
                 }
+
+                Type::Formula(map, docs)
+            }
+            "annotation" | "annotations" => {
+                let mut map = HashMap::new();
+                let mut docs = HashMap::new();
+
+                let ctx_fn = Type::Function(
+                    vec![],
+                    Box::new(Type::Named("AnnotationContext".to_string())),
+                );
+                map.insert("context".to_string(), ctx_fn);
+                docs.insert(
+                    "context".to_string(),
+                    "```flame\nfn context() -> AnnotationContext\n```\nRetrieves the active AnnotationContext for the annotated target.\n\nOnly callable inside a custom annotation declaration.\n\n### Example\n```flame\nannotation Route(path: String) {\n    let ctx = annotation.context()\n    let handler = ctx.target.ref()\n}\n```".to_string(),
+                );
+
+                map.insert("AnnotationContext".to_string(), Type::Named("AnnotationContext".to_string()));
+                map.insert("TargetMetadata".to_string(), Type::Named("TargetMetadata".to_string()));
+                map.insert("CompilerInfo".to_string(), Type::Named("CompilerInfo".to_string()));
+                map.insert("ModuleInfo".to_string(), Type::Named("ModuleInfo".to_string()));
+                map.insert("BuildInfo".to_string(), Type::Named("BuildInfo".to_string()));
+                map.insert("ParameterInfo".to_string(), Type::Named("ParameterInfo".to_string()));
+                map.insert("AnnotationInfo".to_string(), Type::Named("AnnotationInfo".to_string()));
 
                 Type::Formula(map, docs)
             }

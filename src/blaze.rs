@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 pub const EMBEDDED_BLAZE_STD: &[(&str, &str)] = &[
-    ("annotations.fm", include_str!("../Blaze/std/annotations.fm")),
+    ("annotation.fm", include_str!("../Blaze/std/annotation.fm")),
     ("builtins.fm", include_str!("../Blaze/std/builtins.fm")),
     ("byte.fm", include_str!("../Blaze/std/byte.fm")),
     ("camera.fm", include_str!("../Blaze/std/camera.fm")),

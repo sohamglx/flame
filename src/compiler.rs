@@ -49,6 +49,10 @@ pub fn build_project(
         }
     }
 
+    if std::path::Path::new("/home/spidey/Projects/flame/Cargo.toml").exists() {
+        is_local_dev = true;
+        flame_source_dir = std::path::PathBuf::from("/home/spidey/Projects/flame");
+    }
     if let Ok(dev_path) = std::env::var("FLAME_DEV_PATH") {
         is_local_dev = true;
         flame_source_dir = std::path::PathBuf::from(dev_path);
@@ -771,6 +775,7 @@ panic = "abort"
     }
 
     main_rs.push_str("    flamelang::runner::set_global_native_methods(base_runner.native_methods.clone());\n");
+    main_rs.push_str("    flamelang::runner::set_global_modules(base_runner.modules.clone());\n");
     main_rs.push_str("    flamelang::runner::set_global_granted_permissions(base_runner.granted_permissions.clone());\n");
     main_rs.push_str("    flamelang::runner::set_global_vfs(base_runner.vfs.clone());\n");
 

@@ -25,6 +25,8 @@ pub struct TypeChecker {
     pub(crate) expected_closure_type: Option<Type>,
     pub defined_functions_in_file: HashMap<String, Vec<Option<String>>>,
     pub defined_types_in_file: HashMap<String, Vec<(String, Option<String>)>>,
+    pub in_annotation_decl: bool,
+    pub in_expect_panic: bool,
 }
 
 
@@ -77,6 +79,8 @@ impl TypeChecker {
             expected_closure_type: None,
             defined_functions_in_file: HashMap::new(),
             defined_types_in_file: HashMap::new(),
+            in_annotation_decl: false,
+            in_expect_panic: false,
         };
         checker.register_builtins();
         checker

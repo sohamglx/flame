@@ -2,6 +2,59 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.5.7] - 2026-09-26 (Codename: *Fifth Spark*)
+
+### 🔮 Metaprogramming & Custom Annotation System (`std.annotation`)
+
+- **Structured `AnnotationContext` Architecture**:
+  - Implemented the `std.annotation` module exposing `annotation.context()` exclusively within custom `annotation` declarations.
+  - Calling `annotation.context()` outside custom annotations is strictly prohibited, guarded by both compile-time typechecker diagnostics and runtime panic guards.
+- **Target Declaration Reflection (`ctx.target`)**:
+  - `ctx.target.name`: Identifier of the decorated symbol.
+  - `ctx.target.kind`: Declaration classification (`"function"`, `"struct"`, `"enum"`, or `"variable"`).
+  - `ctx.target.parameters`: Vector of `ParameterInfo` (`name`, `type`, `has_default`, `is_ref`, `is_mut`).
+  - `ctx.target.return_type`: Return type signature string.
+  - `ctx.target.annotations`: Array of `AnnotationInfo` structures capturing all attached annotations and their evaluated arguments.
+- **Callable Target References (`ctx.target.ref()`)**:
+  - Exposes `ctx.target.ref()`, providing a direct callable reference to the annotated function.
+  - Enables clean, declarative route registration (`@Route(path = "/api")`), event dispatchers, and dependency injection systems.
+- **Target Function Interception & Wrapping (`ctx.target.transform()`)**:
+  - Introduced `ctx.target.transform(transformer)`, allowing annotations to wrap or replace the target function.
+  - Supports flexible closure interfaces:
+    - Direct wrapper closures: `(ref, ...args) { let res = ref(...args); return wrap(res) }`
+    - Parameterless interceptors: `(ref) { let res = ref(); return wrap(res) }`
+    - Higher-order factory closures: `(ref) { return (args) { ... } }`
+  - Strips custom annotations on `clean_target` so calls to `ref()` inside wrappers execute the target body directly without infinite annotation re-entrancy.
+- **Compiler, Module & Build Metadata**:
+  - `ctx.compiler`: Access compiler name (`"flame"`) and toolchain version.
+  - `ctx.module`: Inspect current module name and file path.
+  - `ctx.build`: Reflect compilation target, mode, operating system platform, architecture (`x86_64`, `aarch64`), and enabled features.
+
+### 🛠️ Compiler, Parser & Typechecker Precision
+
+- **Keyword Parsing in Member Expressions**:
+  - Updated primary expression parser (`parse_primary`) to recognize `TokenKind::Annotation`, allowing `annotation.context()` to be parsed cleanly without syntax errors.
+- **Parameterless Annotation Declarations**:
+  - Made parentheses optional in `annotation Name { ... }` declarations.
+- **Method Signature Arity Alignment**:
+  - Fixed method parameter indexing for `TargetMetadata` methods (`ref` and `transform`) in `src/typechecker/builtins.rs`, resolving false `"expects 0 argument(s), got 1"` errors.
+- **Closure Return Type Fallback**:
+  - Updated closure return type inference when unconstrained by context from `Type::Nil` to `Type::Unknown`, enabling untyped closures to return values without `"type mismatch in return value: expected Nil, found String"` errors.
+- **Test Engine Annotation Context Awareness**:
+  - Integrated `@ExpectPanic` detection into `TypeChecker`, enabling negative test cases asserting runtime panics to validate cleanly in IDE diagnostics.
+
+### 📚 Standard Library & Documentation
+
+- **Embedded Standard Library Module**:
+  - Added `Blaze/std/annotation.fm` with full type declarations for `ParameterInfo`, `AnnotationInfo`, `CompilerInfo`, `ModuleInfo`, `BuildInfo`, `TargetMetadata`, and `AnnotationContext`.
+  - Embedded `annotation.fm` into `EMBEDDED_BLAZE_STD` and registered in `src/stdlib.rs` and `src/ide/modules.rs`.
+- **Documentation Updates**:
+  - Updated `docs/src/content/docs/annotations-and-testing/custom-annotations.mdx` with complete guides on `AnnotationContext`, `ctx.target.ref()`, and `ctx.target.transform()`.
+- **Comprehensive Test Suite**:
+  - Added `examples/ex/tests/test_annotations.fm` validating routing, transformations, metadata reflection, and panic handling (37/37 tests passing).
+
+---
+
 ## [0.5.6] - 2026-09-25 (Codename: *Fifth Spark*)
 
 ### 🎨 IDE Syntax Highlighting & Grammar Precision

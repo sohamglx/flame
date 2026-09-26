@@ -232,6 +232,25 @@ impl Runner {
                                     }
                                 }
                             }
+                            let target_name = {
+                                let env_lock = closure_env.lock().unwrap();
+                                env_lock.variables.iter()
+                                    .find(|(_, v)| matches!(&v.value, Value::Function { body: b, .. } if b.len() == body.len()))
+                                    .map(|(k, _)| k.clone())
+                                    .unwrap_or_else(|| "function".to_string())
+                            };
+                            let ctx_val = crate::runner::core::build_annotation_context(
+                                target_name,
+                                "function",
+                                params,
+                                None,
+                                annotations,
+                                Some(callback_val.clone()),
+                                closure_env.clone(),
+                                &self.filepath,
+                            );
+                            let _guard = crate::runner::core::ScopedAnnotationContext::new(ctx_val);
+
                             match self.invoke_callback_value(&anno_func, anno_args) {
                                 Ok(anno_res) => {
                                     child_env.lock().unwrap().define(

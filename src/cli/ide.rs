@@ -2139,7 +2139,9 @@ pub fn analyze_file_for_json(
                                         crate::blaze::get_std_function_doc(em, symbol_name)
                                     })
                                 })
-                                .or_else(|| crate::blaze::get_std_function_doc(&namespace, symbol_name));
+                                .or_else(|| {
+                                    crate::blaze::get_std_function_doc(&namespace, symbol_name)
+                                });
                             completions.push(JsonCompletion {
                                 sort_text: None,
                                 label: symbol_name.clone(),
@@ -2150,7 +2152,9 @@ pub fn analyze_file_for_json(
                         }
                     }
 
-                    if !word_under_cursor.is_empty() && std_symbols.iter().any(|(n, _)| n == &word_under_cursor) {
+                    if !word_under_cursor.is_empty()
+                        && std_symbols.iter().any(|(n, _)| n == &word_under_cursor)
+                    {
                         let doc = crate::blaze::get_std_function_doc(&std_ns, &word_under_cursor)
                             .or_else(|| {
                                 effective_mod.as_ref().and_then(|em| {
@@ -2186,11 +2190,13 @@ pub fn analyze_file_for_json(
                     {
                         let doc = crate::blaze::get_std_function_doc(&std_ns, symbol_name)
                             .or_else(|| {
-                                effective_mod
-                                    .as_ref()
-                                    .and_then(|em| crate::blaze::get_std_function_doc(em, symbol_name))
+                                effective_mod.as_ref().and_then(|em| {
+                                    crate::blaze::get_std_function_doc(em, symbol_name)
+                                })
                             })
-                            .or_else(|| crate::blaze::get_std_function_doc(&namespace, symbol_name));
+                            .or_else(|| {
+                                crate::blaze::get_std_function_doc(&namespace, symbol_name)
+                            });
                         completions.push(JsonCompletion {
                             sort_text: None,
                             label: symbol_name.clone(),
@@ -2201,7 +2207,9 @@ pub fn analyze_file_for_json(
                     }
                 }
 
-                if !word_under_cursor.is_empty() && std_symbols.iter().any(|(n, _)| n == &word_under_cursor) {
+                if !word_under_cursor.is_empty()
+                    && std_symbols.iter().any(|(n, _)| n == &word_under_cursor)
+                {
                     let doc = crate::blaze::get_std_function_doc(&std_ns, &word_under_cursor)
                         .or_else(|| {
                             effective_mod.as_ref().and_then(|em| {
@@ -3680,6 +3688,7 @@ fn list_std_modules(_manifest_dir: &Path) -> Vec<String> {
         "camera".to_string(),
         "unit".to_string(),
         "web".to_string(),
+        "annotation".to_string(),
     ]
 }
 
