@@ -1941,6 +1941,18 @@ impl TypeChecker {
             if let Type::Vector(element_ty) = &inner_ty {
                 match member.as_str() {
                     "push" => {
+                        if let Expr::Identifier(var_name, id_span) = &**inner {
+                            if let Some(var) = self.lookup_var(var_name) {
+                                if !var.is_mut && !self.in_expect_panic {
+                                    self.error(
+                                        format!("cannot mutate immutable variable '{}'. Declare with 'let mut' to allow mutating methods like 'push'.", var_name),
+                                        id_span.clone(),
+                                        Some(format!("Change 'let {}' to 'let mut {}'", var_name, var_name)),
+                                        None,
+                                    );
+                                }
+                            }
+                        }
                         self.check_call_args(
                             &[ParamInfo {
                                 name: "item".into(),
@@ -1956,6 +1968,18 @@ impl TypeChecker {
                         return Type::Nil;
                     }
                     "pop" => {
+                        if let Expr::Identifier(var_name, id_span) = &**inner {
+                            if let Some(var) = self.lookup_var(var_name) {
+                                if !var.is_mut && !self.in_expect_panic {
+                                    self.error(
+                                        format!("cannot mutate immutable variable '{}'. Declare with 'let mut' to allow mutating methods like 'pop'.", var_name),
+                                        id_span.clone(),
+                                        Some(format!("Change 'let {}' to 'let mut {}'", var_name, var_name)),
+                                        None,
+                                    );
+                                }
+                            }
+                        }
                         self.check_call_args(&[], args, span, member);
                         return *element_ty.clone();
                     }

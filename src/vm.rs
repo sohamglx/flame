@@ -806,7 +806,7 @@ impl Env {
         if let Some(entry) = self.variables.get_mut(&name) {
             if !entry.is_mut {
                 return Err(format!(
-                    "cannot mutate immutable variable '{}'. Declare with 'let mut' or 'var' to allow reassignment.",
+                    "cannot mutate immutable variable '{}'. Declare with 'let mut' to allow reassignment.",
                     name
                 ));
             }
@@ -816,7 +816,7 @@ impl Env {
             parent.lock().unwrap().assign(name, val)
         } else {
             Err(format!(
-                "cannot assign to undeclared variable '{}'. Declare it first using 'let mut' or 'var'.",
+                "cannot assign to undeclared variable '{}'. Declare it first using 'let mut'.",
                 name
             ))
         }

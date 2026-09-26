@@ -58,7 +58,9 @@ impl Runner {
                                     anno_args.push(arg_val);
                                 }
                             }
-                            let _ = self.invoke_callback_value(&anno_func, anno_args);
+                            if let Err(e) = self.invoke_callback_value(&anno_func, anno_args) {
+                                return Err(format!("Annotation '{}' failed: {}", anno.name, e));
+                            }
                         }
                     }
                 }
@@ -185,7 +187,9 @@ impl Runner {
                                     anno_args.push(arg_val);
                                 }
                             }
-                            let _ = self.invoke_callback_value(&anno_func, anno_args);
+                            if let Err(e) = self.invoke_callback_value(&anno_func, anno_args) {
+                                return Err(format!("Annotation '{}' failed: {}", anno.name, e));
+                            }
                         }
                     }
                 }
@@ -245,7 +249,9 @@ impl Runner {
                                     anno_args.push(arg_val);
                                 }
                             }
-                            let _ = self.invoke_callback_value(&anno_func, anno_args);
+                            if let Err(e) = self.invoke_callback_value(&anno_func, anno_args) {
+                                return Err(format!("Annotation '{}' failed: {}", anno.name, e));
+                            }
                         }
                     }
                 }
@@ -298,7 +304,9 @@ impl Runner {
                                     anno_args.push(arg_val);
                                 }
                             }
-                            let _ = self.invoke_callback_value(&anno_func, anno_args);
+                            if let Err(e) = self.invoke_callback_value(&anno_func, anno_args) {
+                                return Err(format!("Annotation '{}' failed: {}", anno.name, e));
+                            }
                         }
                     }
                 }

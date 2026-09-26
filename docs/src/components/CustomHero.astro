@@ -152,14 +152,17 @@ fn test_math(a: Int, b: Int, expected: Int) {
 			{
 				isLanding && (
 					<div class="version-badge">
-						<span class="badge-title"><span class="flame-word">Flame</span> v0.5.7</span>
+						<span class="badge-title">
+							<span class="flame-word">Flame</span> v0.5.8
+						</span>
 						<span class="badge-dot">•</span>
 						<span class="badge-subtitle">Fifth Spark</span>
 					</div>
 				)
 			}
 			<h1 id="_top" data-page-title>
-				<span class="flame-word">Flame</span> {title.replace(/^Flame\s*/, '')}
+				<span class="flame-word">Flame</span>
+				{title.replace(/^Flame\s*/, "")}
 			</h1>
 			{tagline && <div class="tagline" set:html={tagline} />}
 		</div>
@@ -167,7 +170,8 @@ fn test_math(a: Int, b: Int, expected: Int) {
 			actions.length > 0 && (
 				<div class="sl-flex actions">
 					{actions.map((action: any) => {
-						const { class: className, ...attrs } = action.attrs || {};
+						const { class: className, ...attrs } =
+							action.attrs || {};
 						return (
 							<LinkButton
 								href={action.link}
@@ -244,7 +248,7 @@ fn test_math(a: Int, b: Int, expected: Int) {
 	}
 
 	.flame-word {
-		color: #FF0068;
+		color: #ff0068;
 		text-shadow: none !important;
 	}
 
@@ -269,8 +273,8 @@ fn test_math(a: Int, b: Int, expected: Int) {
 	}
 
 	.actions :global(.sl-link-button.primary) {
-		background: #FF0068 !important;
-		border-color: #FF0068 !important;
+		background: #ff0068 !important;
+		border-color: #ff0068 !important;
 		color: #ffffff !important;
 		font-weight: 600 !important;
 		box-shadow: none !important;
@@ -293,8 +297,8 @@ fn test_math(a: Int, b: Int, expected: Int) {
 	}
 
 	.actions :global(.sl-link-button.secondary:hover) {
-		border-color: #FF0068 !important;
-		color: #FF0068 !important;
+		border-color: #ff0068 !important;
+		color: #ff0068 !important;
 		transform: translateY(-2px) !important;
 		box-shadow: none !important;
 	}

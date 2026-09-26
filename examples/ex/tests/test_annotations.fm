@@ -180,3 +180,51 @@ fn test_annotation_context_outside_annotation_fails() {
     // Calling annotation.context() outside custom annotations must panic
     let ctx = annotation.context()
 }
+
+// 5. Custom GET annotation populating routes array
+let mut app_routes: [Formula] = []
+
+export annotation GET(path: String) {
+    let ctx = annotation.context()
+    let handler = ctx.target.ref()
+
+    app_routes.push(
+        formula {
+            method: "GET", 
+            path: path, 
+            handler: handler
+        }
+    )
+}
+
+@GET("/users")
+fn users_endpoint() -> String {
+    return "users"
+}
+
+@Test
+fn test_routes_list_and_handler_call() {
+    if app_routes.len() != 1 {
+        panic("Expected app_routes.len() to be 1, got: " + app_routes.len().toString())
+    }
+    let r = app_routes[0]
+    if r.method != "GET" {
+        panic("Expected method 'GET', got: " + r.method)
+    }
+    if r.path != "/users" {
+        panic("Expected path '/users', got: " + r.path)
+    }
+    let handler = r.handler
+    let res = handler()
+    if res != "users" {
+        panic("Expected handler to return 'users', got: " + res)
+    }
+}
+
+@Test
+@ExpectPanic
+fn test_immutable_routes_push_fails() {
+    // Attempting mutating method on immutable list must panic
+    let immutable_routes: [String] = []
+    immutable_routes.push("/forbidden")
+}

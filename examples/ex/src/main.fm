@@ -28,7 +28,7 @@ fn build(release: Bool = false, target: String = "debug") {
 }
 
 @Command(name: "serve", about: "Run the server")
-fn serve(port: Int = 3000) {
+fn serve(port: u16 = 3000) {
     print($"Starting web server on port {port}...")
 
     let app = await server.init()

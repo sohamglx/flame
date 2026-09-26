@@ -1400,13 +1400,6 @@ impl Runner {
                         }
                     }
                     _ => {
-                        println!(
-                            "DEBUG [runner:2017]: Expr::Dot evaluated directly! left = {:?}, member = {:?}",
-                            left, member
-                        );
-                        let bt = std::backtrace::Backtrace::force_capture();
-                        println!("Backtrace: {:#?}", bt);
-                        println!("DEBUG: left is {:?}", left);
                         return Err(format!(
                             "cannot access member '{}' on non-namespace value in '{}'",
                             member,

@@ -2,6 +2,39 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.5.8] - 2026-09-26 (Codename: *Fifth Spark*)
+
+### 🛡️ Runtime Diagnostics & Error Cleanliness
+
+- **Eliminated Verbose Internal Debug Logs**:
+  - Removed internal debug logging (`DEBUG [runner:2017]: Expr::Dot evaluated directly!`) and forced stack trace dumps from expression evaluation in `src/runner/exprs.rs`.
+  - Member access errors on non-namespace values now cleanly output concise, actionable runtime error messages without terminal noise.
+- **Strict Annotation Error Propagation**:
+  - Resolved silent error suppression across declaration-time custom annotation executions (`Stmt::LetDecl`, `Stmt::FuncDecl`, `Stmt::StructDecl`, and `Stmt::EnumDecl` in `src/runner/stmts.rs`).
+  - Runtime errors occurring inside annotation bodies (such as modifying immutable variables or assertion failures) now immediately halt execution and report the root cause (`Annotation '<Name>' failed: ...`).
+- **Purged Non-Existent `var` Keyword References**:
+  - Cleaned all diagnostic messages, hints, and runtime error strings in `src/vm.rs` and `src/typechecker/exprs.rs` that erroneously suggested `var`.
+  - Standardized all mutability advice strictly to Flame's canonical `let mut` syntax.
+
+### 🔒 Typechecker Immutability Enforcement
+
+- **Vector Mutating Method Checking (`push` & `pop`)**:
+  - Enhanced `TypeChecker::infer_call_type` in `src/typechecker/exprs.rs` to verify identifier mutability when calling mutating Vector methods (`push` and `pop`).
+  - Calling `push` or `pop` on variables declared with `let` instead of `let mut` now produces a compile-time type diagnostic error.
+- **Negative Testing Context Awareness**:
+  - Configured mutability checks to respect `@ExpectPanic` test annotations, allowing negative test cases to validate runtime immutability panics cleanly without spurious compile errors.
+
+### 📚 Documentation & Metaprogramming Reference
+
+- **Full `std.annotation` Documentation**:
+  - Authored comprehensive standard library reference at `docs/src/content/docs/std/annotation.mdx` detailing all structs (`AnnotationContext`, `TargetMetadata`, `ParameterInfo`, `AnnotationInfo`, `CompilerInfo`, `ModuleInfo`, `BuildInfo`), methods (`ref()`, `transform()`), and practical architectures.
+  - Linked `std.annotation` from the Custom Annotations guide (`docs/src/content/docs/annotations-and-testing/custom-annotations.mdx`).
+  - Aligned standard library module cards in `docs/src/content/docs/std/overview.mdx` to match the exact navigation order in `docs/astro.config.mjs`.
+- **Expanded Annotation Test Suite**:
+  - Expanded `examples/ex/tests/test_annotations.fm` with test cases for custom `@GET` route handler extraction and immutable vector mutation panic validation (all 39 tests passing).
+
+---
+
 ## [0.5.7] - 2026-09-26 (Codename: *Fifth Spark*)
 
 ### 🔮 Metaprogramming & Custom Annotation System (`std.annotation`)
