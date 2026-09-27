@@ -385,6 +385,10 @@ pub fn find_symbol_in_file(path: &std::path::Path, symbol: &str) -> Option<JsonD
         let trimmed = line.trim();
         let is_match = trimmed.starts_with(&format!("fn {}", clean))
             || trimmed.starts_with(&format!("export fn {}", clean))
+            || trimmed.starts_with(&format!("function {}", clean))
+            || trimmed.starts_with(&format!("export function {}", clean))
+            || trimmed.starts_with(&format!("export const {}", clean))
+            || trimmed.starts_with(&format!("export let {}", clean))
             || trimmed.starts_with(&format!("annotation {}", clean))
             || trimmed.starts_with(&format!("export annotation {}", clean))
             || trimmed.starts_with(&format!("struct {}", clean))
@@ -395,7 +399,8 @@ pub fn find_symbol_in_file(path: &std::path::Path, symbol: &str) -> Option<JsonD
             || trimmed.starts_with(&format!("export const {}:", clean))
             || trimmed.starts_with(&format!("let {}", clean))
             || trimmed.starts_with(&format!("export let {}", clean))
-            || trimmed.contains(&format!("fn {}(", clean));
+            || trimmed.contains(&format!("fn {}(", clean))
+            || trimmed.contains(&format!("function {}(", clean));
 
         if is_match {
             if let Some(col_idx) = line.find(clean) {
@@ -786,6 +791,20 @@ pub fn find_definition(
     let trimmed_line = line_str.trim();
     if trimmed_line.starts_with("import ") {
         let import_target = trimmed_line.trim_start_matches("import ").trim();
+        if import_target.starts_with('"') || import_target.starts_with('\'') {
+            let quote_char = import_target.chars().next().unwrap();
+            let inner = import_target.trim_start_matches(quote_char);
+            let rel_path = inner.split(quote_char).next().unwrap_or("");
+            if let Some(target_path) = crate::stdlib::locate_resource_file(std::path::Path::new(file), rel_path) {
+                return Some(JsonDefinition {
+                    file: target_path.to_string_lossy().to_string(),
+                    line: 1,
+                    column: 1,
+                    end_line: Some(1),
+                    end_column: Some(1),
+                });
+            }
+        }
         let clean_import = import_target
             .split_whitespace()
             .next()
@@ -913,6 +932,24 @@ pub fn find_definition(
         if let Some(local_def) = find_local_symbol(stmts, &word, file, line) {
             return Some(local_def);
         }
+        // Check if word matches an imported resource alias
+        let quoted_alias_pattern = format!(r#"import\s+"([^"]+)"\s+as\s+{}\b"#, regex::escape(&word));
+        if let Ok(re) = regex::Regex::new(&quoted_alias_pattern) {
+            if let Some(cap) = re.captures(content) {
+                let res_path = &cap[1];
+                if let Some(found_file) = crate::stdlib::locate_resource_file(std::path::Path::new(file), res_path) {
+                    if found_file.is_file() {
+                        return Some(JsonDefinition {
+                            file: found_file.to_string_lossy().to_string(),
+                            line: 1,
+                            column: 1,
+                            end_line: Some(1),
+                            end_column: Some(1),
+                        });
+                    }
+                }
+            }
+        }
         // Check if word matches a native plugin directly (e.g. server.init)
         if let Some(def) = find_native_plugin_symbol(manifest_dir, clean_word, None, clean_word) {
             return Some(def);
@@ -1005,6 +1042,28 @@ pub fn find_definition(
                     end_line: Some(1),
                     end_column: Some(1),
                 });
+            }
+        }
+
+        // 2d-2. Quoted file/resource import (e.g. scrypt.runFlameCode)
+        let quoted_pattern = format!(r#"import\s+"([^"]+)"\s+as\s+{}\b"#, regex::escape(ns));
+        if let Ok(re) = regex::Regex::new(&quoted_pattern) {
+            if let Some(cap) = re.captures(content) {
+                let res_path = &cap[1];
+                if let Some(found_file) = crate::stdlib::locate_resource_file(std::path::Path::new(file), res_path) {
+                    if found_file.is_file() {
+                        if let Some(def) = find_symbol_in_file(&found_file, clean_word) {
+                            return Some(def);
+                        }
+                        return Some(JsonDefinition {
+                            file: found_file.to_string_lossy().to_string(),
+                            line: 1,
+                            column: 1,
+                            end_line: Some(1),
+                            end_column: Some(1),
+                        });
+                    }
+                }
             }
         }
 

@@ -319,17 +319,24 @@ impl Parser {
         let start_tok = self.consume(TokenKind::Import, "expected 'import' keyword")?;
         let mut path = Vec::new();
         let mut glob = false;
+        let mut is_quoted = false;
 
-        let first = self.advance(); // consume any token (allows keywords like thread/process)
-        path.push(first.lexeme.clone());
+        if self.check(TokenKind::StringLiteral) || self.check(TokenKind::MultilineStringLiteral) {
+            let str_tok = self.advance();
+            path.push(str_tok.lexeme.clone());
+            is_quoted = true;
+        } else {
+            let first = self.advance(); // consume any token (allows keywords like thread/process)
+            path.push(first.lexeme.clone());
 
-        while self.match_token(TokenKind::Dot) {
-            if self.match_token(TokenKind::Star) {
-                glob = true;
-                break;
+            while self.match_token(TokenKind::Dot) {
+                if self.match_token(TokenKind::Star) {
+                    glob = true;
+                    break;
+                }
+                let next = self.advance(); // consume any token
+                path.push(next.lexeme.clone());
             }
-            let next = self.advance(); // consume any token
-            path.push(next.lexeme.clone());
         }
 
         let mut alias = None;
@@ -338,7 +345,7 @@ impl Parser {
             alias = Some(alias_tok.lexeme.clone());
         }
 
-        if path.iter().any(|p| p == "thread") {
+        if !is_quoted && path.iter().any(|p| p == "thread") {
             if let Some(ref a) = alias {
                 self.thread_aliases.insert(a.clone());
             } else if let Some(last) = path.last() {
@@ -351,6 +358,7 @@ impl Parser {
             path,
             glob,
             alias,
+            is_quoted,
             span: Span {
                 start: start_tok.span.start,
                 end: end_span.start,

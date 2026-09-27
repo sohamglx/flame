@@ -2,6 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
   "name": "Flame",
   "scopeName": "source.flame",
+
   "patterns": [
     {
       "include": "#comments"
@@ -31,6 +32,7 @@
       "include": "#identifiers"
     }
   ],
+
   "repository": {
     "comments": {
       "patterns": [
@@ -61,6 +63,7 @@
         }
       ]
     },
+
     "decorators": {
       "patterns": [
         {
@@ -75,6 +78,7 @@
             }
           }
         },
+
         {
           "match": "\\b(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
           "captures": {
@@ -86,6 +90,7 @@
             }
           }
         },
+
         {
           "match": "\\b(export)\\s+(annotation)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
           "captures": {
@@ -113,6 +118,7 @@
         }
       ]
     },
+
     "jsx": {
       "patterns": [
         {
@@ -120,6 +126,7 @@
         }
       ]
     },
+
     "jsx-tag-in-expression": {
       "begin": "(?<!\\+\\+|--)(?<=[({\\[,?=>:*]|&&|\\|\\||\\?|\\*\\/|^return|\\breturn|^await|\\bawait|^yield|\\byield|^)\\s*(?=(<)\\s*([a-zA-Z_][a-zA-Z0-9_-]*)(?:\\s+|(?=/?>)|>))",
       "end": "(?!(<)\\s*([a-zA-Z_][a-zA-Z0-9_-]*)(?:\\s+|(?=/?>)|>))",
@@ -129,6 +136,7 @@
         }
       ]
     },
+
     "jsx-tag": {
       "name": "meta.tag.flame",
       "begin": "(?=(<)\\s*([a-zA-Z_][a-zA-Z0-9_-]*)(?:\\s+|(?=/?>)|>))",
@@ -182,6 +190,7 @@
         }
       ]
     },
+
     "jsx-children": {
       "patterns": [
         {
@@ -195,6 +204,7 @@
         }
       ]
     },
+
     "jsx-attributes": {
       "patterns": [
         {
@@ -221,6 +231,7 @@
         }
       ]
     },
+
     "jsx-embedded-expression": {
       "name": "meta.embedded.expression.flame",
       "begin": "\\{",
@@ -259,6 +270,7 @@
         }
       ]
     },
+
     "imports": {
       "patterns": [
         {
@@ -270,6 +282,16 @@
           },
           "end": "$|;",
           "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "name": "keyword.control.flame",
+              "match": "\\b(as)\\b"
+            },
+            {
+              "include": "#strings"
+            },
             {
               "name": "keyword.control.flame",
               "match": "(?<=\\.)[a-zA-Z_][a-zA-Z0-9_]*\\b"
@@ -284,6 +306,7 @@
             }
           ]
         },
+
         {
           "begin": "(@)(plugin)\\b",
           "beginCaptures": {
@@ -317,34 +340,41 @@
         }
       ]
     },
+
     "keywords": {
       "patterns": [
         {
           "name": "keyword.operator.logical.flame",
           "match": "\\b(or|and|not)\\b"
         },
+
         {
           "name": "keyword.control.flame",
           "match": "\\b(if|else|match|for|in|while|loop|break|continue|defer|return|yield|await|async|thread|package)\\b"
         },
+
         {
           "name": "keyword.declaration.flame",
           "match": "\\b(annotation)\\b"
         },
+
         {
           "name": "keyword.declaration.flame",
           "match": "\\b(let|const|var|fn|struct|enum|trait|impl|export|import|plugin|mut|as|type|where|formula)\\b"
         },
+
         {
           "name": "variable.language.flame",
           "match": "\\b(self|Self)\\b"
         },
+
         {
           "name": "constant.language.flame",
           "match": "\\b(true|false|nil)\\b"
         }
       ]
     },
+
     "types": {
       "patterns": [
         {
@@ -369,6 +399,7 @@
         }
       ]
     },
+
     "strings": {
       "patterns": [
         {
@@ -416,6 +447,7 @@
             }
           ]
         },
+
         {
           "name": "string.quoted.double.interpolated.flame",
           "begin": "(\\$)(\")",
@@ -461,6 +493,7 @@
             }
           ]
         },
+
         {
           "name": "string.quoted.triple.flame",
           "begin": "\"\"\"",
@@ -472,6 +505,7 @@
             }
           ]
         },
+
         {
           "name": "string.quoted.double.flame",
           "begin": "\"",
@@ -483,46 +517,55 @@
             }
           ]
         },
+
         {
           "name": "string.quoted.single.flame",
           "match": "'[^'\\\\\\n\\r]*'"
         }
       ]
     },
+
     "numbers": {
       "patterns": [
         {
           "name": "constant.numeric.float.flame",
           "match": "\\b[0-9]+\\.[0-9]+([eE][+-]?[0-9]+)?\\b"
         },
+
         {
           "name": "constant.numeric.decimal.flame",
           "match": "\\b[0-9]+\\b"
         },
+
         {
           "name": "constant.numeric.hex.flame",
           "match": "\\b0x[0-9a-fA-F]+\\b"
         },
+
         {
           "name": "constant.numeric.binary.flame",
           "match": "\\b0b[01]+\\b"
         }
       ]
     },
+
     "identifiers": {
       "patterns": [
         {
           "name": "support.function.flame",
           "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b(?=\\s*\\()"
         },
+
         {
           "name": "variable.other.property.flame",
           "match": "(?<=\\.)[a-zA-Z_][a-zA-Z0-9_]*\\b"
         },
+
         {
           "name": "variable.other.macro.flame",
           "match": "\\$[a-zA-Z_][a-zA-Z0-9_]*"
         },
+
         {
           "name": "variable.other.readwrite.flame",
           "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"

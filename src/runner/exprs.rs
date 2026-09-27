@@ -3556,6 +3556,7 @@ impl Runner {
                                                 path: parts,
                                                 glob: false,
                                                 alias: None,
+                                                is_quoted: false,
                                                 span: anno.span.clone(),
                                             },
                                             child_env.clone(),

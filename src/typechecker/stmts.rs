@@ -493,8 +493,86 @@ impl TypeChecker {
                         }
                     }
                 }
-                Stmt::ImportDecl { path, alias, .. } => {
-                    if let Some(mod_name) = path.last() {
+                Stmt::ImportDecl { path, alias, is_quoted, .. } => {
+                    if *is_quoted {
+                        if let Some(file_str) = path.first() {
+                            let bind_name = alias.clone().unwrap_or_else(|| {
+                                let p = std::path::Path::new(file_str);
+                                p.file_stem().and_then(|s| s.to_str()).unwrap_or("resource").to_string()
+                            });
+                            self.modules.insert(bind_name.clone());
+
+                            let is_js = file_str.ends_with(".js") || file_str.ends_with(".mjs") || file_str.ends_with(".cjs") || file_str.ends_with(".ts");
+                            if is_js {
+                                if let Some(resolved) = crate::stdlib::locate_resource_file(std::path::Path::new(&self.filepath), file_str) {
+                                    let mut files_to_scan = vec![resolved.clone()];
+                                    if let Ok(content) = std::fs::read_to_string(&resolved) {
+                                        for line in content.lines() {
+                                            let trimmed = line.trim();
+                                            if let Some(rest) = trimmed.strip_prefix("export * from ") {
+                                                let target = rest.trim().trim_matches(';').trim().trim_matches('"').trim_matches('\'');
+                                                if let Some(reexp) = crate::stdlib::locate_resource_file(&resolved, target) {
+                                                    files_to_scan.push(reexp);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    for scan_path in files_to_scan {
+                                        if let Ok(content) = std::fs::read_to_string(&scan_path) {
+                                            let actual_file_name = scan_path.file_name().and_then(|n| n.to_str()).unwrap_or(file_str);
+                                            for line in content.lines() {
+                                                let trimmed = line.trim();
+                                                let (fn_name, raw_params) = if let Some(rest) = trimmed.strip_prefix("export function ") {
+                                                    let mut parts = rest.splitn(2, '(');
+                                                    let n = parts.next().map(|s| s.trim());
+                                                    let p = parts.next().and_then(|s| s.split(')').next());
+                                                    (n, p)
+                                                } else if let Some(rest) = trimmed.strip_prefix("function ") {
+                                                    let mut parts = rest.splitn(2, '(');
+                                                    let n = parts.next().map(|s| s.trim());
+                                                    let p = parts.next().and_then(|s| s.split(')').next());
+                                                    (n, p)
+                                                } else if let Some(rest) = trimmed.strip_prefix("export const ") {
+                                                    let n = rest.split('=').next().map(|s| s.trim());
+                                                    (n, None)
+                                                } else {
+                                                    (None, None)
+                                                };
+                                                if let Some(name) = fn_name {
+                                                    let clean_name = name.trim();
+                                                    if !clean_name.is_empty() && clean_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                                                        let qualified = format!("{}.{}", bind_name, clean_name);
+                                                        let mut params = Vec::new();
+                                                        if let Some(p_str) = raw_params {
+                                                            for p in p_str.split(',') {
+                                                                let p_clean = p.trim();
+                                                                if !p_clean.is_empty() {
+                                                                    params.push(ParamInfo {
+                                                                        name: p_clean.to_string(),
+                                                                        ty: Type::Unknown,
+                                                                        is_ref: false,
+                                                                        is_mut: false,
+                                                                        has_default: true,
+                                                                    });
+                                                                }
+                                                            }
+                                                        }
+                                                        self.functions.insert(qualified, FunctionSig {
+                                                            params,
+                                                            return_type: Type::Unknown,
+                                                            hover_doc: Some(format!("External JavaScript function in `{}`", actual_file_name)),
+                                                            is_static: false,
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else if let Some(mod_name) = path.last() {
                         let registered_name = alias.as_ref().unwrap_or(mod_name);
                         if path.first().map_or(false, |p| p == "native" || p == "std") {
                             self.plugins.insert(registered_name.clone());
@@ -790,7 +868,67 @@ impl TypeChecker {
 
     pub(crate) fn check_stmt(&mut self, stmt: &Stmt) {
         match stmt {
-            Stmt::ImportDecl { path, alias, span, .. } => {
+            Stmt::ImportDecl { path, alias, is_quoted, span, .. } => {
+                if *is_quoted {
+                    if let Some(file_str) = path.first() {
+                        let bind_name = alias.clone().unwrap_or_else(|| {
+                            let p = std::path::Path::new(file_str);
+                            p.file_stem().and_then(|s| s.to_str()).unwrap_or("resource").to_string()
+                        });
+                        let ext = std::path::Path::new(file_str)
+                            .extension()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("");
+
+                        let (ty, hover_desc) = match ext {
+                            "js" | "mjs" | "cjs" | "ts" => (
+                                Type::Named(format!("js:{}", bind_name)),
+                                format!("**External JavaScript Module**\n\nResource: `{}`", file_str)
+                            ),
+                            "css" => (
+                                Type::Named("css:resource".to_string()),
+                                format!("**CSS Stylesheet Resource**\n\nResource: `{}`", file_str)
+                            ),
+                            "json" => (
+                                Type::Named("json:data".to_string()),
+                                format!("**JSON Data Resource**\n\nResource: `{}`", file_str)
+                            ),
+                            "txt" | "text" => (
+                                Type::String,
+                                format!("**Text Resource**\n\nResource: `{}`", file_str)
+                            ),
+                            "html" | "htm" => (
+                                Type::Named("HtmlNode".to_string()),
+                                format!("**HTML Template Resource**\n\nResource: `{}`", file_str)
+                            ),
+                            _ => (
+                                Type::String,
+                                format!("**File Resource**\n\nResource: `{}`", file_str)
+                            ),
+                        };
+
+                        let hover = if let Some(a) = alias {
+                            format!("```flame\nimport \"{}\" as {}\n```\n{}", file_str, a, hover_desc)
+                        } else {
+                            format!("```flame\nimport \"{}\"\n```\n{}", file_str, hover_desc)
+                        };
+
+                        self.insert_hover_info(span.clone(), hover.clone());
+                        self.module_docs.insert(bind_name.clone(), hover.clone());
+
+                        if alias.is_some() || ext != "css" {
+                            self.define_var(
+                                bind_name.clone(),
+                                VarInfo {
+                                    ty,
+                                    is_mut: false,
+                                    hover_doc: Some(hover),
+                                },
+                            );
+                        }
+                    }
+                    return;
+                }
                 if let Some(last) = path.last() {
                     let bind_name = alias.as_ref().unwrap_or(last);
                     let is_native = path.first().map_or(false, |p| p == "native");
@@ -1496,6 +1634,7 @@ impl TypeChecker {
                                     path: parts,
                                     glob: false,
                                     alias: None,
+                                    is_quoted: false,
                                     span: anno.span.clone(),
                                 });
                             }

@@ -329,7 +329,61 @@ impl Runner {
                     .insert(format!("impl_{}", target_type), impl_env);
                 Ok(Value::Nil)
             }
-            Stmt::ImportDecl { path, alias, .. } => {
+            Stmt::ImportDecl { path, alias, is_quoted, .. } => {
+                if *is_quoted {
+                    if let Some(file_str) = path.first() {
+                        let bind_name = alias.clone().unwrap_or_else(|| {
+                            let p = std::path::Path::new(file_str);
+                            p.file_stem().and_then(|s| s.to_str()).unwrap_or("resource").to_string()
+                        });
+                        let resolved_opt = crate::stdlib::locate_resource_file(&self.filepath, file_str)
+                            .or_else(|| {
+                                let direct = self.resolve_path(file_str);
+                                if direct.exists() { Some(direct) } else { None }
+                            });
+                        if let Some(res_path) = resolved_opt {
+                            if let Ok(content) = self.read_file_or_vfs(&res_path) {
+                                let ext = res_path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                                if ext == "json" {
+                                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                                        fn json_to_val(v: &serde_json::Value) -> Value {
+                                            match v {
+                                                serde_json::Value::Null => Value::Nil,
+                                                serde_json::Value::Bool(b) => Value::Bool(*b),
+                                                serde_json::Value::Number(n) => {
+                                                    if let Some(i) = n.as_i64() {
+                                                        Value::Int(i)
+                                                    } else if let Some(f) = n.as_f64() {
+                                                        Value::Float(f)
+                                                    } else {
+                                                        Value::Nil
+                                                    }
+                                                }
+                                                serde_json::Value::String(s) => Value::String(s.clone()),
+                                                serde_json::Value::Array(arr) => {
+                                                    Value::Tuple(arr.iter().map(json_to_val).collect())
+                                                }
+                                                serde_json::Value::Object(map) => {
+                                                    let mut m = std::collections::HashMap::new();
+                                                    for (k, v) in map {
+                                                        m.insert(k.clone(), json_to_val(v));
+                                                    }
+                                                    Value::Object(m)
+                                                }
+                                            }
+                                        }
+                                        env.lock().unwrap().define(bind_name, json_to_val(&val), false);
+                                        return Ok(Value::Nil);
+                                    }
+                                } else {
+                                    env.lock().unwrap().define(bind_name, Value::String(content), false);
+                                    return Ok(Value::Nil);
+                                }
+                            }
+                        }
+                    }
+                    return Ok(Value::Nil);
+                }
                 let mod_name = path.join(".");
                 let bind_name = alias.clone().unwrap_or_else(|| path.last().unwrap().clone());
                 if mod_name.starts_with("std.") {

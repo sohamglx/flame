@@ -679,8 +679,22 @@ impl Value {
 
                 Ok(out)
             }
-
             _ => Err("expected bytes".into()),
+        }
+    }
+
+    pub fn as_str(&self) -> Result<&str, String> {
+        match self {
+            Value::String(s) => Ok(s.as_str()),
+            _ => Err("expected string".into()),
+        }
+    }
+
+    pub fn as_float(&self) -> Result<f64, String> {
+        match self {
+            Value::Float(f) => Ok(*f),
+            Value::Int(i) => Ok(*i as f64),
+            _ => Err("expected float".into()),
         }
     }
 }
@@ -836,5 +850,53 @@ impl Env {
             map.insert(k.clone(), entry.value.clone());
         }
         map
+    }
+}
+
+impl From<i64> for Value {
+    fn from(v: i64) -> Self {
+        Value::Int(v)
+    }
+}
+
+impl From<i32> for Value {
+    fn from(v: i32) -> Self {
+        Value::Int(v as i64)
+    }
+}
+
+impl From<f64> for Value {
+    fn from(v: f64) -> Self {
+        Value::Float(v)
+    }
+}
+
+impl From<bool> for Value {
+    fn from(v: bool) -> Self {
+        Value::Bool(v)
+    }
+}
+
+impl From<String> for Value {
+    fn from(v: String) -> Self {
+        Value::String(v)
+    }
+}
+
+impl From<&str> for Value {
+    fn from(v: &str) -> Self {
+        Value::String(v.to_string())
+    }
+}
+
+impl From<Vec<Value>> for Value {
+    fn from(v: Vec<Value>) -> Self {
+        Value::Tuple(v)
+    }
+}
+
+impl From<HashMap<String, Value>> for Value {
+    fn from(v: HashMap<String, Value>) -> Self {
+        Value::Formula(v)
     }
 }

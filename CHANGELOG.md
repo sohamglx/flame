@@ -2,6 +2,73 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.5.9] - 2026-09-27 (Codename: *Fifth Spark*)
+
+### 🌐 Universal External Resource Imports (`import "file" as alias`)
+
+- **Bare Module vs. Quoted Resource Resolution**:
+  - Implemented a clear syntactic separation between module namespaces and external resources:
+    - **Bare Imports (`import std.web`, `import flamer`)**: Resolved through Flame's module and package resolution system.
+    - **Quoted Imports (`import "data.json" as data`, `import "app.js" as scrypt`)**: Resolved against the project filesystem and embedded as first-class typed resources.
+- **Universal Data Access Without `std.fs`**:
+  - Available across **all application types** (CLI tools, daemons, desktop apps, servers, and web applications):
+    - `.json`: Automatically parsed at compile-time/runtime into structured objects, maps, and tuples without requiring manual `fs.read_to_string()` or deserialization boilerplate.
+    - `.txt` / `.text` / `.md`: Imported directly as native `String` values.
+    - `.html` / `.htm`: Imported as template resources (`HtmlNode`).
+- **Zero-Error Compilation Guarantee**:
+  - Importing `.js` or `.css` files in non-web programs will never trigger a compilation or typechecker error; Flame gracefully resolves them across all execution targets.
+
+### ⚡ First-Class JavaScript & CSS Integration
+
+- **External JavaScript Interoperability**:
+  - The typechecker automatically scans exported functions (`export function name(args)` and `function name(args)`), extracts parameter names, and marks parameters with defaults.
+  - External JavaScript function calls are exempt from strict static argument count constraints, eliminating false `function expects 0 argument(s), got 1` errors when calling functions with variable or optional arguments.
+  - Unified IDE hover info: streamlined to a single clean Flame signature (`fn loadExample(name: Unknown) -> Unknown`) with documentation noting external JavaScript source, eliminating stacked duplicate definitions.
+  - Integrated Go-to-Definition: navigating to imported JS functions jumps directly to the definition line and column in the `.js` file.
+- **`@Web` Asset Aliasing & Bundling**:
+  - Enhanced `@Web` annotation to accept imported CSS and JavaScript aliases alongside raw string paths:
+    ```flame
+    import "theme.css" as theme
+    import "style.css" as style
+    import "playground.js" as scrypt
+
+    @Web(title: "App", css: [theme, style], js: [scrypt])
+    ```
+  - Stylesheets are automatically copied to `dist/` and prepended via `@import` in `dist/app.css`.
+  - Client scripts are copied to `dist/`, imported as ES modules in `dist/app.js`, and bound both locally (`const scrypt = ...`) and globally on `window` for immediate execution inside Flame event handlers (e.g. `scrypt.loadExample(e.target.value)`).
+  - Embedded data resources (`.json`, `.txt`) are compiled directly into JS object literals in `dist/app.js` with zero client-side `fetch()` latency.
+
+### 🎮 Flame Interactive Playground Application
+
+- **Production-Grade Web Playground (`editor/`)**:
+  - Built a comprehensive web-based Flame code playground in `editor/` utilizing `@Web`, fine-grained reactivity, live compilation, and external script integration.
+  - Features example selection, interactive editor, console output streaming, and error visualization.
+
+### 🔗 Rust Embedding & Flame Binder (`flamebinder`)
+
+- **Application-Specific Runtime Loading**:
+  - Enhanced the `binder` crate to load and execute scripts against custom runtimes compiled with `fmp build`.
+  - Expanded documentation and examples for embedding Flame as a type-safe, high-performance plugin and scripting engine inside Rust applications.
+
+### 🎨 IDE Syntax Highlighting & Grammar Polish
+
+- **Import Syntax Highlighting**:
+  - Highlighted the `as` keyword in imports under `keyword.control.flame`.
+  - Highlighted quoted import paths with string token scopes (`string.quoted.double.flame`).
+- **Preserved Native JSX Tag Styling**:
+  - Retained Flame's native red JSX tag coloring (`keyword.control.flame`) without unwanted overrides from foreign HTML configurations.
+- **Formatter Enhancements**:
+  - Ensured correct token spacing between quoted string paths and subsequent keywords in `import "..." as ...` declarations.
+
+### 📚 Documentation
+
+- **Modules & Imports Guide (`packages-and-native/modules-and-imports.mdx`)**:
+  - Added comprehensive guide on bare module imports vs. quoted resource imports, zero-boilerplate data file loading, and cross-platform compilation guarantees.
+- **Web Applications Reference (`std/web.mdx`)**:
+  - Expanded `@Web` documentation covering all configuration parameters, CSS/JS bundling, event handler invocations, and embedded JSON resources.
+
+---
+
 ## [0.5.8] - 2026-09-26 (Codename: *Fifth Spark*)
 
 ### 🛡️ Runtime Diagnostics & Error Cleanliness

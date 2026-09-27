@@ -250,6 +250,7 @@ pub enum Stmt {
         path: Vec<String>,
         glob: bool,
         alias: Option<String>,
+        is_quoted: bool,
         span: Span,
     },
     ExportDecl(Box<Stmt>, Span),

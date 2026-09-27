@@ -36,12 +36,64 @@ pub struct WebCompiler {
     pub state_vars: HashSet<String>,
     pub global_stmts: Vec<Stmt>,
     pub css_blocks: Vec<String>,
+    pub custom_css_files: Vec<String>,
+    pub custom_js_files: Vec<String>,
+    pub css_aliases: HashMap<String, String>,
+    pub js_aliases: HashMap<String, String>,
+    pub data_resources: Vec<(String, String)>,
     pub default_layout: Option<String>,
     pub computed_deps: HashMap<String, HashSet<String>>,
     pub effect_functions: Vec<(String, HashSet<String>)>,
     pub wasm_functions: Vec<(String, Vec<String>, Vec<Stmt>)>,
     pub wasm_bytes: Option<Vec<u8>>,
     var_counter: usize,
+}
+
+fn extract_string_list(raw: &str) -> Vec<String> {
+    let trimmed = raw.trim();
+    if trimmed.starts_with('[') && trimmed.ends_with(']') {
+        let inner = &trimmed[1..trimmed.len() - 1];
+        inner
+            .split(',')
+            .map(|s| s.trim().trim_matches('"').trim_matches('\'').trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else {
+        let single = trimmed.trim_matches('"').trim_matches('\'').trim().to_string();
+        if !single.is_empty() {
+            vec![single]
+        } else {
+            vec![]
+        }
+    }
+}
+
+fn resolve_asset_file(
+    file_name: &str,
+    project_root: &Path,
+    src_dir: &Path,
+    ordered_files: &[PathBuf],
+) -> Option<PathBuf> {
+    let trimmed = file_name.trim();
+    let candidates = [
+        project_root.join(trimmed),
+        src_dir.join(trimmed),
+        PathBuf::from(trimmed),
+    ];
+    for cand in &candidates {
+        if cand.exists() && cand.is_file() {
+            return Some(cand.clone());
+        }
+    }
+    for f in ordered_files {
+        if let Some(parent) = f.parent() {
+            let cand = parent.join(trimmed);
+            if cand.exists() && cand.is_file() {
+                return Some(cand);
+            }
+        }
+    }
+    crate::stdlib::locate_resource_file(project_root, trimmed)
 }
 
 fn write_u32_leb(out: &mut Vec<u8>, mut val: u32) {
@@ -390,6 +442,11 @@ impl WebCompiler {
             state_vars: HashSet::new(),
             global_stmts: Vec::new(),
             css_blocks: Vec::new(),
+            custom_css_files: Vec::new(),
+            custom_js_files: Vec::new(),
+            css_aliases: HashMap::new(),
+            js_aliases: HashMap::new(),
+            data_resources: Vec::new(),
             default_layout: None,
             computed_deps: HashMap::new(),
             effect_functions: Vec::new(),
@@ -410,9 +467,75 @@ impl WebCompiler {
             Stmt::ExportDecl(inner, _) => {
                 self.process_stmt(inner);
             }
+            Stmt::ImportDecl { path, alias, is_quoted, .. } => {
+                if *is_quoted {
+                    if let Some(file_str) = path.first() {
+                        let trimmed = file_str.trim().trim_matches('"').trim_matches('\'').trim();
+                        if trimmed.ends_with(".css") {
+                            if !self.custom_css_files.contains(&trimmed.to_string()) {
+                                self.custom_css_files.push(trimmed.to_string());
+                            }
+                            if let Some(a) = alias {
+                                self.css_aliases.insert(a.clone(), trimmed.to_string());
+                            }
+                        } else if trimmed.ends_with(".js") || trimmed.ends_with(".mjs") || trimmed.ends_with(".cjs") || trimmed.ends_with(".ts") {
+                            if !self.custom_js_files.contains(&trimmed.to_string()) {
+                                self.custom_js_files.push(trimmed.to_string());
+                            }
+                            if let Some(a) = alias {
+                                self.js_aliases.insert(a.clone(), trimmed.to_string());
+                            }
+                        } else {
+                            let bind_name = alias.clone().unwrap_or_else(|| {
+                                let p = std::path::Path::new(trimmed);
+                                p.file_stem().and_then(|s| s.to_str()).unwrap_or("resource").to_string()
+                            });
+                            let resolved = crate::stdlib::locate_resource_file(&std::path::PathBuf::from("."), trimmed)
+                                .or_else(|| {
+                                    let p = std::path::PathBuf::from(trimmed);
+                                    if p.exists() { Some(p) } else { None }
+                                });
+                            if let Some(r_path) = resolved {
+                                if let Ok(content) = std::fs::read_to_string(&r_path) {
+                                    if trimmed.ends_with(".json") {
+                                        self.data_resources.push((bind_name, content.trim().to_string()));
+                                    } else {
+                                        let json_str = serde_json::to_string(&content).unwrap_or_else(|_| format!("\"{}\"", content.escape_default()));
+                                        self.data_resources.push((bind_name, json_str));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             Stmt::LetDecl { name, annotations, value, .. } | Stmt::ConstDecl { name, annotations, value, .. } => {
                 let is_state = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("state"));
                 let is_computed = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("computed"));
+                let is_style = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("style"));
+                let is_script = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("script") || a.name.eq_ignore_ascii_case("js"));
+                if is_style {
+                    if let Expr::Literal(crate::parser::LiteralValue::String(s), _) = value {
+                        let trimmed = s.trim();
+                        if trimmed.ends_with(".css") && !trimmed.contains('{') {
+                            if !self.custom_css_files.contains(&trimmed.to_string()) {
+                                self.custom_css_files.push(trimmed.to_string());
+                            }
+                        } else {
+                            self.css_blocks.push(s.clone());
+                        }
+                    }
+                }
+                if is_script {
+                    if let Expr::Literal(crate::parser::LiteralValue::String(s), _) = value {
+                        let trimmed = s.trim();
+                        if trimmed.ends_with(".js") {
+                            if !self.custom_js_files.contains(&trimmed.to_string()) {
+                                self.custom_js_files.push(trimmed.to_string());
+                            }
+                        }
+                    }
+                }
                 if is_state {
                     self.state_vars.insert(name.clone());
                 }
@@ -429,9 +552,25 @@ impl WebCompiler {
                 let is_component = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("component"));
                 let is_layout = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("layout"));
                 let is_style = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("style"));
+                let is_script = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("script") || a.name.eq_ignore_ascii_case("js"));
                 let is_wasm = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("wasm"));
                 let is_computed = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("computed"));
                 let is_effect = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("effect"));
+
+                if is_script {
+                    for ann in annotations {
+                        if ann.name.eq_ignore_ascii_case("script") || ann.name.eq_ignore_ascii_case("js") {
+                            for arg in &ann.args {
+                                let trimmed = arg.trim().trim_matches('"').trim_matches('\'');
+                                if trimmed.ends_with(".js") {
+                                    if !self.custom_js_files.contains(&trimmed.to_string()) {
+                                        self.custom_js_files.push(trimmed.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 if is_computed {
                     let mut deps = HashSet::new();
@@ -463,16 +602,46 @@ impl WebCompiler {
                             for arg in &ann.args {
                                 if let Some((k, v)) = arg.split_once(':') {
                                     let key = k.trim();
-                                    let val = v.trim().trim_matches('"').trim_matches('\'');
+                                    let raw_val = v.trim();
+                                    let val = raw_val.trim_matches('"').trim_matches('\'');
                                     if key == "port" {
                                         if let Ok(p) = val.parse::<u16>() {
                                             self.port = p;
                                         }
                                     } else if key == "title" {
                                         self.app_title = val.to_string();
+                                    } else if key == "css" || key == "style" || key == "styles" {
+                                        let items = extract_string_list(raw_val);
+                                        for item in items {
+                                            let resolved = self.css_aliases.get(&item).cloned().unwrap_or(item);
+                                            if !self.custom_css_files.contains(&resolved) {
+                                                self.custom_css_files.push(resolved);
+                                            }
+                                        }
+                                    } else if key == "js" || key == "script" || key == "scripts" {
+                                        let items = extract_string_list(raw_val);
+                                        for item in items {
+                                            let resolved = self.js_aliases.get(&item).cloned().unwrap_or(item);
+                                            if !self.custom_js_files.contains(&resolved) {
+                                                self.custom_js_files.push(resolved);
+                                            }
+                                        }
                                     }
                                 } else if let Ok(p) = arg.trim().parse::<u16>() {
                                     self.port = p;
+                                } else {
+                                    let trimmed = arg.trim().trim_matches('"').trim_matches('\'');
+                                    let resolved_css = self.css_aliases.get(trimmed).cloned().unwrap_or_else(|| trimmed.to_string());
+                                    let resolved_js = self.js_aliases.get(trimmed).cloned().unwrap_or_else(|| trimmed.to_string());
+                                    if resolved_css.ends_with(".css") {
+                                        if !self.custom_css_files.contains(&resolved_css) {
+                                            self.custom_css_files.push(resolved_css);
+                                        }
+                                    } else if resolved_js.ends_with(".js") {
+                                        if !self.custom_js_files.contains(&resolved_js) {
+                                            self.custom_js_files.push(resolved_js);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -487,8 +656,24 @@ impl WebCompiler {
                     for ann in annotations {
                         if ann.name.eq_ignore_ascii_case("style") {
                             for arg in &ann.args {
+                                if let Some((k, v)) = arg.split_once(':') {
+                                    let key = k.trim();
+                                    if key == "file" || key == "css" || key == "src" {
+                                        let items = extract_string_list(v.trim());
+                                        for item in items {
+                                            if !self.custom_css_files.contains(&item) {
+                                                self.custom_css_files.push(item);
+                                            }
+                                        }
+                                        continue;
+                                    }
+                                }
                                 let trimmed = arg.trim().trim_matches('"').trim_matches('\'');
-                                if trimmed.contains('{') || trimmed.contains(';') || trimmed.contains(':') {
+                                if trimmed.ends_with(".css") && !trimmed.contains('{') {
+                                    if !self.custom_css_files.contains(&trimmed.to_string()) {
+                                        self.custom_css_files.push(trimmed.to_string());
+                                    }
+                                } else if trimmed.contains('{') || trimmed.contains(';') || trimmed.contains(':') {
                                     self.css_blocks.push(trimmed.to_string());
                                 }
                             }
@@ -498,10 +683,42 @@ impl WebCompiler {
                         for inner in body_stmts {
                             match inner {
                                 Stmt::ExprStmt(Expr::Literal(crate::parser::LiteralValue::String(s), _)) => {
-                                    self.css_blocks.push(s.clone());
+                                    let trimmed = s.trim();
+                                    if trimmed.ends_with(".css") && !trimmed.contains('{') {
+                                        if !self.custom_css_files.contains(&trimmed.to_string()) {
+                                            self.custom_css_files.push(trimmed.to_string());
+                                        }
+                                    } else {
+                                        self.css_blocks.push(s.clone());
+                                    }
                                 }
                                 Stmt::ReturnStmt(Some(Expr::Literal(crate::parser::LiteralValue::String(s), _)), _) => {
-                                    self.css_blocks.push(s.clone());
+                                    let trimmed = s.trim();
+                                    if trimmed.ends_with(".css") && !trimmed.contains('{') {
+                                        if !self.custom_css_files.contains(&trimmed.to_string()) {
+                                            self.custom_css_files.push(trimmed.to_string());
+                                        }
+                                    } else {
+                                        self.css_blocks.push(s.clone());
+                                    }
+                                }
+                                Stmt::ExprStmt(Expr::InterpolatedString(segments, _)) => {
+                                    let s: String = segments.iter().filter_map(|p| match p {
+                                        crate::parser::InterpolatedSegment::Text(t) => Some(t.as_str()),
+                                        _ => None,
+                                    }).collect();
+                                    if !s.is_empty() {
+                                        self.css_blocks.push(s);
+                                    }
+                                }
+                                Stmt::ReturnStmt(Some(Expr::InterpolatedString(segments, _)), _) => {
+                                    let s: String = segments.iter().filter_map(|p| match p {
+                                        crate::parser::InterpolatedSegment::Text(t) => Some(t.as_str()),
+                                        _ => None,
+                                    }).collect();
+                                    if !s.is_empty() {
+                                        self.css_blocks.push(s);
+                                    }
                                 }
                                 _ => {}
                             }
@@ -549,6 +766,9 @@ impl WebCompiler {
                             Stmt::LetDecl { name, annotations, .. } | Stmt::ConstDecl { name, annotations, .. } => {
                                 if annotations.iter().any(|a| a.name.eq_ignore_ascii_case("state")) {
                                     self.state_vars.insert(name.clone());
+                                }
+                                if annotations.iter().any(|a| a.name.eq_ignore_ascii_case("style")) {
+                                    self.process_stmt(inner);
                                 }
                             }
                             Stmt::FuncDecl { annotations, .. } => {
@@ -610,6 +830,9 @@ impl WebCompiler {
                                 if annotations.iter().any(|a| a.name.eq_ignore_ascii_case("state")) {
                                     self.state_vars.insert(name.clone());
                                 }
+                                if annotations.iter().any(|a| a.name.eq_ignore_ascii_case("style")) {
+                                    self.process_stmt(inner);
+                                }
                             }
                             Stmt::FuncDecl { annotations, .. } => {
                                 if annotations.iter().any(|a| a.name.eq_ignore_ascii_case("style")) {
@@ -643,6 +866,38 @@ impl WebCompiler {
 
         js.push_str("// Flame Fine-Grained Reactive Web Runtime (Auto-Generated)\n");
         js.push_str("\"use strict\";\n\n");
+
+        if !self.custom_js_files.is_empty() {
+            js.push_str("// Custom User Scripts & Module Imports\n");
+            for (idx, js_file) in self.custom_js_files.iter().enumerate() {
+                let file_name = Path::new(js_file)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(js_file);
+                let mod_alias = format!("_custom_mod{}", idx);
+                js.push_str(&format!("import * as {} from \"./{}\";\n", mod_alias, file_name));
+                js.push_str(&format!(
+                    "if (typeof window !== 'undefined' && {}) {{\n  for (const [k, v] of Object.entries({})) {{\n    if (k !== 'default' && !(k in window)) window[k] = v;\n  }}\n}}\n",
+                    mod_alias, mod_alias
+                ));
+                for (alias, target) in &self.js_aliases {
+                    if target == js_file || target.ends_with(file_name) {
+                        js.push_str(&format!("const {} = {};\n", alias, mod_alias));
+                        js.push_str(&format!("if (typeof window !== 'undefined') window.{} = {};\n", alias, mod_alias));
+                    }
+                }
+            }
+            js.push_str("\n");
+        }
+
+        if !self.data_resources.is_empty() {
+            js.push_str("// Embedded Resource Imports\n");
+            for (alias, val_expr) in &self.data_resources {
+                js.push_str(&format!("const {} = {};\n", alias, val_expr));
+                js.push_str(&format!("if (typeof window !== 'undefined') window.{} = {};\n", alias, val_expr));
+            }
+            js.push_str("\n");
+        }
 
         // Runtime reactivity primitives
         js.push_str(
@@ -738,12 +993,44 @@ const http = {
 };
 window.http = http;
 
+const _safeConsole = (typeof console !== 'undefined') ? {
+  log: (...args) => console.log(...args),
+  info: (...args) => (console.info ? console.info(...args) : console.log(...args)),
+  warn: (...args) => (console.warn ? console.warn(...args) : console.log(...args)),
+  error: (...args) => (console.error ? console.error(...args) : console.log(...args)),
+  debug: (...args) => (console.debug ? console.debug(...args) : console.log(...args)),
+  table: (...args) => (console.table ? console.table(...args) : console.log(...args)),
+  clear: () => (console.clear ? console.clear() : undefined),
+} : {
+  log: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  debug: () => {},
+  table: () => {},
+  clear: () => {},
+};
+
 const web = {
   document: typeof document !== 'undefined' ? document : null,
   window: typeof window !== 'undefined' ? window : null,
+  console: _safeConsole,
+  localStorage: typeof localStorage !== 'undefined' ? localStorage : null,
+  sessionStorage: typeof sessionStorage !== 'undefined' ? sessionStorage : null,
+  location: typeof location !== 'undefined' ? location : null,
+  history: typeof history !== 'undefined' ? history : null,
   navigate: navigate,
   http: http,
   fetch: (url, opts) => fetch(url, opts),
+  setInterval: typeof setInterval !== 'undefined' ? setInterval.bind(window) : () => 0,
+  clearInterval: typeof clearInterval !== 'undefined' ? clearInterval.bind(window) : () => {},
+  setTimeout: typeof setTimeout !== 'undefined' ? setTimeout.bind(window) : () => 0,
+  clearTimeout: typeof clearTimeout !== 'undefined' ? clearTimeout.bind(window) : () => {},
+  requestAnimationFrame: typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame.bind(window) : () => 0,
+  cancelAnimationFrame: typeof cancelAnimationFrame !== 'undefined' ? cancelAnimationFrame.bind(window) : () => {},
+  signal: (name, init) => { _createSignal(name, init); return { get: () => _getSignal(name), set: (v) => _setSignal(name, v) }; },
+  computed: (fn) => fn,
+  effect: (fn) => { fn(); },
 };
 window.web = web;
 function println(...args) { console.log(...args); }
@@ -1212,6 +1499,12 @@ if (document.readyState === "loading") {
                                         "{pad}{}.addEventListener(\"{}\", {}(event) => {{\n{}{pad}}});\n",
                                         el_var, evt_name, async_prefix, body_str
                                     ));
+                                    if evt_name == "change" && (tag == "input" || tag == "textarea") {
+                                        out.push_str(&format!(
+                                            "{pad}{}.addEventListener(\"input\", {}(event) => {{\n{}{pad}}});\n",
+                                            el_var, async_prefix, body_str
+                                        ));
+                                    }
                                 }
                                 Expr::Closure { params, body, .. } => {
                                     let is_async = Self::body_has_await(body);
@@ -1229,12 +1522,24 @@ if (document.readyState === "loading") {
                                         "{pad}{}.addEventListener(\"{}\", {}({}) => {{\n{}{pad}}});\n",
                                         el_var, evt_name, async_prefix, param_str, body_str
                                     ));
+                                    if evt_name == "change" && (tag == "input" || tag == "textarea") {
+                                        out.push_str(&format!(
+                                            "{pad}{}.addEventListener(\"input\", {}({}) => {{\n{}{pad}}});\n",
+                                            el_var, async_prefix, param_str, body_str
+                                        ));
+                                    }
                                 }
                                 Expr::Identifier(fn_name, _) if !self.state_vars.contains(fn_name) => {
                                     out.push_str(&format!(
                                         "{pad}{}.addEventListener(\"{}\", (event) => {{ {}(event); }});\n",
                                         el_var, evt_name, fn_name
                                     ));
+                                    if evt_name == "change" && (tag == "input" || tag == "textarea") {
+                                        out.push_str(&format!(
+                                            "{pad}{}.addEventListener(\"input\", (event) => {{ {}(event); }});\n",
+                                            el_var, fn_name
+                                        ));
+                                    }
                                 }
                                 _ => {
                                     let handler_js = self.expr_to_js(val_expr);
@@ -1242,6 +1547,12 @@ if (document.readyState === "loading") {
                                         "{pad}{}.addEventListener(\"{}\", (event) => {{ ({}); }});\n",
                                         el_var, evt_name, handler_js
                                     ));
+                                    if evt_name == "change" && (tag == "input" || tag == "textarea") {
+                                        out.push_str(&format!(
+                                            "{pad}{}.addEventListener(\"input\", (event) => {{ ({}); }});\n",
+                                            el_var, handler_js
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -1261,6 +1572,16 @@ if (document.readyState === "loading") {
                                     "{pad}const {} = () => {{ {}.style.cssText = {}; }};\n",
                                     fn_var, el_var, val_js
                                 ));
+                            } else if attr.name == "value" {
+                                out.push_str(&format!(
+                                    "{pad}const {} = () => {{ {}.value = {}; }};\n",
+                                    fn_var, el_var, val_js
+                                ));
+                            } else if attr.name == "checked" {
+                                out.push_str(&format!(
+                                    "{pad}const {} = () => {{ {}.checked = Boolean({}); }};\n",
+                                    fn_var, el_var, val_js
+                                ));
                             } else {
                                 out.push_str(&format!(
                                     "{pad}const {} = () => {{ {}.setAttribute(\"{}\", {}); }};\n",
@@ -1277,6 +1598,10 @@ if (document.readyState === "loading") {
                                 out.push_str(&format!("{pad}{}.className = {};\n", el_var, val_js));
                             } else if attr.name == "style" {
                                 out.push_str(&format!("{pad}{}.style.cssText = {};\n", el_var, val_js));
+                            } else if attr.name == "value" {
+                                out.push_str(&format!("{pad}{}.value = {};\n", el_var, val_js));
+                            } else if attr.name == "checked" {
+                                out.push_str(&format!("{pad}{}.checked = Boolean({});\n", el_var, val_js));
                             } else {
                                 out.push_str(&format!(
                                     "{pad}{}.setAttribute(\"{}\", {});\n",
@@ -1885,6 +2210,18 @@ pub fn build_web_project(project_path: &Path) -> Result<WebBuildResult, String> 
         .map(|p| (p.path.clone(), p.title.clone()))
         .collect();
 
+    // Copy custom JS files into dist/
+    for js_file in &compiler.custom_js_files {
+        if let Some(cand_path) = resolve_asset_file(js_file, &project_root, &src_dir, &ordered_files) {
+            if let Some(file_name) = cand_path.file_name() {
+                let dist_js_file = dist_dir.join(file_name);
+                let _ = fs::copy(&cand_path, &dist_js_file);
+            }
+        } else {
+            eprintln!("\x1b[1;33mwarning:\x1b[0m JS file '{}' specified in @Web was not found", js_file);
+        }
+    }
+
     let js_code = compiler.compile_to_js();
 
     // Write dist/app.js
@@ -1918,29 +2255,40 @@ pub fn build_web_project(project_path: &Path) -> Result<WebBuildResult, String> 
     let index_html_path = dist_dir.join("index.html");
     fs::write(&index_html_path, html_content).map_err(|e| e.to_string())?;
 
-    // app.css: Preserve anything the user manually added or removed.
-    // On rebuild don't clean it, and if user added styles via @Style in Flame code, keep that as it is in css.
+    // app.css: Bundle all custom CSS files via @import and append @Style blocks.
+    // Automatically generate and update dist/app.css on every build so the developer doesn't need to touch it!
     let app_css_path = dist_dir.join("app.css");
-    let mut css_content = if app_css_path.exists() {
-        fs::read_to_string(&app_css_path).unwrap_or_default()
-    } else {
-        String::new()
-    };
+    let mut css_content = String::new();
 
+    // 1. Copy each custom CSS file to dist/<filename> and import it in app.css
+    for css_file in &compiler.custom_css_files {
+        if let Some(cand_path) = resolve_asset_file(css_file, &project_root, &src_dir, &ordered_files) {
+            if let Some(file_name_os) = cand_path.file_name() {
+                let file_name = file_name_os.to_string_lossy();
+                let dist_css_file = dist_dir.join(file_name_os);
+                let _ = fs::copy(&cand_path, &dist_css_file);
+
+                css_content.push_str(&format!("@import \"./{}\";\n", file_name));
+            }
+        } else {
+            eprintln!("\x1b[1;33mwarning:\x1b[0m CSS file '{}' specified in @Web or @Style was not found", css_file);
+        }
+    }
+
+    if !compiler.custom_css_files.is_empty() {
+        css_content.push('\n');
+    }
+
+    // 2. Concatenate all @Style code declarations
     for custom_css in &compiler.css_blocks {
         let trimmed = custom_css.trim();
-        if !trimmed.is_empty() && !css_content.contains(trimmed) {
-            if !css_content.is_empty() && !css_content.ends_with('\n') {
-                css_content.push('\n');
-            }
+        if !trimmed.is_empty() {
             css_content.push_str(trimmed);
             css_content.push('\n');
         }
     }
 
-    if !app_css_path.exists() || !compiler.css_blocks.is_empty() {
-        let _ = fs::write(&app_css_path, &css_content);
-    }
+    let _ = fs::write(&app_css_path, &css_content);
 
     Ok(WebBuildResult {
         dist_dir,

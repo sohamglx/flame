@@ -669,5 +669,30 @@ pub fn scan_document(content: &str) -> (Vec<ScannedVar>, Vec<ScannedStruct>) {
         });
     }
 
+    // Scan for quoted imports: `import "path" as alias` or `import "path"`
+    let quoted_import_re =
+        Regex::new(r#"import\s+"([^"]+)"(?:\s+as\s+([a-zA-Z_]\w*))?"#).unwrap();
+    for cap in quoted_import_re.captures_iter(content) {
+        let path = cap[1].to_string();
+        if let Some(alias_match) = cap.get(2) {
+            let alias = alias_match.as_str().to_string();
+            let ext = std::path::Path::new(&path).extension().and_then(|e| e.to_str()).unwrap_or("");
+            let desc = match ext {
+                "js" | "mjs" | "cjs" | "ts" => "External JavaScript module",
+                "css" => "CSS stylesheet resource",
+                "json" => "JSON data resource",
+                "txt" | "text" => "Text resource",
+                "html" | "htm" => "HTML template resource",
+                _ => "File resource",
+            };
+            let doc = format!("```flame\nimport \"{}\" as {}\n```\n{} `{}`", path, alias, desc, path);
+            vars.push(ScannedVar {
+                name: alias,
+                typ: Some(format!("import:\"{}\"", path)),
+                doc: Some(doc),
+            });
+        }
+    }
+
     (vars, structs)
 }

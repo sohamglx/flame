@@ -1473,6 +1473,10 @@ impl TypeChecker {
         }
 
         if let Type::Function(params, ret) = &callee_ty {
+            let is_external_js = func_sig.as_ref().map_or(false, |s| {
+                s.hover_doc.as_ref().map_or(false, |d| d.contains("External JavaScript"))
+            });
+
             let (min_args, max_args) = if let Some(sig) = &func_sig {
                 (
                     sig.params.iter().filter(|p| !p.has_default).count(),
@@ -1483,7 +1487,7 @@ impl TypeChecker {
                 (min_count, params.len())
             };
 
-            if args.len() < min_args || args.len() > max_args {
+            if !is_external_js && (args.len() < min_args || args.len() > max_args) {
                 self.error(
                     if min_args == max_args {
                         format!(
@@ -1504,10 +1508,16 @@ impl TypeChecker {
                     None,
                 );
             }
-            for (idx, expected) in params.iter().enumerate() {
-                if let Some((_, arg)) = args.get(idx) {
-                    let actual = self.infer_expr_type(arg);
-                    self.expect_assignable(expected, &actual, &arg.span(), "function argument");
+            if !is_external_js {
+                for (idx, expected) in params.iter().enumerate() {
+                    if let Some((_, arg)) = args.get(idx) {
+                        let actual = self.infer_expr_type(arg);
+                        self.expect_assignable(expected, &actual, &arg.span(), "function argument");
+                    }
+                }
+            } else {
+                for (_, arg) in args {
+                    self.infer_expr_type(arg);
                 }
             }
 
@@ -1727,7 +1737,14 @@ impl TypeChecker {
 
                     let prefixed_member = format!("{}.{}", prefix, member);
                     if let Some(sig) = self.functions.get(&prefixed_member).cloned() {
-                        self.check_call_args(&sig.params, args, span, member);
+                        let is_external_js = sig.hover_doc.as_ref().map_or(false, |d| d.contains("External JavaScript"));
+                        if !is_external_js {
+                            self.check_call_args(&sig.params, args, span, member);
+                        } else {
+                            for (_, arg) in args {
+                                self.infer_expr_type(arg);
+                            }
+                        }
                         let params_str = sig
                             .params
                             .iter()

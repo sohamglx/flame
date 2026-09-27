@@ -1,14 +1,19 @@
 [package]
 name = "flamebinder"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Official Rust integration crate for the Flame programming language."
 license = "ISC"
 repository = "https://github.com/shoya-129/flamelang"
 homepage = "https://flamelang.vercel.app"
 
+[features]
+default = ["std"]
+std = ["flamelang/utils", "flamelang/net", "flamelang/http", "flamelang/ws"]
+full = ["std", "flamelang/os", "flamelang/automation", "flamelang/hardware"]
+
 [dependencies]
-flamelang = { version = "0.4.2", path = ".." }
+flamelang = { version = "*", path = "..", default-features = false }
 
 [dev-dependencies]
 tempfile = "3.27.0"

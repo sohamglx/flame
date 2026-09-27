@@ -30,18 +30,161 @@ fn internal_helper() {
 
 ---
 
+## Bare Module Imports vs. Quoted Resource Imports
+
+Flame makes a clear, foundational distinction between **module resolution** and **external resource resolution**:
+
+```flame
+// 1. Bare Imports: Flame packages, standard library, and module namespaces
+import std.web
+import std.fs
+import math_utils
+import flamer
+
+// 2. Quoted Imports: External files, data resources, scripts, and stylesheets
+import "data.json" as data
+import "config.txt" as config
+import "playground.js" as scrypt
+import "theme.css" as theme
+```
+
+| Import Syntax | Resolution Engine | Target Types | Typical Use Cases |
+| :--- | :--- | :--- | :--- |
+| **Bare Import** (`import name`) | Flame Module / Package System | `.fm` source modules, `std.*`, native crates, downloaded packages | Business logic, standard libraries, traits, structs, and functions |
+| **Quoted Import** (`import "path" as alias`) | File System / Resource Engine | `.json`, `.txt`, `.js`, `.css`, `.html` | Data schemas, configs, stylesheets, browser scripts, and templates |
+
+---
+
 ## Importing Modules (`import`)
 
 ### Whole Module Import
-When imported by name, the module creates a namespace:
+When imported by bare identifier name, the module creates a namespace from another Flame source file or standard library module:
 
 ```flame
 // main.fm
 import math_utils
+import std.fmt
 
 fn main() {
     let result = math_utils.add(10, 20)
     print($"Result: {result}, PI: {math_utils.PI}")
+}
+```
+
+---
+
+## External Resource Imports (`import "file"`)
+
+Resource imports are a **universal language feature** in Flame, available for **every kind of application**:
+- **CLI tools & daemons**: Embed static templates, help texts, or seed schemas without packaging extra directories.
+- **Backend servers & microservices**: Load configuration files (`.txt`, `.env`) and data schemas (`.json`) instantly.
+- **Desktop applications**: Access bundled assets directly from the filesystem.
+- **Web applications (`@Web`)**: Seamlessly bundle stylesheets (`.css`) and client scripts (`.js`).
+
+<Aside type="note" title="Compilation Guarantee: Zero Errors on Import">
+While JavaScript (`.js`) and CSS (`.css`) files are primarily designed for `@Web` targets, **importing them never causes a compilation error in non-web programs**. The Flame compiler and typechecker gracefully resolve them across all compilation targets, allowing code sharing and zero-friction builds.
+</Aside>
+
+In many applications, programs need configuration files, static JSON schemas, text templates, or external assets. Traditionally, this required manually invoking `std.fs.read_to_string()`, checking paths, and parsing strings.
+
+Flame eliminates this friction by treating quoted imports as **first-class external resources**. The compiler resolves the file path relative to the current file (or project root) and directly embeds or bridges the resource into your program.
+
+### 1. Data Files Without `std.fs` (`import "data.json"`)
+
+Importing a `.json` file automatically loads and parses the structured data into accessible Flame objects at compile time and runtime:
+
+```json
+// data.json
+{
+  "appName": "Flame Studio",
+  "version": "0.5.8",
+  "maxConnections": 1000,
+  "features": ["reactive-dom", "wasm-compute", "hot-reload"]
+}
+```
+
+```flame
+// main.fm
+import "data.json" as data
+
+fn main() {
+    // Access JSON properties directly without manual fs.read or deserialization!
+    println($"Launching {data.appName} v{data.version}")
+    println($"Connection limit: {data.maxConnections}")
+    println($"First feature: {data.features[0]}")
+}
+```
+
+<Aside type="tip" title="Zero Boilerplate Data Loading">
+You do not need to construct a custom parser, read bytes, or handle IO exceptions just to inspect static application metadata. The compiler validates the presence of the resource and gives you instant typed access.
+</Aside>
+
+### 2. Static Text & Configuration Files (`import "config.txt"`)
+
+Text files (`.txt`, `.text`, `.md`) are imported as native `String` values:
+
+```flame
+import "motd.txt" as banner
+import "config.env" as envConfig
+
+fn main() {
+    println(banner)
+    println($"Config payload length: {envConfig.len()} bytes")
+}
+```
+
+### 3. External JavaScript Modules (`import "app.js"`)
+
+When developing web applications with `@Web` or integrating with browser environments, you often have existing JavaScript libraries, DOM utilities, or legacy scripts. Flame allows you to import JavaScript files directly:
+
+```javascript
+// playground.js
+export function loadExample(name) {
+    const editor = document.getElementById("code");
+    if (editor) {
+        editor.value = "// Loaded: " + name;
+    }
+}
+
+export function clearEditor() {
+    const editor = document.getElementById("code");
+    if (editor) editor.value = "";
+}
+```
+
+```flame
+// main.fm
+import std.web
+import "playground.js" as scrypt
+
+fn handleSelect(e: Unknown) {
+    let selected = e.target.value
+    // Directly call the external JavaScript function!
+    scrypt.loadExample(selected)
+}
+
+fn handleReset(e: Unknown) {
+    scrypt.clearEditor()
+}
+```
+
+#### What Flame Provides for JavaScript Imports:
+- **Intelligent Signature Inspection**: Flame scans exported JS functions (`export function name(args)` or `function name(args)`) and provides autocomplete for member functions.
+- **Unified IDE Experience**: Hovering over `scrypt.loadExample` reveals the signature (`fn loadExample(name: Unknown) -> Unknown`) and notes `External JavaScript function in playground.js`.
+- **Go-to-Definition**: Running Go-to-Definition on `loadExample` or `scrypt` jumps straight to the exact line in your `.js` file.
+- **Flexible Argument Passing**: Dynamic external JS calls support optional arguments and JavaScript conventions without strict static type mismatches.
+
+### 4. External Stylesheets (`import "theme.css"`)
+
+CSS files can be imported and bound to aliases to pass directly to `@Web` configurations:
+
+```flame
+import "theme.css" as theme
+import "style.css" as style
+
+@Web(title: "My App", css: [theme, style])
+fn main() {
+    // ...
 }
 ```
 

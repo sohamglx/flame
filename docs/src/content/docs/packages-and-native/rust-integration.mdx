@@ -3,92 +3,208 @@ title: "Flame Binder (Rust Integration)"
 description: "Learn how to embed and execute Flame scripts directly inside your Rust projects using the flamebinder crate."
 ---
 
-Flame is designed to be highly interoperable with Rust, not just by writing native plugins for Flame, but also by embedding the Flame VM directly into your own Rust applications. This is handled by the **`flamebinder`** crate.
+Flame is designed from the ground up to be the ultimate **embedding and metaprogramming language for Rust**.
 
-Using `flamebinder`, you can easily load `.fm` files, initialize a Flame environment natively in Rust, and execute Flame functions or evaluate Flame code.
+When Rust developers need a scripting layer for a game, a plugin system for a tool, or dynamic business rules, they frequently consider languages like Lua. However, Lua lacks static typing, compile-time checks, and a modern memory model. Flame gives you:
 
-## Installation
+- **Static Type Safety**: Catch script bugs at compile-time before they crash your host engine.
+- **Metaprogramming & Annotations**: First-class `@Annotation` support to inspect metadata, decorate functions, and structure plugin systems.
+- **Zero-Friction Rust Interop**: Seamless type translation via `flamebinder::Value` and native closure registration.
+- **Full Project Embedding**: Embed single `.fm` scripts or entire multi-file projects built with `fmp build`.
 
-Add `flamebinder` and `flamelang` to your Rust project's `Cargo.toml`:
+---
+
+## Installation & Feature Flags
+
+Add `flamebinder` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
 flamebinder = "0.1.0"
-flamelang = "0.3.7"
 ```
 
-## Basic Usage
+### Enabling Flame Features
 
-The core of the `flamebinder` API revolves around the `Binder` struct, which encapsulates the Flame `Runner` (the execution engine) and manages loading and execution.
+You can customize the features compiled into your embedded Flame runtime:
 
-### 1. Write your Flame Script
+```toml
+[dependencies]
+# Default includes the standard library (networking, utilities, async timers)
+flamebinder = { version = "0.1.0", features = ["std"] }
 
-First, create a Flame script containing the logic you want to execute from Rust. 
-
-**`script.fm`**
-```flame
-// Export the function so it can be called externally
-export fn process_data(input: String) -> String {
-    let prefix = "Processed: ";
-    return prefix + input;
-}
+# Or enable full OS automation, platform hardware, and camera capabilities
+# flamebinder = { version = "0.1.0", features = ["full"] }
 ```
 
-### 2. Embed and Execute in Rust
+| Feature Flag | Included Modules & Capabilities |
+|---|---|
+| `std` *(default)* | Standard library utilities, collections, HTTP/WebSocket networking, and regex |
+| `full` | Includes `std` plus OS automation, system hardware, BLE, and camera APIs |
 
-Next, initialize the `Binder` from your Rust code, prepare the arguments using Flame's native `Value` enum, and call the function.
+---
 
-**`main.rs`**
+## Primary Use Cases
+
+### 1. Game Engine Scripting & Modding
+Games written in Rust (using Bevy, macroquad, or custom engines) can embed Flame to run mod scripts, custom weapon stats, enemy AI behaviors, and dialogue trees without recompiling the main game executable.
+
+### 2. Tooling & Plugin Systems
+CLI tools, web servers, and desktop utilities can expose a clean plugin API where users write safe Flame scripts that invoke host functions.
+
+### 3. Dynamic Business Rules & Calculations
+Formulas and rules that change frequently (pricing models, access control policies, game balances) can be loaded dynamically from Flame files.
+
+---
+
+## Core Embedding APIs
+
+### 1. In-Process VM Script Execution (`Binder`)
+
+The `Binder` struct manages an in-process Flame VM execution engine (`Runner`):
+
 ```rust
-use flame_binder::Binder;
-use flamelang::vm::Value;
+use flamebinder::{Binder, Value, ValueExt};
 
-fn main() {
-    // 1. Initialize the Binder and load the Flame script.
-    // This will parse the script and evaluate its top-level statements.
-    let mut binder = match Binder::load("script.fm") {
-        Ok(b) => b,
-        Err(e) => panic!("Failed to load Flame file: {}", e),
-    };
+fn main() -> Result<(), String> {
+    // 1. Load and execute a Flame script
+    let mut binder = Binder::load("scripts/quest.fm")?;
 
-    // 2. Prepare the arguments to pass to the Flame function.
-    // Arguments must be wrapped in `flamelang::vm::Value`.
-    let args = vec![Value::String("Raw Data".to_string())];
+    // 2. Prepare arguments using Value::from(...)
+    let args = vec![Value::from("Hero"), Value::from(50)];
 
-    // 3. Call the exported Flame function natively.
-    let result = binder.call("process_data", args).expect("Failed to execute function");
+    // 3. Call an exported Flame function
+    let result = binder.call("start_quest", args)?;
 
-    // 4. Match and extract the returned Flame `Value`.
-    match result {
-        Value::String(s) => println!("{}", s), // Outputs: Processed: Raw Data
-        _ => println!("Unexpected return type"),
+    if let Some(reward) = result.as_int() {
+        println!("Quest reward: {} XP", reward);
     }
+
+    Ok(())
 }
 ```
 
-## How It Works
+---
 
-When you call `Binder::load(path)`, the following happens under the hood:
-1. **Virtual File System (VFS)**: The binder reads the file content from disk. 
-2. **Lexing & Parsing**: The raw string is tokenized and parsed into a Flame Abstract Syntax Tree (AST).
-3. **Execution Context**: An independent `Runner` instance is created and the AST is executed. Any `export fn` declarations in the script are evaluated and stored securely in the `Runner`'s global environment.
-4. **Native Bridging**: When `binder.call("func_name", args)` is executed, the binder looks up the function in the environment, checks its signature, passes the Rust arguments into the VM, and retrieves the returned result back into a Rust `Value`.
+### 2. Exposing Host Rust Functions to Flame (`register_fn`)
+
+Host applications can register native Rust closures that scripts can call directly:
+
+```rust
+use flamebinder::{Binder, Value, ValueExt};
+
+fn main() -> Result<(), String> {
+    let mut binder = Binder::new();
+
+    // Register a native Rust function into the Flame environment
+    binder.register_fn("spawn_monster", |args| {
+        let monster_type = args.get(0).and_then(|v| v.as_str()).unwrap_or("Goblin");
+        let level = args.get(1).and_then(|v| v.as_int()).unwrap_or(1);
+
+        println!("⚡ Rust Engine: Spawning {} at level {}", monster_type, level);
+
+        // Return a result back to Flame
+        Ok(Value::from(1001)) // Return entity ID
+    });
+
+    // Execute Flame code calling the native function
+    binder.load_source(r#"
+        export fn trigger_ambush() -> Int {
+            let entity_id = spawn_monster("Dragon", 50);
+            return entity_id;
+        }
+    "#, "mod.fm")?;
+
+    let entity_id = binder.call("trigger_ambush", vec![])?;
+    println!("Spawned entity: {:?}", entity_id.as_int());
+
+    Ok(())
+}
+```
+
+---
+
+### 3. Evaluating Dynamic Expressions (`eval`) and Global Variables
+
+You can set and read global variables and dynamically evaluate expressions in-process:
+
+```rust
+use flamebinder::{Binder, Value, ValueExt};
+
+fn main() -> Result<(), String> {
+    let mut binder = Binder::new();
+
+    // Inject state from host Rust code
+    binder.set_global("player_level", Value::from(12));
+    binder.set_global("multiplier", Value::from(2.5));
+
+    // Evaluate dynamic Flame expressions
+    let xp = binder.eval("player_level * 100 * multiplier")?;
+    println!("Total XP: {:?}", xp.as_float()); // 3000.0
+
+    Ok(())
+}
+```
+
+---
+
+### 4. Embedding Full Flame Projects (`load_project`)
+
+Instead of just standalone files, you can embed an entire multi-file project with its packages, modules, and `flame.toml`:
+
+```rust
+use flamebinder::Binder;
+
+fn main() -> Result<(), String> {
+    // Automatically resolves flame.toml, loads .flame/pkg packages, and compiles src/
+    let mut binder = Binder::load_project("./game_scripts")?;
+
+    // Call functions across the loaded project
+    let result = binder.call("init_game_world", vec![])?;
+    println!("World initialized: {:?}", result);
+
+    Ok(())
+}
+```
+
+---
+
+### 5. Running with Compiled Runtimes (`CompiledRuntime`)
+
+When an application is built using `fmp build`, you can invoke Flame scripts using that compiled native binary:
+
+```rust
+use flamebinder::CompiledRuntime;
+
+fn main() -> Result<(), String> {
+    // Resolves target/release/<app> from the project directory
+    let runtime = CompiledRuntime::from_project("./game_project", true)?;
+
+    // Run dynamic mod scripts through the compiled runtime binary
+    let output = runtime.run_script_stdout("mods/custom_boss.fm", &[])?;
+    println!("Script stdout:\n{}", output);
+
+    Ok(())
+}
+```
+
+---
 
 ## Interacting with Flame Values
 
-The `flamelang::vm::Value` enum contains all the fundamental types Flame uses natively. When passing arguments or receiving results, you will interact with this enum.
+`flamebinder` re-exports `Value` and implements standard `From` conversions as well as the `ValueExt` helper trait:
 
 ```rust
-pub enum Value {
-    Nil,
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    String(String),
-    List(Vec<Value>),
-    Formula(HashMap<String, Value>),
-    // ... other internal types
-}
-```
+use flamebinder::{Value, ValueExt};
 
-You can construct complex structures like lists or formulas (objects) in Rust and pass them directly into your Flame scripts!
+// From Rust types -> Flame Value:
+let v_int: Value = 42.into();
+let v_str: Value = "Flame".into();
+let v_bool: Value = true.into();
+let v_float: Value = 3.14.into();
+
+// From Flame Value -> Rust types:
+let num = v_int.as_int();       // Some(42)
+let text = v_str.as_str();      // Some("Flame")
+let flag = v_bool.as_bool();    // Some(true)
+let pi = v_float.as_float();    // Some(3.14)
+```

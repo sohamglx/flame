@@ -94,19 +94,133 @@ Flame provides 12 specialized web annotations that control compilation, routing,
 
 ### 1. `@Web` (Application Entrypoint)
 
-Marks the entry function as targeting the web browser environment. Accepts optional configuration parameters:
+Marks the entry function as targeting the web browser environment. Accepts optional configuration parameters, supporting both direct file paths and **imported resource aliases**:
 
 ```flame
 import std.web
+import "scrypt.js" as scrypt
+import "theme.css" as theme
+import "style.css" as style
+import "navigation.json" as navData
 
-@Web(title: "Flame Showcase", port: 3000)
+@Web(
+    title: "Flame Showcase", 
+    port: 3000, 
+    css: [theme, style],
+    js: [scrypt]
+)
 fn main() {
     // Application setup, global state, cursor initialization, and layout definition
 }
 ```
 
-- **`title`**: Sets the default `<title>` tag in `dist/index.html`.
-- **`port`**: Specifies the local dev server listening port (defaults to `3000`).
+#### Configuration Options
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| **`title`** | `String` | Sets the default `<title>` tag in `dist/index.html` and the browser window header. |
+| **`port`** | `Int` | Specifies the local development server listening port (defaults to `3000`). |
+| **`css`** / **`styles`** | `Array` or `String` | Accepts imported CSS aliases (`css: [theme, style]`), path strings (`css: ["style.css", "theme.css"]`), or a single string. Flame copies each stylesheet into `dist/` and imports them at the top of `dist/app.css` using `@import "./<file>";`, keeping them synchronized alongside any inline `@Style` declarations. |
+| **`js`** / **`scripts`** | `Array` or `String` | Accepts imported JS aliases (`js: [scrypt]`), path strings (`js: ["custom.js"]`), or a single string. Flame copies each script into `dist/` and imports them as ES modules at the top of `dist/app.js`. Exported functions are automatically bound to their alias (e.g. `window.scrypt` and `const scrypt`) and to `window` for immediate execution. |
+
+#### Using External JavaScript Functions in Event Handlers
+
+When you import an external JavaScript module (`import "playground.js" as scrypt`), you can invoke its functions directly inside Flame event handlers:
+
+```javascript
+// scrypt.js
+export function loadExample(name) {
+    const editor = document.getElementById("code");
+    if (editor) {
+        editor.value = "// Loaded example: " + name;
+    }
+}
+
+export function clearEditor() {
+    const editor = document.getElementById("code");
+    if (editor) editor.value = "";
+}
+
+export function runFlameCode() {
+    console.log("Compiling and running Flame source...");
+}
+```
+
+```flame
+// main.fm
+import std.web
+import "scrypt.js" as scrypt
+import "theme.css" as theme
+import "style.css" as style
+
+fn handleExampleSelect(e: Unknown) {
+    // Read DOM event data directly
+    let selected = e.target.value
+    // Invoke external JS function with arguments
+    scrypt.loadExample(selected)
+}
+
+fn handleRunClick(e: Unknown) {
+    scrypt.runFlameCode()
+}
+
+fn handleClearClick(e: Unknown) {
+    scrypt.clearEditor()
+}
+
+@Web(title: "Flame Playground", css: [theme, style], js: [scrypt])
+fn main() {
+    @Page("/")
+    fn playground() -> HtmlNode {
+        return (
+            <div class="playground-app">
+                <select id="example-select" onChange={handleExampleSelect}>
+                    <option value="hello">Hello World</option>
+                    <option value="counter">Counter</option>
+                </select>
+
+                <button class="btn btn-primary" onClick={handleRunClick}>
+                    <span>Run</span>
+                </button>
+
+                <button class="btn btn-secondary" onClick={handleClearClick}>
+                    <span>Clear</span>
+                </button>
+            </div>
+        )
+    }
+}
+```
+
+#### How External JS & CSS Integration Works Under the Hood
+
+1. **Static Analysis & Typechecking**:
+   - Flame's typechecker inspects `playground.js`, discovers `loadExample(name)`, and registers it under `scrypt.loadExample`.
+   - The IDE displays a single, clean Flame signature (`fn loadExample(name: Unknown) -> Unknown`) with documentation noting `External JavaScript function in playground.js`.
+   - Go-to-Definition on `loadExample` jumps directly to line 1 in `playground.js`.
+2. **ES Module Bundling**:
+   - In `dist/app.js`, the compiler generates:
+     ```javascript
+     import * as _custom_mod0 from "./playground.js";
+     const scrypt = _custom_mod0;
+     if (typeof window !== 'undefined') window.scrypt = _custom_mod0;
+     ```
+   - All exported functions from `playground.js` are also registered on `window` if not already defined.
+3. **Stylesheets (`dist/app.css`)**:
+   - Imported stylesheets (`theme.css`, `style.css`) are placed into `dist/` and prepended via `@import "./theme.css";` at the top of `dist/app.css`.
+
+#### Embedded Data Resources in Web Applications
+
+You can also import static JSON or text resources directly into your `@Web` frontend without writing client-side `fetch()` boilerplate:
+
+```flame
+import "navigation.json" as navData
+
+fn main() {
+    // navData is compiled directly as a JavaScript object literal in dist/app.js
+    web.console.log($"Navigation items: {navData.items.len()}")
+}
+```
 
 ---
 
@@ -312,16 +426,21 @@ export fn wasm_factorial(n: Int) -> Int {
 
 ### 10. `@Style` (Component & Global CSS Injection)
 
-Injects CSS rules into `dist/app.css` without overwriting custom styles:
+Injects CSS rules into `dist/app.css` without overwriting custom styles. `@Style` can return CSS strings, take inline strings as annotation arguments, or reference external CSS files:
 
 ```flame
+// 1. Inline CSS string function (can be declared at top-level or inside @Web main)
 @Style
 fn componentStyles() -> String {
     ".badge-wasm { background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 0.25rem 0.75rem; border-radius: 9999px; }"
 }
+
+// 2. Reference an external stylesheet file
+@Style("editor.css")
+fn editorTheme() {}
 ```
 
-Flame merges all `@Style` return strings into the application stylesheet while preserving any manual styles in `dist/app.css`.
+Flame bundles all custom stylesheets specified in `@Web(css: ...)` and all `@Style` declarations into `dist/app.css` automatically on build, so developers do not need to manually touch `dist/app.css`.
 
 ---
 
@@ -467,6 +586,16 @@ The global browser `Window` instance provides window management, navigation, tim
 - `localStorage: Storage`
 - `sessionStorage: Storage`
 - `innerWidth: Int`, `innerHeight: Int`
+
+#### `Console` (`web.console`)
+Standard browser developer tools logging and debugging:
+- `web.console.info(...args: Any)`: Outputs informational log message to browser console.
+- `web.console.log(...args: Any)`: Outputs general log message to browser console.
+- `web.console.warn(...args: Any)`: Outputs warning message with yellow alert badge.
+- `web.console.error(...args: Any)`: Outputs error message with red alert badge.
+- `web.console.debug(...args: Any)`: Outputs debug level message.
+- `web.console.table(data: Any)`: Displays tabular data as a clean browser console table.
+- `web.console.clear()`: Clears the browser console output.
 
 #### `Element`
 Interactive DOM element wrapper:

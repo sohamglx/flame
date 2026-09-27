@@ -524,8 +524,19 @@ pub fn format_code(source: &str) -> String {
         match tok.kind {
             TokenKind::OpenBrace => {
                 let is_jsx_eq_before = i > 0 && is_jsx_attr_eq[i - 1];
+                let is_jsx_child = i > 0
+                    && (is_jsx_gt[i - 1]
+                        || is_in_jsx_text[i - 1]
+                        || (tokens[i - 1].kind == TokenKind::CloseBrace && inside_inline_braces[i - 1]));
                 if !is_jsx_eq_before {
-                    if !out.ends_with(' ') && !out.ends_with('\n') {
+                    let should_space = if is_jsx_child {
+                        let prev_tok = &tokens[i - 1];
+                        let gap = &source[prev_tok.span.end..tokens[i].span.start];
+                        gap.chars().any(|c| c == ' ' || c == '\t')
+                    } else {
+                        true
+                    };
+                    if should_space && !out.ends_with(' ') && !out.ends_with('\n') {
                         out.push(' ');
                     }
                 }
@@ -798,7 +809,11 @@ pub fn format_code(source: &str) -> String {
                     }
                 }
 
-                if (is_last_ident_like && is_current_ident_like) || is_last_keyword {
+                let is_last_literal = matches!(
+                    last_kind,
+                    TokenKind::StringLiteral | TokenKind::MultilineStringLiteral | TokenKind::IntLiteral | TokenKind::FloatLiteral
+                );
+                if (is_last_ident_like && is_current_ident_like) || is_last_keyword || (is_last_literal && is_current_ident_like) {
                     needs_space = true;
                 }
 
@@ -884,4 +899,44 @@ pub fn format_code(source: &str) -> String {
     out = out.trim_end().to_string();
     out.push('\n');
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_jsx_child_expression_no_outside_space() {
+        let input = "<div>{code}</div>";
+        let formatted = format_code(input);
+        assert_eq!(formatted.trim(), "<div>{code}</div>");
+    }
+
+    #[test]
+    fn test_format_jsx_child_expression_inside_formatted() {
+        let input = "<div>{a+b}</div>";
+        let formatted = format_code(input);
+        assert_eq!(formatted.trim(), "<div>{a + b}</div>");
+    }
+
+    #[test]
+    fn test_format_jsx_child_expression_with_text() {
+        let input = "<span>Hello {name}</span>";
+        let formatted = format_code(input);
+        assert_eq!(formatted.trim(), "<span>Hello {name}</span>");
+    }
+
+    #[test]
+    fn test_format_jsx_attributes_no_space() {
+        let input = "<input id=\"code\" onChange={handleChange} />";
+        let formatted = format_code(input);
+        assert_eq!(formatted.trim(), "<input id=\"code\" onChange={handleChange} />");
+    }
+
+    #[test]
+    fn test_format_jsx_span_with_attrs() {
+        let input = "<span id=\"status-badge\" class=\"badge badge-ready\">{status}</span>";
+        let formatted = format_code(input);
+        assert_eq!(formatted.trim(), "<span id=\"status-badge\" class=\"badge badge-ready\">{status}</span>");
+    }
 }

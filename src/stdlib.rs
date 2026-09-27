@@ -253,6 +253,66 @@ pub fn locate_import_file(current_file: &Path, import_path: &[String]) -> Option
     None
 }
 
+pub fn locate_resource_file(current_file: &Path, rel_path: &str) -> Option<PathBuf> {
+    let clean_path = rel_path.trim().trim_matches('"').trim_matches('\'').trim();
+    if clean_path.is_empty() {
+        return None;
+    }
+    let path = Path::new(clean_path);
+    if path.is_absolute() && path.exists() {
+        return Some(path.to_path_buf());
+    }
+
+    let parent_dir = current_file.parent().unwrap_or_else(|| Path::new("."));
+
+    // 1. Direct relative to current file's directory
+    let direct = parent_dir.join(path);
+    if direct.exists() {
+        return Some(direct);
+    }
+
+    // 2. Search upward in project hierarchy
+    let search_folders = ["", "src", "public", "assets", "static"];
+    let mut base_dir = parent_dir.to_path_buf();
+    for _ in 0..7 {
+        for folder in &search_folders {
+            let candidate = if folder.is_empty() {
+                base_dir.join(path)
+            } else {
+                base_dir.join(folder).join(path)
+            };
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+        if !base_dir.pop() {
+            break;
+        }
+    }
+
+    // 3. Fallback to current working directory
+    if let Ok(cwd) = std::env::current_dir() {
+        let mut base_dir = cwd;
+        for _ in 0..7 {
+            for folder in &search_folders {
+                let candidate = if folder.is_empty() {
+                    base_dir.join(path)
+                } else {
+                    base_dir.join(folder).join(path)
+                };
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+            if !base_dir.pop() {
+                break;
+            }
+        }
+    }
+
+    None
+}
+
 // fn function_value(params: Vec<Param>) -> Value {
 //     Value::Function {
 //         params,

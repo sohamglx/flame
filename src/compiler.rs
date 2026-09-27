@@ -1469,4 +1469,47 @@ mod web_compiler_tests {
         assert!(js.contains("_subscribe(\"count\""), "Must subscribe count to text node: {}", js);
         assert!(js.contains("_routes"), "Must define client router: {}", js);
     }
+
+    #[test]
+    fn test_web_compiler_style_and_assets() {
+        let code = r#"
+        @Web(title: "Style App", css: ["app.css", "theme.css"], js: ["mod.js"])
+        fn main() {
+            @Style
+            fn global_styles() {
+                "body { margin: 0; background: #000; }"
+            }
+
+            @Page("/")
+            fn home() {
+                @Style
+                fn card_style() {
+                    ".card { padding: 16px; }"
+                }
+                <div class="card">Hello</div>
+            }
+        }
+        "#;
+        let mut lexer = Lexer::new(code);
+        let mut tokens = Vec::new();
+        loop {
+            let tok = lexer.next_token();
+            let is_eof = tok.kind == crate::lexer::TokenKind::EOF;
+            tokens.push(tok);
+            if is_eof {
+                break;
+            }
+        }
+        let mut parser = Parser::new(tokens, "style_test.fm".to_string());
+        let stmts = parser.parse().unwrap();
+
+        let mut compiler = WebCompiler::new("style_app".to_string());
+        compiler.process_stmts(&stmts);
+
+        assert_eq!(compiler.custom_css_files, vec!["app.css", "theme.css"]);
+        assert_eq!(compiler.custom_js_files, vec!["mod.js"]);
+        assert_eq!(compiler.css_blocks.len(), 2);
+        assert!(compiler.css_blocks[0].contains("body { margin: 0; background: #000; }"));
+        assert!(compiler.css_blocks[1].contains(".card { padding: 16px; }"));
+    }
 }
