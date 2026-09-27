@@ -1240,37 +1240,53 @@ impl Runner {
                 }
             }
             Expr::Index(inner, idx, _) => {
-                let inner_val = self.eval_expr(inner, env.clone())?;
+                let mut inner_val = self.eval_expr(inner, env.clone())?;
+                if let Value::RefPath(path, _) = &inner_val {
+                    inner_val = self.read_target(env.clone(), path.clone())?;
+                }
                 let idx_val = self.eval_expr(idx, env.clone())?;
-                let idx_int = if let Value::Int(i) = idx_val {
-                    i as usize
-                } else {
-                    return Err("Index must be an integer".to_string());
-                };
 
-                match inner_val {
-                    Value::Tuple(elems) => {
-                        if idx_int < elems.len() {
-                            Ok(elems[idx_int].clone())
+                match (&inner_val, &idx_val) {
+                    (Value::Tuple(elems), Value::Int(i)) => {
+                        let actual_idx = if *i < 0 { elems.len() as i64 + *i } else { *i };
+                        if actual_idx >= 0 && (actual_idx as usize) < elems.len() {
+                            Ok(elems[actual_idx as usize].clone())
                         } else {
-                            Err(format!("Index out of bounds: {}", idx_int))
+                            Err(format!("Index out of bounds: {} for tuple of length {}", i, elems.len()))
                         }
                     }
-                    Value::String(s) => {
-                        if idx_int < s.len() {
-                            Ok(Value::String(s.chars().nth(idx_int).unwrap().to_string()))
+                    (Value::Object(map) | Value::Formula(map), Value::String(s)) => {
+                        Ok(map.get(s).cloned().unwrap_or(Value::Nil))
+                    }
+                    (Value::Object(map) | Value::Formula(map), Value::Int(i)) => {
+                        let key = i.to_string();
+                        if let Some(val) = map.get(&key) {
+                            Ok(val.clone())
                         } else {
-                            Err(format!("Index out of bounds: {}", idx_int))
+                            Ok(Value::Nil)
                         }
                     }
-                    Value::Bytes(b) => {
-                        if idx_int < b.len() {
-                            Ok(Value::Byte(b[idx_int]))
+                    (Value::String(s), Value::Int(i)) => {
+                        let actual_idx = if *i < 0 { s.len() as i64 + *i } else { *i };
+                        if actual_idx >= 0 && (actual_idx as usize) < s.len() {
+                            Ok(Value::String(s.chars().nth(actual_idx as usize).unwrap().to_string()))
                         } else {
-                            Err(format!("Index out of bounds: {}", idx_int))
+                            Err(format!("Index out of bounds: {}", i))
                         }
                     }
-                    _ => Err("Cannot index into this value".to_string()),
+                    (Value::Bytes(b), Value::Int(i)) => {
+                        let actual_idx = if *i < 0 { b.len() as i64 + *i } else { *i };
+                        if actual_idx >= 0 && (actual_idx as usize) < b.len() {
+                            Ok(Value::Byte(b[actual_idx as usize]))
+                        } else {
+                            Err(format!("Index out of bounds: {}", i))
+                        }
+                    }
+                    _ => Err(format!(
+                        "cannot index into {} with index of type {}",
+                        inner_val.type_name(),
+                        idx_val.type_name()
+                    )),
                 }
             }
             Expr::Dot(inner, member, _) => {

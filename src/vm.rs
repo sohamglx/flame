@@ -306,11 +306,11 @@ impl fmt::Display for Value {
             Value::Object(map) => {
                 let mut keys: Vec<String> = map.keys().cloned().collect();
                 keys.sort();
-                write!(
-                    f,
-                    "<object [{}]>",
-                    keys.join(", ")
-                )
+                let items: Vec<String> = keys
+                    .iter()
+                    .map(|k| format!("{}: {}", k, map[k]))
+                    .collect();
+                write!(f, "{{ {} }}", items.join(", "))
             }
             Value::Range(start, end) => write!(f, "{}..{}", start, end),
             Value::ThreadHandler(id) => write!(f, "ThreadHandler({})", id),

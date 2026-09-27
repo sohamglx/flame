@@ -51,7 +51,7 @@ import "theme.css" as theme
 | Import Syntax | Resolution Engine | Target Types | Typical Use Cases |
 | :--- | :--- | :--- | :--- |
 | **Bare Import** (`import name`) | Flame Module / Package System | `.fm` source modules, `std.*`, native crates, downloaded packages | Business logic, standard libraries, traits, structs, and functions |
-| **Quoted Import** (`import "path" as alias`) | File System / Resource Engine | `.json`, `.txt`, `.js`, `.css`, `.html` | Data schemas, configs, stylesheets, browser scripts, and templates |
+| **Quoted Import** (`import "path" as alias`) | File System / Resource Engine | `.toml`, `.json`, `.fmi`, `.txt`, `.js`, `.css`, `.html` | Configurations, structured datasets, metadata, stylesheets, client scripts |
 
 ---
 
@@ -77,7 +77,7 @@ fn main() {
 
 Resource imports are a **universal language feature** in Flame, available for **every kind of application**:
 - **CLI tools & daemons**: Embed static templates, help texts, or seed schemas without packaging extra directories.
-- **Backend servers & microservices**: Load configuration files (`.txt`, `.env`) and data schemas (`.json`) instantly.
+- **Backend servers & microservices**: Load configuration files (`flame.toml`, `.env`) and data schemas (`.json`, `.fmi`) instantly with zero disk IO overhead.
 - **Desktop applications**: Access bundled assets directly from the filesystem.
 - **Web applications (`@Web`)**: Seamlessly bundle stylesheets (`.css`) and client scripts (`.js`).
 
@@ -85,19 +85,31 @@ Resource imports are a **universal language feature** in Flame, available for **
 While JavaScript (`.js`) and CSS (`.css`) files are primarily designed for `@Web` targets, **importing them never causes a compilation error in non-web programs**. The Flame compiler and typechecker gracefully resolve them across all compilation targets, allowing code sharing and zero-friction builds.
 </Aside>
 
-In many applications, programs need configuration files, static JSON schemas, text templates, or external assets. Traditionally, this required manually invoking `std.fs.read_to_string()`, checking paths, and parsing strings.
+### Path Resolution (`./` and `../`)
 
-Flame eliminates this friction by treating quoted imports as **first-class external resources**. The compiler resolves the file path relative to the current file (or project root) and directly embeds or bridges the resource into your program.
+Quoted imports support direct filesystem paths, including relative indicators:
+- **`./file.ext`**: Resolves relative to the directory containing the current source file.
+- **`../file.ext`**: Walks up the directory tree relative to the current file (ideal for `tests/` importing the project root `flame.toml` or shared fixtures).
+- **`file.ext`**: Searches the current folder and automatically walks up project folders (`src/`, `public/`, `assets/`, `static/`, root).
 
-### 1. Data Files Without `std.fs` (`import "data.json"`)
+```flame
+// Importing from parent directories or sibling folders
+import "../flame.toml" as config
+import "./assets/seed.json" as seed
+import "../meta.fmi" as meta
+```
 
-Importing a `.json` file automatically loads and parses the structured data into accessible Flame objects at compile time and runtime:
+---
+
+### 1. Data Files & Array Indexing (`import "data.json"`)
+
+Importing a `.json` file automatically parses structured data into accessible Flame objects and tuples at compile time and runtime:
 
 ```json
 // data.json
 {
   "appName": "Flame Studio",
-  "version": "0.5.8",
+  "version": "0.6.0",
   "maxConnections": 1000,
   "features": ["reactive-dom", "wasm-compute", "hot-reload"]
 }
@@ -115,11 +127,94 @@ fn main() {
 }
 ```
 
+#### Array-Rooted JSON Files (`data[0]`)
+
+When a JSON file begins with a root array `[ ... ]`, Flame represents it as an indexable collection of objects. You can index by integer (`data[0]`) and directly access fields by dot (`data[0].id`) or string key (`data[0]["id"]`):
+
+```json
+// users.json
+[
+  { "id": 1, "name": "Alice", "role": "admin" },
+  { "id": 2, "name": "Bob", "role": "developer" }
+]
+```
+
+```flame
+// users_test.fm
+import "users.json" as users
+
+fn main() {
+    let first_user = users[0]
+    println($"First user: {first_user.name} (#{users[0]["id"]})")
+    println($"Second user: {users[1].name}")
+}
+```
+
 <Aside type="tip" title="Zero Boilerplate Data Loading">
 You do not need to construct a custom parser, read bytes, or handle IO exceptions just to inspect static application metadata. The compiler validates the presence of the resource and gives you instant typed access.
 </Aside>
 
-### 2. Static Text & Configuration Files (`import "config.txt"`)
+---
+
+### 2. TOML Configuration Files (`import "flame.toml"`)
+
+Flame natively supports importing TOML configuration files—including `flame.toml` or custom configuration profiles—with high-speed native parsing:
+
+```toml
+# flame.toml
+[package]
+name = "my_app"
+version = "0.6.0"
+tags = ["fast", "reactive"]
+
+[database]
+host = "127.0.0.1"
+port = 5432
+```
+
+```flame
+// main.fm
+import "flame.toml" as config
+
+fn main() {
+    // Tables and nested properties are accessible via standard dot syntax:
+    println($"App: {config.package.name} v{config.package.version}")
+    println($"Primary Tag: {config.package.tags[0]}")
+    println($"Database: {config.database.host}:{config.database.port}")
+}
+```
+
+In `@Web` builds, TOML configurations are automatically serialized into the client resource bundle so frontend components can inspect build properties and application settings seamlessly.
+
+---
+
+### 3. Flame Metadata Interface (`import "*.fmi"`)
+
+`.fmi` (Flame Metadata Interface) files are JSON-formatted metadata manifests used for component declarations, plugin contracts, and package interfaces. 
+
+Flame treats `.fmi` files with the same first-class support as JSON:
+
+```json
+// component.fmi
+{
+  "name": "DataGrid",
+  "version": "1.0.0",
+  "inputs": ["columns", "rows"]
+}
+```
+
+```flame
+import "component.fmi" as meta
+
+fn main() {
+    println($"Component: {meta.name} (v{meta.version})")
+    println($"Input 0: {meta.inputs[0]}")
+}
+```
+
+---
+
+### 4. Static Text & Configuration Files (`import "config.txt"`)
 
 Text files (`.txt`, `.text`, `.md`) are imported as native `String` values:
 
@@ -133,7 +228,9 @@ fn main() {
 }
 ```
 
-### 3. External JavaScript Modules (`import "app.js"`)
+---
+
+### 5. External JavaScript Modules (`import "app.js"`)
 
 When developing web applications with `@Web` or integrating with browser environments, you often have existing JavaScript libraries, DOM utilities, or legacy scripts. Flame allows you to import JavaScript files directly:
 
@@ -174,7 +271,7 @@ fn handleReset(e: Unknown) {
 - **Go-to-Definition**: Running Go-to-Definition on `loadExample` or `scrypt` jumps straight to the exact line in your `.js` file.
 - **Flexible Argument Passing**: Dynamic external JS calls support optional arguments and JavaScript conventions without strict static type mismatches.
 
-### 4. External Stylesheets (`import "theme.css"`)
+### 6. External Stylesheets (`import "theme.css"`)
 
 CSS files can be imported and bound to aliases to pass directly to `@Web` configurations:
 

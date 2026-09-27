@@ -681,6 +681,8 @@ pub fn scan_document(content: &str) -> (Vec<ScannedVar>, Vec<ScannedStruct>) {
                 "js" | "mjs" | "cjs" | "ts" => "External JavaScript module",
                 "css" => "CSS stylesheet resource",
                 "json" => "JSON data resource",
+                "fmi" => "FMI interface metadata resource",
+                "toml" => "TOML configuration resource",
                 "txt" | "text" => "Text resource",
                 "html" | "htm" => "HTML template resource",
                 _ => "File resource",

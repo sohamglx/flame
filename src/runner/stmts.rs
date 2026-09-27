@@ -344,7 +344,7 @@ impl Runner {
                         if let Some(res_path) = resolved_opt {
                             if let Ok(content) = self.read_file_or_vfs(&res_path) {
                                 let ext = res_path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                                if ext == "json" {
+                                if ext == "json" || ext == "fmi" {
                                     if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
                                         fn json_to_val(v: &serde_json::Value) -> Value {
                                             match v {
@@ -373,6 +373,30 @@ impl Runner {
                                             }
                                         }
                                         env.lock().unwrap().define(bind_name, json_to_val(&val), false);
+                                        return Ok(Value::Nil);
+                                    }
+                                } else if ext == "toml" {
+                                    if let Ok(val) = toml::from_str::<toml::Value>(&content) {
+                                        fn toml_to_val(v: &toml::Value) -> Value {
+                                            match v {
+                                                toml::Value::String(s) => Value::String(s.clone()),
+                                                toml::Value::Integer(i) => Value::Int(*i),
+                                                toml::Value::Float(f) => Value::Float(*f),
+                                                toml::Value::Boolean(b) => Value::Bool(*b),
+                                                toml::Value::Datetime(dt) => Value::String(dt.to_string()),
+                                                toml::Value::Array(arr) => {
+                                                    Value::Tuple(arr.iter().map(toml_to_val).collect())
+                                                }
+                                                toml::Value::Table(tbl) => {
+                                                    let mut m = std::collections::HashMap::new();
+                                                    for (k, v) in tbl {
+                                                        m.insert(k.clone(), toml_to_val(v));
+                                                    }
+                                                    Value::Object(m)
+                                                }
+                                            }
+                                        }
+                                        env.lock().unwrap().define(bind_name, toml_to_val(&val), false);
                                         return Ok(Value::Nil);
                                     }
                                 } else {

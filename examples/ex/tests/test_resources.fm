@@ -1,0 +1,14 @@
+import "../flame.toml" as config
+import "../data.json" as arr_data
+import "../data.fmi" as meta
+
+@Test
+fn test_resource_imports() {
+    assertEq(config.package.name, "flame_examples", "Config package name should be ex")
+    assertEq(config.package.version, "0.1.0", "Config package version should be 0.1.0")
+    assertEq(arr_data[0].title, "First Item", "First item title should be First Item")
+    assertEq(arr_data[0]["title"], "First Item", "String indexing should work on array item")
+    assertEq(arr_data[1].id, 2, "Second item id should be 2")
+    assertEq(meta.author, "Flame Team", "FMI author should match")
+    assertEq(meta.tags[0], "fmi", "FMI tag index 0 should match")
+}

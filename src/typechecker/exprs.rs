@@ -929,7 +929,21 @@ impl TypeChecker {
     pub(crate) fn infer_index_type(&mut self, inner: &Expr, idx: &Expr, span: &Span) -> Type {
         let inner_ty = self.infer_expr_type(inner);
         let idx_ty = self.infer_expr_type(idx);
-        if !matches!(idx_ty, Type::Int | Type::Unknown) {
+
+        let is_data_resource = match &inner_ty {
+            Type::Named(name) => {
+                name == "json:data"
+                    || name == "toml:data"
+                    || name.starts_with("json:")
+                    || name.starts_with("toml:")
+                    || name == "Object"
+                    || name == "Formula"
+            }
+            Type::Formula(..) | Type::Unknown => true,
+            _ => false,
+        };
+
+        if !is_data_resource && !matches!(idx_ty, Type::Int | Type::Unknown) {
             self.error(
                 format!(
                     "expected integer index, found {}",
@@ -940,12 +954,15 @@ impl TypeChecker {
                 None,
             );
         }
+
         match inner_ty {
+            Type::Named(ref name) if is_data_resource => Type::Unknown,
             Type::Vector(elem) => *elem,
             Type::Tuple(elems) => {
                 if let Expr::Literal(crate::parser::LiteralValue::Int(i), _) = idx {
-                    if *i >= 0 && (*i as usize) < elems.len() {
-                        return elems[*i as usize].clone();
+                    let actual = if *i < 0 { elems.len() as i64 + *i } else { *i };
+                    if actual >= 0 && (actual as usize) < elems.len() {
+                        return elems[actual as usize].clone();
                     } else {
                         self.error(
                             format!(
@@ -959,7 +976,20 @@ impl TypeChecker {
                         );
                     }
                 }
+                if !elems.is_empty() {
+                    let first = &elems[0];
+                    if elems.iter().all(|e| e == first) {
+                        return first.clone();
+                    }
+                }
                 Type::Unknown
+            }
+            Type::Formula(fmap, _) => {
+                if let Expr::Literal(crate::parser::LiteralValue::String(k), _) = idx {
+                    fmap.get(k).cloned().unwrap_or(Type::Unknown)
+                } else {
+                    Type::Unknown
+                }
             }
             Type::String => Type::String,
             Type::Byte => Type::Byte,
@@ -968,6 +998,15 @@ impl TypeChecker {
                 inner: ref_inner, ..
             } => match *ref_inner {
                 Type::Vector(elem) => *elem,
+                Type::Tuple(elems) => {
+                    if let Expr::Literal(crate::parser::LiteralValue::Int(i), _) = idx {
+                        let actual = if *i < 0 { elems.len() as i64 + *i } else { *i };
+                        if actual >= 0 && (actual as usize) < elems.len() {
+                            return elems[actual as usize].clone();
+                        }
+                    }
+                    Type::Unknown
+                }
                 _ => Type::Unknown,
             },
             _ => {

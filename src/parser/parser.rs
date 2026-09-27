@@ -2558,6 +2558,7 @@ impl Parser {
                 let name = if matches!(
                     self.peek().kind,
                     TokenKind::Identifier
+                        | TokenKind::Package
                         | TokenKind::Yield
                         | TokenKind::Type
                         | TokenKind::Formula
@@ -2566,6 +2567,24 @@ impl Parser {
                         | TokenKind::Thread
                         | TokenKind::Match
                         | TokenKind::As
+                        | TokenKind::Fn
+                        | TokenKind::Struct
+                        | TokenKind::Enum
+                        | TokenKind::Let
+                        | TokenKind::Const
+                        | TokenKind::Mut
+                        | TokenKind::For
+                        | TokenKind::Loop
+                        | TokenKind::While
+                        | TokenKind::If
+                        | TokenKind::Else
+                        | TokenKind::Export
+                        | TokenKind::Import
+                        | TokenKind::Return
+                        | TokenKind::True
+                        | TokenKind::False
+                        | TokenKind::Nil
+                        | TokenKind::In
                 ) {
                     self.advance()
                 } else {
@@ -2582,6 +2601,7 @@ impl Parser {
                 let name = if matches!(
                     self.peek().kind,
                     TokenKind::Identifier
+                        | TokenKind::Package
                         | TokenKind::Yield
                         | TokenKind::Type
                         | TokenKind::Formula
@@ -2590,6 +2610,24 @@ impl Parser {
                         | TokenKind::Thread
                         | TokenKind::Match
                         | TokenKind::As
+                        | TokenKind::Fn
+                        | TokenKind::Struct
+                        | TokenKind::Enum
+                        | TokenKind::Let
+                        | TokenKind::Const
+                        | TokenKind::Mut
+                        | TokenKind::For
+                        | TokenKind::Loop
+                        | TokenKind::While
+                        | TokenKind::If
+                        | TokenKind::Else
+                        | TokenKind::Export
+                        | TokenKind::Import
+                        | TokenKind::Return
+                        | TokenKind::True
+                        | TokenKind::False
+                        | TokenKind::Nil
+                        | TokenKind::In
                 ) {
                     self.advance()
                 } else {

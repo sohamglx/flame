@@ -889,9 +889,13 @@ impl TypeChecker {
                                 Type::Named("css:resource".to_string()),
                                 format!("**CSS Stylesheet Resource**\n\nResource: `{}`", file_str)
                             ),
-                            "json" => (
+                            "json" | "fmi" => (
                                 Type::Named("json:data".to_string()),
-                                format!("**JSON Data Resource**\n\nResource: `{}`", file_str)
+                                format!("**JSON / FMI Data Resource**\n\nResource: `{}`", file_str)
+                            ),
+                            "toml" => (
+                                Type::Named("toml:data".to_string()),
+                                format!("**TOML Configuration Resource**\n\nResource: `{}`", file_str)
                             ),
                             "txt" | "text" => (
                                 Type::String,

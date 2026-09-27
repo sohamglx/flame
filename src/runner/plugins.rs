@@ -156,10 +156,15 @@ impl Runner {
         if p.is_absolute() {
             p.to_path_buf()
         } else {
-            self.filepath
+            let parent = self.filepath
                 .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .join(p)
+                .unwrap_or_else(|| Path::new("."));
+            let parent = if parent.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                parent
+            };
+            parent.join(p)
         }
     }
 

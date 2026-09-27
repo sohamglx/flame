@@ -233,7 +233,7 @@ fn real_main() {
             package_manager::gen_fmi_from_rust_file(std::path::Path::new(filepath));
         }
         "version" | "--version" | "-version" | "--v" | "-v" | "-V" => {
-            println!("Flame {} (Fifth Spark)", env!("CARGO_PKG_VERSION"));
+            println!("Flame {} (Sixth Spark)", env!("CARGO_PKG_VERSION"));
         }
         "help" | "--help" | "-h" => {
             print_help();

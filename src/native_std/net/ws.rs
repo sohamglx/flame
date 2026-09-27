@@ -1358,6 +1358,24 @@ mod tests {
             _ => panic!(),
         };
         let _ = server_close(vec![]);
+
+        let client1_close = match client1 {
+            Value::Object(ref m) => match m.get("close").unwrap() {
+                Value::NativeClosure(NativeClosureType(cb)) => cb.clone(),
+                _ => panic!(),
+            },
+            _ => panic!(),
+        };
+        let _ = client1_close(vec![]);
+
+        let client2_close = match client2 {
+            Value::Object(ref m) => match m.get("close").unwrap() {
+                Value::NativeClosure(NativeClosureType(cb)) => cb.clone(),
+                _ => panic!(),
+            },
+            _ => panic!(),
+        };
+        let _ = client2_close(vec![]);
     }
 
     #[test]
@@ -1415,6 +1433,12 @@ mod tests {
             Value::String(s) => assert_eq!(s, "channel_data"),
             other => panic!("Expected String, got {:?}", other),
         }
+
+        let client_close = match client_obj.get("close").unwrap() {
+            Value::NativeClosure(NativeClosureType(cb)) => cb.clone(),
+            _ => panic!(),
+        };
+        let _ = client_close(vec![]);
 
         let server_close = match server_obj.get("close").unwrap() {
             Value::NativeClosure(NativeClosureType(cb)) => cb.clone(),

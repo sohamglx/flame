@@ -167,4 +167,111 @@ fn main() {
         assert!(result.is_ok());
     }
 
+    #[test]
+    fn test_resource_imports_toml_fmi_json_relative() {
+        let temp_dir = std::env::temp_dir().join(format!("flame_test_res_{}", std::process::id()));
+        let sub_dir = temp_dir.join("sub");
+        std::fs::create_dir_all(&sub_dir).unwrap();
+
+        let toml_path = temp_dir.join("flame.toml");
+        std::fs::write(&toml_path, r#"
+[package]
+name = "my_app"
+version = "1.2.3"
+tags = ["fast", "typed"]
+"#).unwrap();
+
+        let fmi_path = temp_dir.join("meta.fmi");
+        std::fs::write(&fmi_path, r#"
+{
+    "schema": "fmi-v1",
+    "id": 101,
+    "items": ["alpha", "beta"]
+}
+"#).unwrap();
+
+        let arr_json_path = temp_dir.join("users.json");
+        std::fs::write(&arr_json_path, r#"
+[
+    {"id": 1, "name": "Alice"},
+    {"id": 2, "name": "Bob"}
+]
+"#).unwrap();
+
+        let script_file = sub_dir.join("main.fm");
+        let script = r#"
+import "../flame.toml" as config
+import "../meta.fmi" as meta
+import "../users.json" as users
+
+fn main() {
+    let pkg_name = config.package.name
+    let first_tag = config.package.tags[0]
+    let meta_schema = meta.schema
+    let first_item = meta.items[0]
+    let first_user_name = users[0].name
+    let second_user_id = users[1]["id"]
+    return $"{pkg_name}|{first_tag}|{meta_schema}|{first_item}|{first_user_name}|{second_user_id}"
+}
+main()
+"#;
+        let mut lexer = Lexer::new(script);
+        let mut tokens = Vec::new();
+        loop {
+            let tok = lexer.next_token();
+            if tok.kind == crate::lexer::TokenKind::EOF {
+                tokens.push(tok);
+                break;
+            }
+            tokens.push(tok);
+        }
+        let mut parser = Parser::new(tokens, script_file.to_str().unwrap().to_string());
+        let stmts = parser.parse().map_err(|diag| diag.message).unwrap();
+        let mut runner = Runner::new(script_file.clone());
+        let result = runner.run(&stmts).unwrap();
+        assert_eq!(result.to_string(), "my_app|fast|fmi-v1|alpha|Alice|2");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_resource_imports_dot_slash() {
+        let temp_dir = std::env::temp_dir().join(format!("flame_test_dot_{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let cfg_path = temp_dir.join("local.toml");
+        std::fs::write(&cfg_path, r#"
+title = "Local Demo"
+count = 42
+"#).unwrap();
+
+        let script_file = temp_dir.join("main.fm");
+        let script = r#"
+import "./local.toml" as local
+
+fn main() {
+    return $"{local.title}:{local.count}"
+}
+main()
+"#;
+        let mut lexer = Lexer::new(script);
+        let mut tokens = Vec::new();
+        loop {
+            let tok = lexer.next_token();
+            if tok.kind == crate::lexer::TokenKind::EOF {
+                tokens.push(tok);
+                break;
+            }
+            tokens.push(tok);
+        }
+        let mut parser = Parser::new(tokens, script_file.to_str().unwrap().to_string());
+        let stmts = parser.parse().map_err(|diag| diag.message).unwrap();
+        let mut runner = Runner::new(script_file.clone());
+        let result = runner.run(&stmts).unwrap();
+        assert_eq!(result.to_string(), "Local Demo:42");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+
     

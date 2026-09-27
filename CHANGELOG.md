@@ -2,6 +2,68 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.6.0] - 2026-09-27 (Codename: *Sixth Spark*)
+
+### ⚡ High-Speed Native TOML Configuration (`import "flame.toml"`)
+
+- **Native TOML Resource Engine**:
+  - Integrated high-performance TOML parsing into the compiler, typechecker, and runner using the native Rust `toml` engine.
+  - Allows projects to import configuration files directly without manual file reading or third-party crates:
+    ```flame
+    import "flame.toml" as config
+    import "./config.local.toml" as localConfig
+    ```
+  - Automatically translates TOML tables into structured Flame objects and TOML arrays into tuples.
+  - Full `@Web` client bundling support: TOML resources are automatically serialized into optimized JSON object literals in client bundles (`dist/app.js`), allowing frontend components to read build configurations with zero client-side fetching overhead.
+- **Keyword Member Identifier Support**:
+  - Enhanced the parser to permit reserved language keywords (such as `package`, `fn`, `struct`, `enum`, `let`, `const`, `mut`, `for`, etc.) as valid member access identifiers after `.` and `?.`.
+  - Enables direct, intuitive access to canonical TOML keys such as `config.package.name` and `config.package.version` without syntax errors.
+
+### 📋 Flame Metadata Interface (`.fmi`) Data Resources
+
+- **First-Class `.fmi` Manifest Support**:
+  - Added native recognition and type inference for `.fmi` (Flame Metadata Interface) files across compiler, typechecker, runner, `@Web` bundler, and IDE language server.
+  - Treats `.fmi` files with full JSON dataset fidelity for component manifests, plugin contracts, architecture definitions, and package interfaces:
+    ```flame
+    import "component.fmi" as meta
+    let author = meta.author
+    let firstTag = meta.tags[0]
+    ```
+
+### 🔢 Array-Rooted Data & Dynamic Key Indexing
+
+- **Indexable Root Array Datasets**:
+  - Resolved `cannot index into type json:data` typechecker diagnostics when indexing imported JSON and TOML resources.
+  - Full support for indexing array-rooted datasets with integer expressions:
+    ```flame
+    import "users.json" as users
+    let firstUser = users[0]
+    let secondUser = users[1]
+    let lastUser = users[-1] // Negative index support
+    ```
+- **Dynamic String Key & Dot Member Access**:
+  - Enabled indexing into imported objects and tuples using dynamic string keys (`users[0]["id"]`, `item["title"]`) without false `expected integer index, found String` errors.
+  - Chained member access (`users[0].name`, `data[0].roles[1]`) is fully supported across all execution engines.
+- **Transparent Object Formatting**:
+  - Overhauled `Value::Object` string representation across the runtime, REPL, and `print()` engine.
+  - Replaced opaque descriptors (`<object [...]>`) with transparent key-value serialization (`{ key: value, ... }`), making inspected data structures immediately legible.
+
+### 🧭 Flawless Relative Path Resolution (`./` and `../`)
+
+- **Robust Filesystem Walking Engine**:
+  - Hardened `locate_resource_file` in `src/stdlib.rs` and plugin path resolution in `src/runner/plugins.rs` with directory canonicalization and relative prefix normalization.
+  - Supports direct parent traversal (`../`), current directory prefixes (`./`), and hierarchical searches up to 8 directory levels.
+  - Allows tests located in `tests/` or nested modules in `src/` to easily import root project assets (`import "../flame.toml" as config`) and sibling fixtures without path resolution failures.
+
+### 🧪 Comprehensive Test Suites & Verification
+
+- **Automated Toolchain Unit Tests**:
+  - Added dedicated integration tests in `src/runner/tests.rs` (`test_resource_imports_toml_fmi_json_relative` and `test_resource_imports_dot_slash`) verifying TOML, FMI, JSON array root indexing, and relative paths.
+- **Integration Test Verification**:
+  - Verified against the full 40-test integration suite in `examples/ex` and 64 total unit tests across compiler, runtime, and IDE modules.
+
+---
+
 ## [0.5.9] - 2026-09-27 (Codename: *Fifth Spark*)
 
 ### 🌐 Universal External Resource Imports (`import "file" as alias`)

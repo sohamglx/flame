@@ -263,18 +263,41 @@ pub fn locate_resource_file(current_file: &Path, rel_path: &str) -> Option<PathB
         return Some(path.to_path_buf());
     }
 
-    let parent_dir = current_file.parent().unwrap_or_else(|| Path::new("."));
+    let parent_dir = if current_file.is_dir() {
+        current_file.to_path_buf()
+    } else {
+        let p = current_file.parent().unwrap_or_else(|| Path::new("."));
+        if p.as_os_str().is_empty() {
+            PathBuf::from(".")
+        } else {
+            p.to_path_buf()
+        }
+    };
 
     // 1. Direct relative to current file's directory
     let direct = parent_dir.join(path);
     if direct.exists() {
         return Some(direct);
     }
+    if let Ok(canon) = direct.canonicalize() {
+        if canon.exists() {
+            return Some(canon);
+        }
+    }
+
+    // 1b. Check with stripped ./ prefix if present
+    let stripped_str = clean_path.strip_prefix("./").unwrap_or(clean_path);
+    let stripped_path = Path::new(stripped_str);
+    let direct_stripped = parent_dir.join(stripped_path);
+    if direct_stripped.exists() {
+        return Some(direct_stripped);
+    }
 
     // 2. Search upward in project hierarchy
     let search_folders = ["", "src", "public", "assets", "static"];
-    let mut base_dir = parent_dir.to_path_buf();
-    for _ in 0..7 {
+    let abs_parent = std::fs::canonicalize(&parent_dir).unwrap_or(parent_dir.clone());
+    let mut base_dir = abs_parent;
+    for _ in 0..8 {
         for folder in &search_folders {
             let candidate = if folder.is_empty() {
                 base_dir.join(path)
@@ -283,6 +306,16 @@ pub fn locate_resource_file(current_file: &Path, rel_path: &str) -> Option<PathB
             };
             if candidate.exists() {
                 return Some(candidate);
+            }
+            if stripped_str != clean_path {
+                let cand_stripped = if folder.is_empty() {
+                    base_dir.join(stripped_path)
+                } else {
+                    base_dir.join(folder).join(stripped_path)
+                };
+                if cand_stripped.exists() {
+                    return Some(cand_stripped);
+                }
             }
         }
         if !base_dir.pop() {
@@ -293,7 +326,7 @@ pub fn locate_resource_file(current_file: &Path, rel_path: &str) -> Option<PathB
     // 3. Fallback to current working directory
     if let Ok(cwd) = std::env::current_dir() {
         let mut base_dir = cwd;
-        for _ in 0..7 {
+        for _ in 0..8 {
             for folder in &search_folders {
                 let candidate = if folder.is_empty() {
                     base_dir.join(path)
@@ -302,6 +335,16 @@ pub fn locate_resource_file(current_file: &Path, rel_path: &str) -> Option<PathB
                 };
                 if candidate.exists() {
                     return Some(candidate);
+                }
+                if stripped_str != clean_path {
+                    let cand_stripped = if folder.is_empty() {
+                        base_dir.join(stripped_path)
+                    } else {
+                        base_dir.join(folder).join(stripped_path)
+                    };
+                    if cand_stripped.exists() {
+                        return Some(cand_stripped);
+                    }
                 }
             }
             if !base_dir.pop() {

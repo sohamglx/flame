@@ -497,8 +497,14 @@ impl WebCompiler {
                                 });
                             if let Some(r_path) = resolved {
                                 if let Ok(content) = std::fs::read_to_string(&r_path) {
-                                    if trimmed.ends_with(".json") {
+                                    if trimmed.ends_with(".json") || trimmed.ends_with(".fmi") {
                                         self.data_resources.push((bind_name, content.trim().to_string()));
+                                    } else if trimmed.ends_with(".toml") {
+                                        if let Ok(toml_val) = toml::from_str::<toml::Value>(&content) {
+                                            if let Ok(json_str) = serde_json::to_string(&toml_val) {
+                                                self.data_resources.push((bind_name, json_str));
+                                            }
+                                        }
                                     } else {
                                         let json_str = serde_json::to_string(&content).unwrap_or_else(|_| format!("\"{}\"", content.escape_default()));
                                         self.data_resources.push((bind_name, json_str));
