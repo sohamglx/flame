@@ -13,7 +13,7 @@ std = ["flamelang/utils", "flamelang/net", "flamelang/http", "flamelang/ws"]
 full = ["std", "flamelang/os", "flamelang/automation", "flamelang/hardware"]
 
 [dependencies]
-flamelang = { version = "0.6.0", path = "..", default-features = false }
+flamelang = { version = "0.6.2", path = "..", default-features = false }
 
 [dev-dependencies]
 tempfile = "3.27.0"
