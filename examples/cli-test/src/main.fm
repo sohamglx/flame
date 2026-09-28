@@ -1,0 +1,232 @@
+import std.byte
+import std.fs
+
+// Ignore directories and temporary build artifacts
+fn should_ignore(name: String) -> Bool {
+    if name.contains(".flame") || name.contains("target") || name.contains(".git") {
+        return true
+    }
+    if name.endsWith(".fmp") || name.endsWith(".lock") || name.endsWith(".bin") || name == "output.png" || name == "note.txt" {
+        return true
+    }
+    false
+}
+
+// Recursively collects all files in a directory
+fn collect_files(root: String) -> [String] {
+    let mut files = []
+    let mut queue = [root]
+    let mut q_idx = 0
+
+    while q_idx < queue.len() {
+        let current = queue[q_idx]
+        q_idx = q_idx + 1
+
+        let entries = fs.readDir(current)
+        for entry in entries {
+            if !should_ignore(entry.clone()) {
+                let mut full_path = current + "/" + entry
+                if current == "." {
+                    full_path = full_path.replace("./", "")
+                }
+                if !should_ignore(full_path.clone()) {
+                    if fs.isDir(full_path.clone()) {
+                        queue.push(full_path)
+                    } else if fs.isFile(full_path.clone()) {
+                        files.push(full_path)
+                    }
+                }
+            }
+        }
+    }
+    files
+}
+
+// Helper to extract directory path from a file path
+fn get_dir_path(file_path: String) -> String {
+    let parts = file_path.split("/")
+    if parts.len() <= 1 {
+        return ""
+    }
+    let mut d = parts[0]
+    let mut i = 1
+    while i < parts.len() - 1 {
+        d = d + "/" + parts[i]
+        i = i + 1
+    }
+    d
+}
+
+@Cli(name: "fmp", version: "1.0.0", description: "Flame Binary Archive Tool (.fmp)")
+fn main(cli: Cli) {
+    match cli {
+        pack {
+            dir, out
+        } => pack(dir, out)
+
+        inspect {archive} => inspect(archive)
+
+        extract {
+            archive, dest
+        } => extract(archive, dest)
+
+        help => {
+            println("Flame Archive (.fmp) Tool")
+            println("Usage:")
+            println("  fmp pack    [--dir <path>] [--out <file.fmp>]")
+            println("  fmp inspect [--archive <file.fmp>]")
+            println("  fmp extract [--archive <file.fmp>] [--dest <folder>]")
+        }
+        _ => println("Unknown command. Run with 'help' for usage.")
+    }
+}
+
+@Command(name: "pack", about: "Pack a folder into a single binary .fmp archive")
+fn pack(dir: String = ".", out: String = "app.fmp") {
+    println($"Packaging directory '{dir}' into '{out}'...")
+
+    let files = collect_files(dir)
+    if files.len() == 0 {
+        println("No files found to archive.")
+        return
+    }
+
+    println($"Found {files.len()} files to pack:")
+    for f in files {
+        println($"  + {f}")
+    }
+
+    // Binary format:
+    // 1. Magic Header: 'F', 'M', 'P', 0x01 (4 bytes)
+    // 2. Total file count: 32-bit big-endian integer (4 bytes)
+    let header = byte.fromBytes([0x46, 0x4D, 0x50, 0x01])
+    let count_bytes = byte.fromInt32(files.len(), false)
+
+    fs.writeBytes(out, header)
+    byte.appendBytes(out, count_bytes)
+
+    let mut total_uncompressed_bytes = 0
+
+    // 3. For each file:
+    //    - 16-bit uint path length
+    //    - UTF-8 path string
+    //    - 32-bit uint data length
+    //    - raw binary content
+    for file_path in files {
+        let content = fs.readBytes(file_path)
+        let path_bytes = file_path.toByte()
+
+        let path_len_bytes = byte.fromInt16(path_bytes.len(), false)
+        let data_len_bytes = byte.fromInt32(content.len(), false)
+
+        byte.appendBytes(out, path_len_bytes)
+        byte.appendBytes(out, path_bytes)
+        byte.appendBytes(out, data_len_bytes)
+        byte.appendBytes(out, content)
+
+        total_uncompressed_bytes = total_uncompressed_bytes + content.len()
+    }
+
+    let archive_size = fs.size(out)
+    println($"\nSuccessfully packed {files.len()} files into '{out}' ({archive_size} bytes)")
+}
+
+@Command(name: "inspect", about: "Inspect and list files inside a .fmp archive")
+fn inspect(archive: String = "app.fmp") {
+    if !fs.exists(archive) {
+        println($"Error: archive file '{archive}' not found.")
+        return
+    }
+
+    let data = fs.readBytes(archive)
+    if data.len() < 8 {
+        println("Error: invalid .fmp archive (file too small).")
+        return
+    }
+
+    let magic = data.slice(0, 4).toHex()
+    if magic != "464d5001" {
+        println($"Error: invalid magic header '{magic}', expected '464d5001' (FMP\\x01).")
+        return
+    }
+
+    let file_count = byte.toInt32(data, 4, false)
+    println($"Archive: {archive} ({data.len()} bytes)")
+    println($"Format:  Flame Binary Archive (FMP v1)")
+    println($"Files:   {file_count}\n")
+    println("  Size (bytes)  | Path")
+    println("----------------+-----------------------------")
+
+    let mut offset = 8
+    let mut idx = 0
+    let mut total_bytes = 0
+
+    while idx < file_count && offset < data.len() {
+        let path_len = byte.toInt16(data, offset, false)
+        offset = offset + 2
+
+        let path_str = data.slice(offset, offset + path_len).toString()
+        offset = offset + path_len
+
+        let data_len = byte.toInt32(data, offset, false)
+        offset = offset + 4
+
+        println($"  {data_len} | {path_str}")
+        total_bytes = total_bytes + data_len
+
+        offset = offset + data_len
+        idx = idx + 1
+    }
+
+    println("----------------+-----------------------------")
+    println($"  {total_bytes} | Total Payload")
+}
+
+@Command(name: "extract", about: "Extract all files from a .fmp archive to a directory")
+fn extract(archive: String = "app.fmp", dest: String = "extracted") {
+    if !fs.exists(archive) {
+        println($"Error: archive file '{archive}' not found.")
+        return
+    }
+
+    let data = fs.readBytes(archive)
+    if data.len() < 8 || data.slice(0, 4).toHex() != "464d5001" {
+        println("Error: invalid .fmp archive.")
+        return
+    }
+
+    let file_count = byte.toInt32(data, 4, false)
+    println($"Extracting {file_count} files from '{archive}' to '{dest}/'...")
+
+    fs.mkdir_all(dest)
+
+    let mut offset = 8
+    let mut idx = 0
+
+    while idx < file_count && offset < data.len() {
+        let path_len = byte.toInt16(data, offset, false)
+        offset = offset + 2
+
+        let path_str = data.slice(offset, offset + path_len).toString()
+        offset = offset + path_len
+
+        let data_len = byte.toInt32(data, offset, false)
+        offset = offset + 4
+
+        let file_content = data.slice(offset, offset + data_len)
+        offset = offset + data_len
+
+        let target_path = dest + "/" + path_str
+        let parent_dir = get_dir_path(target_path.clone())
+        if parent_dir != "" {
+            fs.mkdir_all(parent_dir)
+        }
+
+        fs.writeBytes(target_path, file_content)
+        println($"  ✓ Extracted: {path_str} ({data_len} bytes)")
+
+        idx = idx + 1
+    }
+
+    println($"\nAll {file_count} files successfully extracted to '{dest}/'!")
+}

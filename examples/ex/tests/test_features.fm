@@ -41,7 +41,7 @@ fn test_time() {
     let now = time.now()
 
     now.type().assertEq("Object")
-    let millis = now.millis
+    let millis = now.millis()
     let is_future = millis > 0
 
     is_future.assertEq(true)

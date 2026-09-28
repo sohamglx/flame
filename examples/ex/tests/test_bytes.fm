@@ -164,5 +164,36 @@ fn test_binary_fmp() {
     fs.delete(fmp_path)
     assert(!fs.exists(fmp_path))
     println("Binary .fmp file with lorem ipsum verified and cleaned up successfully.")
-
 }
+
+@Test
+fn test_raw_binary_disk_format() {
+    let bin_path = "test_raw.bin"
+    // Write 4 exact bytes: 0x89, 0x50, 0x4E, 0x47 (PNG magic bytes)
+    let magic = byte.fromBytes([137, 80, 78, 71])
+    byte.writeBytes(bin_path, magic)
+
+    let file_obj = fs.open(bin_path)
+    assert(file_obj.size() == 4)
+    let read_back = file_obj.readBytes()
+    assert(read_back.len() == 4)
+    assert(read_back.toHex() == "89504e47")
+
+    // Test append on File handle
+    file_obj.append(byte.fromHex("0d0a1a0a"))
+    assert(file_obj.size() == 8)
+    let full_magic = file_obj.readBytes()
+    assert(full_magic.toHex() == "89504e470d0a1a0a")
+
+    // Test buffer and numeric conversion
+    let buf = byte.buffer(4, 0)
+    assert(buf.len() == 4)
+    let num_bytes = byte.fromInt32(305419896, false) // 0x12345678
+    assert(num_bytes.toHex() == "12345678")
+    assert(byte.toInt32(num_bytes, 0, false) == 305419896)
+
+    fs.delete(bin_path)
+    assert(!fs.exists(bin_path))
+    println("Raw binary disk format & File handle verified successfully.")
+}
+

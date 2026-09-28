@@ -2,6 +2,73 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.6.2] - 2026-09-28 (Codename: *Sixth Spark*)
+
+### 💾 First-Class Binary Computing & Raw Bytes Subsystem (`std.byte`)
+
+- **High-Performance `Bytes` Buffer & `Byte` Types**:
+  - Introduced first-class support for raw contiguous binary byte buffers (`Bytes`) and individual 8-bit unsigned values (`Byte`).
+  - Guarantees binary fidelity: eliminates UTF-8 string mangling, null-byte truncations, and encoding corruption when working with arbitrary binary formats, executable headers, compressed streams, and archives.
+- **Endian-Aware Numerical Encoding & Decoding**:
+  - Full support for 16-bit, 32-bit, and 64-bit integer conversions with configurable endianness (`le: Bool = true` for Little-Endian vs Big-Endian):
+    - `byte.fromInt16(val, le = true)` & `byte.toInt16(bytes, offset = 0, le = true)`
+    - `byte.fromInt32(val, le = true)` & `byte.toInt32(bytes, offset = 0, le = true)`
+    - `byte.fromInt64(val, le = true)` & `byte.toInt64(bytes, offset = 0, le = true)`
+  - Full support for IEEE 754 floating-point encoding and decoding:
+    - `byte.fromFloat32(val, le = true)` & `byte.toFloat32(bytes, offset = 0, le = true)`
+    - `byte.fromFloat64(val, le = true)` & `byte.toFloat64(bytes, offset = 0, le = true)`
+- **Hexadecimal Parsing & Buffer Allocation**:
+  - `byte.fromHex(hex: String)`: Parses hex strings directly into `Bytes`, automatically stripping whitespace, commas, and optional `0x` / `0X` prefixes.
+  - `byte.buffer(size: Int, fill: Int = 0)`: Creates pre-allocated byte buffers initialized with a fill byte.
+- **Fluent Conversions & Fluent Instance Methods**:
+  - Added `.toBytes()` conversion methods across `String` (UTF-8 bytes), `Tuple` (`[Int]` or `[Byte]`), `Byte`, and `Int`.
+  - Added `.toByte()` conversion method across `Int` (0..255 bounds checked), `String` (first byte), and `Byte`.
+  - In-memory `Bytes` buffer transformations:
+    - Indexing: `buf[i]` returning `Byte` (with negative indexing support e.g. `buf[-1]`).
+    - In-place mutation: `buf[i] = 0xAA` via index assignment.
+    - Slicing & Concatenation: `buf.slice(start, end)` and `buf.concat(other: Bytes)`.
+    - Format conversions: `buf.toHex()`, `buf.toBase64()`, `buf.toList()` / `buf.toArray()`.
+    - Text conversions: `buf.toString()`, `buf.toUtf8()`, and `buf.tryUtf8()`.
+- **Direct Binary File I/O**:
+  - `byte.readBytes(path)`: Reads all bytes from a file into a `Bytes` buffer.
+  - `byte.writeBytes(path, bytes)` & `byte.appendBytes(path, bytes)`: Direct binary writing and appending.
+  - Fluent saving methods directly on `Bytes` instances: `buf.save(path)` / `buf.write(path)` and `buf.append(path)`.
+- **Low-Level Random-Access Byte Operations**:
+  - `byte.readByte(path)` & `byte.writeByte(path, byte)` / `byte.appendByte(path, byte)`.
+  - Random-access file offset methods: `byte.readByteAt(path, offset)` and `byte.writeByteAt(path, offset, byte)` without loading or truncating the full file.
+
+### 📂 Expanded Filesystem Architecture & Traversal (`std.fs`)
+
+- **Binary I/O Integration in `std.fs`**:
+  - Added `fs.readBytes(path) -> Bytes`, `fs.writeBytes(path, bytes)`, and `fs.appendBytes(path, bytes)` supporting `Bytes`, integer byte arrays, and strings.
+  - Added `fs.append(path, content)` for text and binary file appending.
+- **Directory & File Metadata Inspection**:
+  - `fs.readDir(path) -> [String]`: Reads directory entries and returns an array of relative child filenames and subdirectories.
+  - `fs.isDir(path) -> Bool`: Returns `true` if the path points to a directory.
+  - `fs.isFile(path) -> Bool`: Returns `true` if the path points to a regular file.
+  - `fs.size(path) -> Int`: Returns the size of the target file in bytes.
+- **Enhanced Stateful File Handle (`fs.open`)**:
+  - `file.readBytes() -> Bytes` and `file.writeBytes(data)` / `file.appendBytes(data)`.
+  - `file.read() -> String` and `file.write(data)` / `file.append(data)`.
+  - `file.exists() -> Bool`, `file.size() -> Int`, and `file.delete()`.
+
+### 🪟 Windows Platform & Rust 2024 Compatibility
+
+- **Rust 2024 `unsafe extern` & E0133 Alignment**:
+  - Updated Win32 FFI bindings in `src/native_std/window.rs` to use `unsafe extern "system"` per Rust 2024 edition requirements (RFC 3484).
+  - Enclosed unsafe FFI calls and raw pointer dereferences in `enum_windows_callback` within explicit `unsafe { ... }` blocks, resolving all `unsafe_op_in_unsafe_fn` (E0133) compiler errors on Windows.
+- **PowerShell Installer Robustness (`install.ps1`)**:
+  - Fixed expression parenthesizing on `Test-Path` checks, resolving PowerShell `ParameterBindingException: NamedParameterNotFound` for the `-or` operator when installing via `irm ... | iex`.
+
+### 📚 Comprehensive Documentation Overhaul
+
+- **Updated `std/byte.mdx`**:
+  - Complete documentation for `std.byte` covering buffer allocation, endian encoding/decoding, hex conversions, indexing, slicing, and a full end-to-end example building a custom binary container archive format (`.fmp`).
+- **Updated `std/filesystem.mdx`**:
+  - Documented `readDir`, `isDir`, `isFile`, `size`, `readBytes`, `writeBytes`, `appendBytes`, `File` handle binary methods, and recursive directory traversal patterns.
+
+---
+
 ## [0.6.1] - 2026-09-28 (Codename: *Sixth Spark*)
 
 ### 🏁 First-Class Declarative Benchmarking Engine (`@Benchmark` & `flame bench`)

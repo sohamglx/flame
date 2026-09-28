@@ -69,6 +69,13 @@ impl Runner {
                                 Some(Err(format!("Index out of bounds: {}", index)))
                             }
                         }
+                        Value::Bytes(bytes) => {
+                            if index < bytes.len() {
+                                Some(Ok(Value::Byte(bytes[index])))
+                            } else {
+                                Some(Err(format!("Index out of bounds: {}", index)))
+                            }
+                        }
                         Value::RefPath(..) => None,
                         _ => Some(Err(format!("cannot index non-tuple/array '{}'", owner))),
                     }
@@ -92,6 +99,12 @@ impl Runner {
                             } else {
                                 Err(format!("Index out of bounds: {}", index))
                             }
+                        } else if let Value::Bytes(bytes) = resolved_owner {
+                            if index < bytes.len() {
+                                Ok(Value::Byte(bytes[index]))
+                            } else {
+                                Err(format!("Index out of bounds: {}", index))
+                            }
                         } else {
                             Err(format!("cannot index non-tuple/array '{}'", owner))
                         }
@@ -106,6 +119,13 @@ impl Runner {
                     Some(Value::SharedTuple(elems)) => {
                         if index < elems.len() {
                             Ok(elems[index].clone())
+                        } else {
+                            Err(format!("Index out of bounds: {}", index))
+                        }
+                    }
+                    Some(Value::Bytes(bytes)) => {
+                        if index < bytes.len() {
+                            Ok(Value::Byte(bytes[index]))
                         } else {
                             Err(format!("Index out of bounds: {}", index))
                         }
@@ -234,6 +254,18 @@ impl Runner {
                         let vec = std::sync::Arc::make_mut(elems);
                         if index < vec.len() {
                             vec[index] = new_val.clone();
+                        } else {
+                            return Err(format!("Index out of bounds: {}", index));
+                        }
+                    }
+                    Value::Bytes(bytes) => {
+                        let b = match new_val {
+                            Value::Byte(b) => b,
+                            Value::Int(n) if (0..=255).contains(&n) => n as u8,
+                            _ => return Err(format!("expected Byte or Int (0..255) for Bytes index assignment, found {}", new_val.type_name())),
+                        };
+                        if index < bytes.len() {
+                            bytes[index] = b;
                         } else {
                             return Err(format!("Index out of bounds: {}", index));
                         }

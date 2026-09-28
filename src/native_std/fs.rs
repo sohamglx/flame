@@ -21,27 +21,48 @@ pub fn resolve_path(path_str: &str) -> PathBuf {
     direct
 }
 
+pub fn extract_bytes_from_slice(items: &[Value]) -> Result<Vec<u8>, String> {
+    let mut buf = Vec::with_capacity(items.len());
+    for item in items {
+        match item {
+            Value::Byte(b) => buf.push(*b),
+            Value::Int(n) => {
+                if *n < 0 || *n > 255 {
+                    return Err(format!("byte value out of range (0..255): {}", n));
+                }
+                buf.push(*n as u8);
+            }
+            Value::String(s) => {
+                let trimmed = s.trim();
+                if trimmed.starts_with("0x") || trimmed.starts_with("0X") {
+                    if let Ok(val) = u8::from_str_radix(&trimmed[2..], 16) {
+                        buf.push(val);
+                        continue;
+                    }
+                }
+                for b in s.as_bytes() {
+                    buf.push(*b);
+                }
+            }
+            _ => return Err(format!("expected byte/int in byte array, found {}", item.type_name())),
+        }
+    }
+    Ok(buf)
+}
+
 pub fn extract_bytes(val: &Value) -> Result<Vec<u8>, String> {
     match val {
         Value::Bytes(b) => Ok(b.clone()),
         Value::Byte(b) => Ok(vec![*b]),
-        Value::String(s) => Ok(s.as_bytes().to_vec()),
-        Value::Tuple(items) => {
-            let mut buf = Vec::with_capacity(items.len());
-            for item in items {
-                match item {
-                    Value::Byte(b) => buf.push(*b),
-                    Value::Int(n) => {
-                        if *n < 0 || *n > 255 {
-                            return Err(format!("byte value out of range (0..255): {}", n));
-                        }
-                        buf.push(*n as u8);
-                    }
-                    _ => return Err(format!("expected byte/int in byte array, found {}", item.type_name())),
-                }
+        Value::Int(n) => {
+            if *n < 0 || *n > 255 {
+                return Err(format!("byte value out of range (0..255): {}", n));
             }
-            Ok(buf)
+            Ok(vec![*n as u8])
         }
+        Value::String(s) => Ok(s.as_bytes().to_vec()),
+        Value::Tuple(items) => extract_bytes_from_slice(items),
+        Value::SharedTuple(items) => extract_bytes_from_slice(items),
         _ => Err(format!("expected Bytes, Byte, [Byte], or String, found {}", val.type_name())),
     }
 }
@@ -70,13 +91,37 @@ pub fn init() -> HashMap<String, Value> {
                 return Err("fs.write expects 2 arguments (path, content)".to_string());
             }
             let path = resolve_path(&args[0].to_string().trim_matches('"'));
-            let content = match &args[1] {
-                Value::String(s) => s.clone(),
-                v => v.to_string(),
-            };
-            match fs::write(&path, content) {
-                Ok(_) => Ok(Value::Nil),
-                Err(e) => Err(format!("fs.write error: {}", e)),
+            match &args[1] {
+                Value::Bytes(b) => match fs::write(&path, b) {
+                    Ok(_) => Ok(Value::Nil),
+                    Err(e) => Err(format!("fs.write error: {}", e)),
+                },
+                Value::Byte(b) => match fs::write(&path, [*b]) {
+                    Ok(_) => Ok(Value::Nil),
+                    Err(e) => Err(format!("fs.write error: {}", e)),
+                },
+                Value::Tuple(items) if !items.is_empty() && items.iter().all(|it| matches!(it, Value::Byte(_) | Value::Int(_))) => {
+                    let bytes = extract_bytes_from_slice(items).map_err(|e| format!("fs.write error: {}", e))?;
+                    match fs::write(&path, bytes) {
+                        Ok(_) => Ok(Value::Nil),
+                        Err(e) => Err(format!("fs.write error: {}", e)),
+                    }
+                }
+                Value::SharedTuple(items) if !items.is_empty() && items.iter().all(|it| matches!(it, Value::Byte(_) | Value::Int(_))) => {
+                    let bytes = extract_bytes_from_slice(items).map_err(|e| format!("fs.write error: {}", e))?;
+                    match fs::write(&path, bytes) {
+                        Ok(_) => Ok(Value::Nil),
+                        Err(e) => Err(format!("fs.write error: {}", e)),
+                    }
+                }
+                Value::String(s) => match fs::write(&path, s.as_bytes()) {
+                    Ok(_) => Ok(Value::Nil),
+                    Err(e) => Err(format!("fs.write error: {}", e)),
+                },
+                v => match fs::write(&path, v.to_string().as_bytes()) {
+                    Ok(_) => Ok(Value::Nil),
+                    Err(e) => Err(format!("fs.write error: {}", e)),
+                }
             }
         }),
     );
@@ -132,6 +177,38 @@ pub fn init() -> HashMap<String, Value> {
     );
 
     m.insert(
+        "append".to_string(),
+        Value::NativeCallback(|args| {
+            if args.len() < 2 {
+                return Err("fs.append expects 2 arguments (path, content)".to_string());
+            }
+            let path = resolve_path(&args[0].to_string().trim_matches('"'));
+            let bytes = match &args[1] {
+                Value::Bytes(b) => b.clone(),
+                Value::Byte(b) => vec![*b],
+                Value::Tuple(items) if !items.is_empty() && items.iter().all(|it| matches!(it, Value::Byte(_) | Value::Int(_))) => {
+                    extract_bytes_from_slice(items).map_err(|e| format!("fs.append error: {}", e))?
+                }
+                Value::SharedTuple(items) if !items.is_empty() && items.iter().all(|it| matches!(it, Value::Byte(_) | Value::Int(_))) => {
+                    extract_bytes_from_slice(items).map_err(|e| format!("fs.append error: {}", e))?
+                }
+                Value::String(s) => s.as_bytes().to_vec(),
+                v => v.to_string().into_bytes(),
+            };
+            match std::fs::OpenOptions::new().append(true).create(true).open(&path) {
+                Ok(mut file) => {
+                    use std::io::Write;
+                    match file.write_all(&bytes) {
+                        Ok(_) => Ok(Value::Nil),
+                        Err(e) => Err(format!("fs.append error: {}", e)),
+                    }
+                }
+                Err(e) => Err(format!("fs.append error: {}", e)),
+            }
+        }),
+    );
+
+    m.insert(
         "exists".to_string(),
         Value::NativeCallback(|args| {
             if args.is_empty() {
@@ -139,6 +216,64 @@ pub fn init() -> HashMap<String, Value> {
             }
             let path = resolve_path(&args[0].to_string().trim_matches('"'));
             Ok(Value::Bool(path.exists()))
+        }),
+    );
+
+    m.insert(
+        "readDir".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("fs.readDir expects 1 argument (path)".to_string());
+            }
+            let path = resolve_path(&args[0].to_string().trim_matches('"'));
+            match fs::read_dir(&path) {
+                Ok(entries) => {
+                    let mut files = Vec::new();
+                    for entry in entries.flatten() {
+                        if let Ok(name) = entry.file_name().into_string() {
+                            files.push(Value::String(name));
+                        }
+                    }
+                    Ok(Value::Tuple(files))
+                }
+                Err(e) => Err(format!("fs.readDir error: {}", e)),
+            }
+        }),
+    );
+
+    m.insert(
+        "isDir".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("fs.isDir expects 1 argument (path)".to_string());
+            }
+            let path = resolve_path(&args[0].to_string().trim_matches('"'));
+            Ok(Value::Bool(path.is_dir()))
+        }),
+    );
+
+    m.insert(
+        "isFile".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("fs.isFile expects 1 argument (path)".to_string());
+            }
+            let path = resolve_path(&args[0].to_string().trim_matches('"'));
+            Ok(Value::Bool(path.is_file()))
+        }),
+    );
+
+    m.insert(
+        "size".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("fs.size expects 1 argument (path)".to_string());
+            }
+            let path = resolve_path(&args[0].to_string().trim_matches('"'));
+            match fs::metadata(&path) {
+                Ok(meta) => Ok(Value::Int(meta.len() as i64)),
+                Err(e) => Err(format!("fs.size error: {}", e)),
+            }
         }),
     );
 
@@ -247,24 +382,95 @@ pub fn init() -> HashMap<String, Value> {
             let p2 = path_str.clone();
             file_instance.insert("write".to_string(), Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(move |args2| {
                 if args2.len() < 2 { return Err("write expects 1 argument".to_string()); }
-                let c = match &args2[1] { Value::String(s) => s.clone(), v => v.to_string() };
-                match fs::write(resolve_path(&p2), c) {
-                    Ok(_) => Ok(Value::Nil),
-                    Err(e) => Err(format!("fs.write error: {}", e)),
+                let path = resolve_path(&p2);
+                match &args2[1] {
+                    Value::Bytes(b) => match fs::write(&path, b) {
+                        Ok(_) => Ok(Value::Nil),
+                        Err(e) => Err(format!("fs.write error: {}", e)),
+                    },
+                    Value::Byte(b) => match fs::write(&path, [*b]) {
+                        Ok(_) => Ok(Value::Nil),
+                        Err(e) => Err(format!("fs.write error: {}", e)),
+                    },
+                    Value::Tuple(items) if !items.is_empty() && items.iter().all(|it| matches!(it, Value::Byte(_) | Value::Int(_))) => {
+                        let bytes = extract_bytes_from_slice(items).map_err(|e| format!("fs.write error: {}", e))?;
+                        match fs::write(&path, bytes) {
+                            Ok(_) => Ok(Value::Nil),
+                            Err(e) => Err(format!("fs.write error: {}", e)),
+                        }
+                    }
+                    Value::SharedTuple(items) if !items.is_empty() && items.iter().all(|it| matches!(it, Value::Byte(_) | Value::Int(_))) => {
+                        let bytes = extract_bytes_from_slice(items).map_err(|e| format!("fs.write error: {}", e))?;
+                        match fs::write(&path, bytes) {
+                            Ok(_) => Ok(Value::Nil),
+                            Err(e) => Err(format!("fs.write error: {}", e)),
+                        }
+                    }
+                    Value::String(s) => match fs::write(&path, s.as_bytes()) {
+                        Ok(_) => Ok(Value::Nil),
+                        Err(e) => Err(format!("fs.write error: {}", e)),
+                    },
+                    v => match fs::write(&path, v.to_string().as_bytes()) {
+                        Ok(_) => Ok(Value::Nil),
+                        Err(e) => Err(format!("fs.write error: {}", e)),
+                    }
                 }
             }))));
             
             let p3 = path_str.clone();
             file_instance.insert("append".to_string(), Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(move |args3| {
                 if args3.len() < 2 { return Err("append expects 1 argument".to_string()); }
-                let c = match &args3[1] { Value::String(s) => s.clone(), v => v.to_string() };
+                let bytes = match &args3[1] {
+                    Value::Bytes(b) => b.clone(),
+                    Value::Byte(b) => vec![*b],
+                    Value::Tuple(items) if !items.is_empty() && items.iter().all(|it| matches!(it, Value::Byte(_) | Value::Int(_))) => {
+                        extract_bytes_from_slice(items).map_err(|e| format!("fs.append error: {}", e))?
+                    }
+                    Value::SharedTuple(items) if !items.is_empty() && items.iter().all(|it| matches!(it, Value::Byte(_) | Value::Int(_))) => {
+                        extract_bytes_from_slice(items).map_err(|e| format!("fs.append error: {}", e))?
+                    }
+                    Value::String(s) => s.as_bytes().to_vec(),
+                    v => v.to_string().into_bytes(),
+                };
                 use std::io::Write;
                 match fs::OpenOptions::new().append(true).create(true).open(resolve_path(&p3)) {
-                    Ok(mut f) => match f.write_all(c.as_bytes()) {
+                    Ok(mut f) => match f.write_all(&bytes) {
                         Ok(_) => Ok(Value::Nil),
                         Err(e) => Err(format!("fs.append error: {}", e)),
                     },
                     Err(e) => Err(format!("fs.append error: {}", e)),
+                }
+            }))));
+
+            let p_rb = path_str.clone();
+            file_instance.insert("readBytes".to_string(), Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(move |_| {
+                match fs::read(resolve_path(&p_rb)) {
+                    Ok(bytes) => Ok(Value::Bytes(bytes)),
+                    Err(e) => Err(format!("File.readBytes error: {}", e)),
+                }
+            }))));
+
+            let p_wb = path_str.clone();
+            file_instance.insert("writeBytes".to_string(), Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(move |args_wb| {
+                if args_wb.len() < 2 { return Err("writeBytes expects 1 argument".to_string()); }
+                let bytes = extract_bytes(&args_wb[1]).map_err(|e| format!("File.writeBytes error: {}", e))?;
+                match fs::write(resolve_path(&p_wb), bytes) {
+                    Ok(_) => Ok(Value::Nil),
+                    Err(e) => Err(format!("File.writeBytes error: {}", e)),
+                }
+            }))));
+
+            let p_ab = path_str.clone();
+            file_instance.insert("appendBytes".to_string(), Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(move |args_ab| {
+                if args_ab.len() < 2 { return Err("appendBytes expects 1 argument".to_string()); }
+                let bytes = extract_bytes(&args_ab[1]).map_err(|e| format!("File.appendBytes error: {}", e))?;
+                use std::io::Write;
+                match fs::OpenOptions::new().append(true).create(true).open(resolve_path(&p_ab)) {
+                    Ok(mut f) => match f.write_all(&bytes) {
+                        Ok(_) => Ok(Value::Nil),
+                        Err(e) => Err(format!("File.appendBytes error: {}", e)),
+                    },
+                    Err(e) => Err(format!("File.appendBytes error: {}", e)),
                 }
             }))));
             

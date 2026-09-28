@@ -232,6 +232,17 @@ impl Runner {
                 }
                 script_args.push(arg.clone());
             }
+        } else if raw_args.len() > 1 && raw_args[1] == "run" {
+            let mut skip_idx = 2;
+            while skip_idx < raw_args.len() && (raw_args[skip_idx] == "--local" || raw_args[skip_idx] == "--watch" || raw_args[skip_idx] == "-w") {
+                skip_idx += 1;
+            }
+            if skip_idx < raw_args.len() && (raw_args[skip_idx].ends_with(".fm") || raw_args[skip_idx].ends_with(".flame") || std::path::Path::new(&raw_args[skip_idx]).exists()) {
+                skip_idx += 1;
+            }
+            for arg in &raw_args[skip_idx..] {
+                script_args.push(arg.clone());
+            }
         } else {
             for arg in raw_args.into_iter().skip(1) {
                 if arg == "--local" {
@@ -241,8 +252,8 @@ impl Runner {
             }
         }
 
-        if script_args.is_empty() || script_args[0] == "help" || script_args[0] == "--help" {
-            println!("Usage: <command> [args]");
+        if script_args.is_empty() || script_args[0] == "help" || script_args[0] == "--help" || script_args[0] == "-h" {
+            println!("Usage: <command> [flags]");
             println!("\nAvailable Commands:");
             let mut search_envs = vec![env.clone(), self.env.clone()];
             for (_, mod_env) in &self.modules {
@@ -265,7 +276,7 @@ impl Runner {
                                 for p in params {
                                     param_strs.push(format!("--{} <{}>", p.name, p.type_name));
                                 }
-                                println!("  {} {}", cmd_name, param_strs.join(" "));
+                                println!("  {:14} {}", cmd_name, param_strs.join(" "));
                             }
                         }
                     }
@@ -273,6 +284,9 @@ impl Runner {
             }
             let mut map = std::collections::HashMap::new();
             map.insert("$variant".to_string(), Value::String("help".to_string()));
+            map.insert("command".to_string(), Value::String("help".to_string()));
+            map.insert("subcommand".to_string(), Value::String("help".to_string()));
+            map.insert("args".to_string(), Value::Tuple(Vec::new()));
             return Ok(Value::Object(map));
         }
 
@@ -307,23 +321,77 @@ impl Runner {
             }
         }
 
+        let mut map = std::collections::HashMap::new();
+        map.insert("$variant".to_string(), Value::String(subcommand.clone()));
+        map.insert("command".to_string(), Value::String(subcommand.clone()));
+        map.insert("subcommand".to_string(), Value::String(subcommand.clone()));
+        let args_tuple: Vec<Value> = script_args.iter().skip(1).map(|s| Value::String(s.clone())).collect();
+        map.insert("args".to_string(), Value::Tuple(args_tuple));
+
+        // Generic flag parsing for any flags passed on CLI
+        let mut i = 1;
+        while i < script_args.len() {
+            let arg = &script_args[i];
+            if arg.starts_with("--") {
+                let flag_part = &arg[2..];
+                if let Some(eq_idx) = flag_part.find('=') {
+                    let key = &flag_part[..eq_idx];
+                    let val = &flag_part[eq_idx + 1..];
+                    if val == "true" {
+                        map.insert(key.to_string(), Value::Bool(true));
+                    } else if val == "false" {
+                        map.insert(key.to_string(), Value::Bool(false));
+                    } else if let Ok(num) = val.parse::<i64>() {
+                        map.insert(key.to_string(), Value::Int(num));
+                    } else if let Ok(flt) = val.parse::<f64>() {
+                        map.insert(key.to_string(), Value::Float(flt));
+                    } else {
+                        map.insert(key.to_string(), Value::String(val.to_string()));
+                    }
+                } else if i + 1 < script_args.len() && !script_args[i + 1].starts_with('-') {
+                    let val = &script_args[i + 1];
+                    if let Ok(num) = val.parse::<i64>() {
+                        map.insert(flag_part.to_string(), Value::Int(num));
+                    } else if let Ok(flt) = val.parse::<f64>() {
+                        map.insert(flag_part.to_string(), Value::Float(flt));
+                    } else {
+                        map.insert(flag_part.to_string(), Value::String(val.clone()));
+                    }
+                    i += 1;
+                } else {
+                    map.insert(flag_part.to_string(), Value::Bool(true));
+                }
+            }
+            i += 1;
+        }
+
+        // Strongly typed binding for declared @Command parameters
         if let Some(_func) = target_func {
-            let mut map = std::collections::HashMap::new();
             for param in &target_params {
+                let is_bool = matches!(param.type_name.to_lowercase().as_str(), "bool");
+                let is_int = matches!(
+                    param.type_name.to_lowercase().as_str(),
+                    "int" | "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "usize" | "isize"
+                );
+                let is_float = matches!(
+                    param.type_name.to_lowercase().as_str(),
+                    "float" | "f32" | "f64"
+                );
+
                 let mut found_val = None;
                 let flag_name = format!("--{}", param.name);
-                for (i, arg) in script_args.iter().enumerate() {
+                for (j, arg) in script_args.iter().enumerate() {
                     let mut str_val = None;
                     if arg == &flag_name {
-                        if param.type_name == "Bool" || param.type_name == "bool" {
+                        if is_bool {
                             found_val = Some(Value::Bool(true));
-                        } else if i + 1 < script_args.len() {
-                            str_val = Some(script_args[i + 1].clone());
+                        } else if j + 1 < script_args.len() {
+                            str_val = Some(script_args[j + 1].clone());
                         }
                     } else if arg.starts_with(&format!("{}=", flag_name)) {
                         let parts: Vec<&str> = arg.splitn(2, '=').collect();
                         if parts.len() == 2 {
-                            if param.type_name == "Bool" || param.type_name == "bool" {
+                            if is_bool {
                                 found_val = Some(Value::Bool(parts[1] == "true"));
                             } else {
                                 str_val = Some(parts[1].to_string());
@@ -332,7 +400,7 @@ impl Runner {
                     }
 
                     if let Some(s) = str_val {
-                        if param.type_name == "Int" || param.type_name == "int" {
+                        if is_int {
                             if let Ok(num) = s.parse::<i64>() {
                                 found_val = Some(Value::Int(num));
                             } else {
@@ -341,7 +409,7 @@ impl Runner {
                                     param.name
                                 );
                             }
-                        } else if param.type_name == "Float" || param.type_name == "float" {
+                        } else if is_float {
                             if let Ok(num) = s.parse::<f64>() {
                                 found_val = Some(Value::Float(num));
                             } else {
@@ -368,10 +436,15 @@ impl Runner {
                 }
 
                 if found_val.is_none() {
-                    if param.type_name == "Bool" || param.type_name == "bool" {
+                    if is_bool {
                         found_val = Some(Value::Bool(false));
+                    } else if is_int {
+                        found_val = Some(Value::Int(0));
+                    } else if is_float {
+                        found_val = Some(Value::Float(0.0));
                     } else if param.type_name.starts_with("List")
                         || param.type_name.starts_with("Vector")
+                        || param.type_name.starts_with('[')
                     {
                         found_val = Some(Value::Tuple(Vec::new()));
                     } else {
@@ -380,12 +453,8 @@ impl Runner {
                 }
                 map.insert(param.name.clone(), found_val.unwrap());
             }
-            map.insert("$variant".to_string(), Value::String(subcommand.clone()));
-            return Ok(Value::Object(map));
-        } else {
-            let mut map = std::collections::HashMap::new();
-            map.insert("$variant".to_string(), Value::String(subcommand.clone()));
-            return Ok(Value::Object(map));
         }
+
+        Ok(Value::Object(map))
     }
 }

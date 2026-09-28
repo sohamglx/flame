@@ -2151,6 +2151,16 @@ impl Runner {
                                 }
                                 return Ok(Value::String(s.clone()));
                             }
+                            "split" => {
+                                if !args.is_empty() {
+                                    let sep = self.eval_expr(&args[0].1, env.clone())?.to_string();
+                                    let parts: Vec<Value> = s.split(&sep).map(|p| Value::String(p.to_string())).collect();
+                                    return Ok(Value::Tuple(parts));
+                                } else {
+                                    let parts: Vec<Value> = s.split_whitespace().map(|p| Value::String(p.to_string())).collect();
+                                    return Ok(Value::Tuple(parts));
+                                }
+                            }
                             "assertEq" => {
                                 if args.len() < 1 {
                                     return Err("assert_eq requires at least 2 arguments (actual, expected)".to_string());
@@ -2328,7 +2338,7 @@ impl Runner {
                             }
                         }
                         Value::Bytes(ref bytes) => match member.as_str() {
-                            "len" => return Ok(Value::Int(bytes.len() as i64)),
+                            "len" | "length" => return Ok(Value::Int(bytes.len() as i64)),
                             "isEmpty" | "is_empty" => return Ok(Value::Bool(bytes.is_empty())),
                             "toString" | "to_string" => return Ok(Value::String(String::from_utf8_lossy(bytes).into_owned())),
                             "toHex" | "to_hex" => return Ok(Value::String(bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>())),
@@ -2342,6 +2352,44 @@ impl Runner {
                                     }
                                 }
                                 return Ok(Value::Nil);
+                            }
+                            "slice" => {
+                                let start = if !args.is_empty() {
+                                    self.eval_expr(&args[0].1, env.clone())?.as_int().unwrap_or(0)
+                                } else { 0 };
+                                let end = if args.len() > 1 {
+                                    self.eval_expr(&args[1].1, env.clone())?.as_int().unwrap_or(bytes.len() as i64)
+                                } else { bytes.len() as i64 };
+                                let s = start.max(0) as usize;
+                                let e = (end.max(0) as usize).min(bytes.len());
+                                if s <= e && s <= bytes.len() {
+                                    return Ok(Value::Bytes(bytes[s..e].to_vec()));
+                                }
+                                return Ok(Value::Bytes(Vec::new()));
+                            }
+                            "toList" | "toArray" => {
+                                let items = bytes.iter().map(|b| Value::Int(*b as i64)).collect();
+                                return Ok(Value::Tuple(items));
+                            }
+                            "save" | "write" => {
+                                if !args.is_empty() {
+                                    let p_val = self.eval_expr(&args[0].1, env.clone())?;
+                                    let path = crate::native_std::fs::resolve_path(&p_val.to_string().trim_matches('"'));
+                                    std::fs::write(&path, bytes).map_err(|e| format!("Bytes.save error: {}", e))?;
+                                    return Ok(Value::Nil);
+                                }
+                                return Err("Bytes.save expects 1 argument (path)".to_string());
+                            }
+                            "append" => {
+                                if !args.is_empty() {
+                                    let p_val = self.eval_expr(&args[0].1, env.clone())?;
+                                    let path = crate::native_std::fs::resolve_path(&p_val.to_string().trim_matches('"'));
+                                    use std::io::Write;
+                                    let mut f = std::fs::OpenOptions::new().append(true).create(true).open(&path).map_err(|e| format!("Bytes.append error: {}", e))?;
+                                    f.write_all(bytes).map_err(|e| format!("Bytes.append error: {}", e))?;
+                                    return Ok(Value::Nil);
+                                }
+                                return Err("Bytes.append expects 1 argument (path)".to_string());
                             }
                             _ => {}
                         },
@@ -3216,8 +3264,37 @@ impl Runner {
                         if let Value::Byte(b) = receiver_val {
                             return Ok(Value::Byte(b));
                         }
-                        let bytes_vec = receiver_val.to_string().into_bytes();
-                        return Ok(Value::Bytes(bytes_vec));
+                        if let Value::String(ref s) = receiver_val {
+                            if let Some(first_byte) = s.as_bytes().first() {
+                                return Ok(Value::Byte(*first_byte));
+                            }
+                        }
+                        return Err(format!("Cannot convert {} to Byte", receiver_val.type_name()));
+                    } else if member == "toBytes" {
+                        if let Value::Bytes(b) = receiver_val {
+                            return Ok(Value::Bytes(b));
+                        }
+                        if let Value::Byte(b) = receiver_val {
+                            return Ok(Value::Bytes(vec![b]));
+                        }
+                        if let Value::Int(i) = receiver_val {
+                            if (0..=255).contains(&i) {
+                                return Ok(Value::Bytes(vec![i as u8]));
+                            }
+                        }
+                        if let Value::String(s) = receiver_val {
+                            return Ok(Value::Bytes(s.into_bytes()));
+                        }
+                        if let Value::Tuple(items) = receiver_val {
+                            let bytes = crate::native_std::fs::extract_bytes_from_slice(&items)?;
+                            return Ok(Value::Bytes(bytes));
+                        }
+                        if let Value::SharedTuple(items) = receiver_val {
+                            let bytes = crate::native_std::fs::extract_bytes_from_slice(&items)?;
+                            return Ok(Value::Bytes(bytes));
+                        }
+                        let bytes = crate::native_std::fs::extract_bytes(&receiver_val)?;
+                        return Ok(Value::Bytes(bytes));
                     } else if member == "toUtf8" {
                         if let Value::Bytes(b) = receiver_val {
                             return String::from_utf8(b)

@@ -1,56 +1,210 @@
 ---
 title: File System (std.fs)
-description: File reading, writing, copying, directory creation, and deletion in Flame.
+description: File reading, writing, binary I/O, directory traversal, inspection, and file handle management in Flame.
 ---
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-The `std.fs` module provides direct, cross-platform operations for interacting with files and directories on the local filesystem.
+The `std.fs` module provides direct, cross-platform operations for interacting with files and directories on the local filesystem, supporting both UTF-8 string text and raw binary (`Bytes`) payloads.
 
 ---
 
-## File Reading, Writing & Copying
+## File Reading & Writing
 
-Flame executes top-level script statements directly without requiring an entry function:
+Flame allows quick one-liner filesystem operations without verbose stream setup:
 
 ```flame
 import std.fs
 
-// Write text to a file (overwriting if it already exists)
-fs.write("output.txt", "Hello from Flame!")
+// Write UTF-8 text to a file (overwrites if it exists, creates if not)
+fs.write("config.txt", "server_port = 8080\nenabled = true\n")
 
-// Verify file existence on disk
-if fs.exists("output.txt") {
-    println("File confirmed on disk.")
+// Append additional text to an existing file
+fs.append("config.txt", "log_level = info\n")
+
+// Check if the file exists on disk
+if fs.exists("config.txt") {
+    println($"File exists, size: {fs.size("config.txt")} bytes")
 }
 
-// Read file contents as a UTF-8 string
-let content = fs.read("output.txt")
-println(content) // "Hello from Flame!"
+// Read entire file content as a UTF-8 string
+let config = fs.read("config.txt")
+println(config)
 
-// Copy file to a new location
-fs.copy("output.txt", "backup.txt")
+// Copy file to another location
+fs.copy("config.txt", "config.txt.bak")
 ```
 
 ---
 
-## Directory Operations & Cleanup
+## Binary File I/O (`readBytes`, `writeBytes`, `appendBytes`)
 
-Create directory hierarchies and clean up filesystem paths:
+When working with binary files such as images, archives, audio, or custom `.fmp` binary formats, use the dedicated byte-level functions:
+
+```flame
+import std.fs
+import std.byte
+
+// Read an entire file into a raw binary Bytes buffer
+let raw_bytes = fs.readBytes("input.bin")
+println($"Loaded {raw_bytes.len()} raw bytes")
+println($"Hex header: {raw_bytes.slice(0, 4).toHex()}")
+
+// Write raw binary bytes to disk (creates or replaces file)
+let magic = byte.fromBytes([0x46, 0x4D, 0x50, 0x01]) // FMP\x01
+fs.writeBytes("output.bin", magic)
+
+// Append additional binary data to the file
+let payload = "Hello Binary!".toBytes()
+fs.appendBytes("output.bin", payload)
+```
+
+<Aside type="tip">
+You can pass a `Bytes` buffer, an array of byte numbers (`[0x00, 0xFF, ...]`), an individual `Byte`, or a UTF-8 `String` directly to `fs.writeBytes` and `fs.appendBytes`.
+</Aside>
+
+---
+
+## Directory Operations & Traversal
+
+`std.fs` provides complete tooling for directory inspection and recursive exploration:
+
+### Querying Paths: `isDir`, `isFile`, `exists`, `size`
+
+```flame
+import std.fs
+
+let target = "src"
+
+if fs.exists(target) {
+    if fs.isDir(target) {
+        println($"{target} is a directory")
+    } else if fs.isFile(target) {
+        println($"{target} is a regular file with size: {fs.size(target)} bytes")
+    }
+}
+```
+
+### Creating & Removing Directories
 
 ```flame
 import std.fs
 
 // Create a single directory
-fs.mkdir("data")
+fs.mkdir("build")
 
 // Recursively create a directory tree including parent folders
-fs.mkdir_all("data/backups/daily")
+fs.mkdir_all("dist/releases/v1.0")
 
-// Remove files or directories recursively with a single command
-fs.remove("backup.txt")
-fs.remove("data")
+// Delete a file or recursively delete an entire directory tree
+fs.delete("config.txt.bak")
+fs.remove("dist") // Alias of delete, recursively deletes folder contents
 ```
+
+### Reading Directory Contents (`readDir`)
+
+`fs.readDir(path)` returns an array of child file and directory names (relative names, not full paths):
+
+```flame
+import std.fs
+
+let entries = fs.readDir("./src")
+for name in entries {
+    println($"Found entry: {name}")
+}
+```
+
+### Recursive Directory Traversal Example
+
+Here is how to recursively collect all files in a folder tree, filtering out ignored folders like `.git` or `target`:
+
+```flame
+import std.fs
+
+fn collect_all_files(root: String) -> [String] {
+    let mut files = []
+    let mut queue = [root]
+    let mut q_idx = 0
+
+    while q_idx < queue.len() {
+        let current = queue[q_idx]
+        q_idx = q_idx + 1
+
+        let entries = fs.readDir(current)
+        for name in entries {
+            if name == ".git" || name == "target" || name == "node_modules" {
+                continue
+            }
+
+            let full_path = if current == "." { name } else { $"{current}/{name}" }
+
+            if fs.isDir(full_path) {
+                queue.push(full_path)
+            } else if fs.isFile(full_path) {
+                files.push(full_path)
+            }
+        }
+    }
+
+    files
+}
+
+let all_sources = collect_all_files(".")
+println($"Found {all_sources.len()} total project files:")
+for f in all_sources {
+    println($" - {f} ({fs.size(f)} bytes)")
+}
+```
+
+---
+
+## Stateful File Objects (`fs.open`)
+
+For object-oriented workflows or multiple consecutive operations on the same file, use `fs.open(path)` to obtain a `File` handle:
+
+```flame
+import std.fs
+import std.byte
+
+// Open a file handle
+let file = fs.open("session.log")
+
+// Text operations
+file.write("=== Session Started ===\n")
+file.append("User logged in at 10:00 AM\n")
+
+// Inspect through file handle
+if file.exists() {
+    println($"Log file size: {file.size()} bytes")
+    let contents = file.read()
+    println(contents)
+}
+
+// Binary operations directly on File handle
+let signature = byte.fromHex("deadbeef")
+file.writeBytes(signature)
+file.appendBytes("extra payload".toBytes())
+
+let binary_data = file.readBytes()
+println($"Raw file bytes: {binary_data.toHex()}")
+
+// Clean up
+file.delete()
+```
+
+### File Object Methods
+
+| Method | Arguments | Returns | Description |
+| :--- | :--- | :--- | :--- |
+| `file.read()` | None | `String` | Reads entire file contents into a UTF-8 string. |
+| `file.write(data)` | `data: Any` | `Nil` | Overwrites the file with the given text or binary data. |
+| `file.append(data)` | `data: Any` | `Nil` | Appends text or binary data to the end of the file. |
+| `file.readBytes()` | None | `Bytes` | Reads entire file contents into a raw binary `Bytes` buffer. |
+| `file.writeBytes(data)` | `data: Any` | `Nil` | Overwrites file with binary bytes (`Bytes`, array, or string). |
+| `file.appendBytes(data)` | `data: Any` | `Nil` | Appends raw binary bytes to the end of the file. |
+| `file.exists()` | None | `Bool` | Returns `true` if the underlying file exists on disk. |
+| `file.size()` | None | `Int` | Returns the file size in bytes. |
+| `file.delete()` | None | `Nil` | Deletes the file from the filesystem. |
 
 ---
 
@@ -59,47 +213,19 @@ fs.remove("data")
 | Method | Arguments | Returns | Description |
 | :--- | :--- | :--- | :--- |
 | `fs.read` | `path: String` | `String` | Reads entire file contents into a UTF-8 string. |
-| `fs.readBytes` | `path: String` | `Bytes` | Reads an entire file into a binary byte buffer (`Bytes`). |
-| `fs.write` | `path: String, content: Any` | `Nil` | Writes string data to a file, overwriting existing content. |
-| `fs.writeBytes` | `path: String, bytes: Any` | `Nil` | Writes raw binary bytes (`Bytes`, `[Byte]`, or `String`) to a file. |
-| `fs.appendBytes` | `path: String, bytes: Any` | `Nil` | Appends raw binary bytes to the end of a file. |
-| `fs.exists` | `path: String` | `Bool` | Returns `true` if the filesystem path (file or directory) exists. |
-| `fs.copy` | `src: String, dest: String` | `Nil` | Copies a file from `src` to `dest`. |
+| `fs.write` | `path: String, content: Any` | `Nil` | Writes string or binary content to a file, replacing existing content. |
+| `fs.append` | `path: String, content: Any` | `Nil` | Appends string or binary content to the end of a file. |
+| `fs.readBytes` | `path: String` | `Bytes` | Reads an entire file into a raw binary `Bytes` buffer. |
+| `fs.writeBytes` | `path: String, bytes: Any` | `Nil` | Writes binary data (`Bytes`, array, or string) to a file. |
+| `fs.appendBytes` | `path: String, bytes: Any` | `Nil` | Appends binary data to the end of a file. |
+| `fs.exists` | `path: String` | `Bool` | Returns `true` if the path exists on disk (file or directory). |
+| `fs.isDir` | `path: String` | `Bool` | Returns `true` if the specified path is a directory. |
+| `fs.isFile` | `path: String` | `Bool` | Returns `true` if the specified path is a regular file. |
+| `fs.size` | `path: String` | `Int` | Returns the size of the file in bytes. |
+| `fs.readDir` | `path: String` | `[String]` | Reads directory entries, returning child filenames/subdirectories. |
 | `fs.mkdir` | `path: String` | `Nil` | Creates a single directory at the specified path. |
-| `fs.mkdir_all` | `path: String` | `Nil` | Recursively creates a directory and any missing parent directories. |
-| `fs.remove` | `path: String` | `Nil` | Removes a file, or recursively deletes a directory and all of its contents. |
-| `fs.delete` | `path: String` | `Nil` | Alias for `fs.remove`. Deletes a file or directory from the filesystem. |
-
----
-
-## File Objects
-
-You can also interact with files dynamically using the `fs.open` method, which returns a `File` object containing stateful operations.
-
-```flame
-import std.fs
-
-let file = await fs.open("data.txt")
-
-// Write and append string data
-file.write("First Line\n")
-file.append("Second Line\n")
-
-if file.exists() {
-    println($"File size: {file.size()} bytes")
-    let content = file.read()
-    println(content)
-}
-
-// Delete the file when done
-file.delete()
-```
-
-| File Method | Arguments | Returns | Description |
-| :--- | :--- | :--- | :--- |
-| `file.read()` | None | `String` | Reads entire file contents into a UTF-8 string. |
-| `file.write(data)` | `data: Any` | `Nil` | Overwrites the file with the given string data. |
-| `file.append(data)` | `data: Any` | `Nil` | Appends the string data to the end of the file. |
-| `file.exists()` | None | `Bool` | Returns true if this specific file exists. |
-| `file.size()` | None | `Int` | Returns the file size in bytes. |
-| `file.delete()` | None | `Nil` | Deletes this file from the filesystem. |
+| `fs.mkdir_all` | `path: String` | `Nil` | Recursively creates a directory path and all missing parent folders. |
+| `fs.copy` | `src: String, dest: String` | `Nil` | Copies a file from `src` to `dest`. |
+| `fs.remove` | `path: String` | `Nil` | Removes a file or recursively deletes a directory tree. |
+| `fs.delete` | `path: String` | `Nil` | Alias for `fs.remove`. Deletes a file or directory tree. |
+| `fs.open` | `path: String` | `File` | Opens a file handle for stateful text and binary operations. |

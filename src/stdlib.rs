@@ -365,8 +365,38 @@ pub fn locate_resource_file(current_file: &Path, rel_path: &str) -> Option<PathB
 //     }
 // }
 
+pub fn is_known_std(name: &str) -> bool {
+    let clean = name.strip_prefix("std.").unwrap_or(name);
+    matches!(
+        clean,
+        "thread"
+            | "process"
+            | "fs"
+            | "byte"
+            | "net"
+            | "time"
+            | "unit"
+            | "math"
+            | "fmt"
+            | "json"
+            | "os"
+            | "env"
+            | "desktop"
+            | "window"
+            | "camera"
+            | "web"
+            | "annotation"
+            | "annotations"
+    ) || clean.starts_with("net.")
+}
+
 pub fn register_std_module(mod_name: &str, env: Arc<Mutex<Env>>) {
-    let module_val = match mod_name {
+    let normalized = if mod_name.starts_with("std.") {
+        mod_name.to_string()
+    } else {
+        format!("std.{}", mod_name)
+    };
+    let module_val = match normalized.as_str() {
         "std.thread" => Some(crate::native_std::thread::init()),
         "std.process" => Some(crate::native_std::process::init()),
         "std.fs" => Some(crate::native_std::fs::init()),

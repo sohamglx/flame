@@ -1,5 +1,5 @@
 [package]
-name = "net_test"
+name = "cli-test"
 version = "0.1.0"
 edition = "2026"
 type = "executable"

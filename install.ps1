@@ -67,7 +67,7 @@ if ($env:CARGO_HOME) {
 $cargoCmdObj = Get-Command cargo -ErrorAction SilentlyContinue
 if ($cargoCmdObj -and $cargoCmdObj.Source) {
     $cargoDir = Split-Path -Parent $cargoCmdObj.Source
-    if (Test-Path (Join-Path $cargoDir "fmp.exe") -or Test-Path (Join-Path $cargoDir "flamelang.exe")) {
+    if ((Test-Path (Join-Path $cargoDir "fmp.exe")) -or (Test-Path (Join-Path $cargoDir "flamelang.exe"))) {
         $cargoBin = $cargoDir
     }
 }
@@ -168,7 +168,7 @@ if (-not $sourceBlaze) {
     }
 }
 
-if (-not $sourceBlaze -or -not (Test-Path $sourceBlaze)) {
+if ((-not $sourceBlaze) -or (-not (Test-Path $sourceBlaze))) {
     Write-Host "Warning: Standard library definitions could not be located." -ForegroundColor Yellow
     Write-Host "Definitions can be initialized later via 'fmp update'." -ForegroundColor Yellow
 } else {

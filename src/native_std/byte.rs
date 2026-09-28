@@ -1,4 +1,4 @@
-use crate::native_std::fs::{extract_bytes, resolve_path};
+use crate::native_std::fs::{extract_bytes, extract_bytes_from_slice, resolve_path};
 use crate::vm::Value;
 use std::collections::HashMap;
 use std::fs;
@@ -244,12 +244,219 @@ pub fn init() -> HashMap<String, Value> {
     m.insert(
         "fromBytes".to_string(),
         Value::NativeCallback(|args| {
-            if let Some(val) = args.get(0) {
-                let bytes = extract_bytes(val).map_err(|e| format!("byte.fromBytes error: {}", e))?;
+            if args.is_empty() {
+                return Err("byte.fromBytes expects at least 1 argument".to_string());
+            }
+            if args.len() == 1 {
+                let bytes = extract_bytes(&args[0]).map_err(|e| format!("byte.fromBytes error: {}", e))?;
                 Ok(Value::Bytes(bytes))
             } else {
-                Err("byte.fromBytes expects 1 argument".to_string())
+                let bytes = extract_bytes_from_slice(&args).map_err(|e| format!("byte.fromBytes error: {}", e))?;
+                Ok(Value::Bytes(bytes))
             }
+        }),
+    );
+
+    m.insert(
+        "fromHex".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("byte.fromHex expects 1 argument (hex string)".to_string());
+            }
+            let s = args[0].to_string();
+            let clean = s.trim_matches('"').trim();
+            match parse_hex_string(clean) {
+                Ok(b) => Ok(Value::Bytes(b)),
+                Err(e) => Err(format!("byte.fromHex error: {}", e)),
+            }
+        }),
+    );
+
+    m.insert(
+        "buffer".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("byte.buffer expects at least 1 argument (size)".to_string());
+            }
+            let size = match &args[0] {
+                Value::Int(n) if *n >= 0 => *n as usize,
+                _ => return Err("byte.buffer: size must be a non-negative integer".to_string()),
+            };
+            let fill = if args.len() > 1 {
+                match &args[1] {
+                    Value::Byte(b) => *b,
+                    Value::Int(n) if (0..=255).contains(n) => *n as u8,
+                    _ => 0u8,
+                }
+            } else {
+                0u8
+            };
+            Ok(Value::Bytes(vec![fill; size]))
+        }),
+    );
+
+    m.insert(
+        "fromInt16".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("byte.fromInt16 expects 1 argument (number)".to_string());
+            }
+            let val = args[0].as_int().map_err(|e| format!("byte.fromInt16: {}", e))? as i16;
+            let le = args.get(1).map(|v| v.is_truthy()).unwrap_or(true);
+            let b = if le { val.to_le_bytes().to_vec() } else { val.to_be_bytes().to_vec() };
+            Ok(Value::Bytes(b))
+        }),
+    );
+
+    m.insert(
+        "fromInt32".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("byte.fromInt32 expects 1 argument (number)".to_string());
+            }
+            let val = args[0].as_int().map_err(|e| format!("byte.fromInt32: {}", e))? as i32;
+            let le = args.get(1).map(|v| v.is_truthy()).unwrap_or(true);
+            let b = if le { val.to_le_bytes().to_vec() } else { val.to_be_bytes().to_vec() };
+            Ok(Value::Bytes(b))
+        }),
+    );
+
+    m.insert(
+        "fromInt64".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("byte.fromInt64 expects 1 argument (number)".to_string());
+            }
+            let val = args[0].as_int().map_err(|e| format!("byte.fromInt64: {}", e))?;
+            let le = args.get(1).map(|v| v.is_truthy()).unwrap_or(true);
+            let b = if le { val.to_le_bytes().to_vec() } else { val.to_be_bytes().to_vec() };
+            Ok(Value::Bytes(b))
+        }),
+    );
+
+    m.insert(
+        "fromFloat32".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("byte.fromFloat32 expects 1 argument (number)".to_string());
+            }
+            let val = match &args[0] {
+                Value::Float(f) => *f as f32,
+                Value::Int(i) => *i as f32,
+                _ => return Err("byte.fromFloat32 expects numeric value".to_string()),
+            };
+            let le = args.get(1).map(|v| v.is_truthy()).unwrap_or(true);
+            let b = if le { val.to_le_bytes().to_vec() } else { val.to_be_bytes().to_vec() };
+            Ok(Value::Bytes(b))
+        }),
+    );
+
+    m.insert(
+        "fromFloat64".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("byte.fromFloat64 expects 1 argument (number)".to_string());
+            }
+            let val = match &args[0] {
+                Value::Float(f) => *f,
+                Value::Int(i) => *i as f64,
+                _ => return Err("byte.fromFloat64 expects numeric value".to_string()),
+            };
+            let le = args.get(1).map(|v| v.is_truthy()).unwrap_or(true);
+            let b = if le { val.to_le_bytes().to_vec() } else { val.to_be_bytes().to_vec() };
+            Ok(Value::Bytes(b))
+        }),
+    );
+
+    m.insert(
+        "toInt16".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("byte.toInt16 expects at least 1 argument (bytes)".to_string());
+            }
+            let bytes = extract_bytes(&args[0]).map_err(|e| format!("byte.toInt16: {}", e))?;
+            let offset = args.get(1).and_then(|v| v.as_int().ok()).unwrap_or(0) as usize;
+            let le = args.get(2).map(|v| v.is_truthy()).unwrap_or(true);
+            if offset + 2 > bytes.len() {
+                return Err(format!("byte.toInt16: buffer length {} too short for offset {}", bytes.len(), offset));
+            }
+            let slice: [u8; 2] = [bytes[offset], bytes[offset + 1]];
+            let num = if le { i16::from_le_bytes(slice) } else { i16::from_be_bytes(slice) };
+            Ok(Value::Int(num as i64))
+        }),
+    );
+
+    m.insert(
+        "toInt32".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("byte.toInt32 expects at least 1 argument (bytes)".to_string());
+            }
+            let bytes = extract_bytes(&args[0]).map_err(|e| format!("byte.toInt32: {}", e))?;
+            let offset = args.get(1).and_then(|v| v.as_int().ok()).unwrap_or(0) as usize;
+            let le = args.get(2).map(|v| v.is_truthy()).unwrap_or(true);
+            if offset + 4 > bytes.len() {
+                return Err(format!("byte.toInt32: buffer length {} too short for offset {}", bytes.len(), offset));
+            }
+            let slice: [u8; 4] = [bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]];
+            let num = if le { i32::from_le_bytes(slice) } else { i32::from_be_bytes(slice) };
+            Ok(Value::Int(num as i64))
+        }),
+    );
+
+    m.insert(
+        "toInt64".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("byte.toInt64 expects at least 1 argument (bytes)".to_string());
+            }
+            let bytes = extract_bytes(&args[0]).map_err(|e| format!("byte.toInt64: {}", e))?;
+            let offset = args.get(1).and_then(|v| v.as_int().ok()).unwrap_or(0) as usize;
+            let le = args.get(2).map(|v| v.is_truthy()).unwrap_or(true);
+            if offset + 8 > bytes.len() {
+                return Err(format!("byte.toInt64: buffer length {} too short for offset {}", bytes.len(), offset));
+            }
+            let mut slice = [0u8; 8];
+            slice.copy_from_slice(&bytes[offset..offset + 8]);
+            let num = if le { i64::from_le_bytes(slice) } else { i64::from_be_bytes(slice) };
+            Ok(Value::Int(num))
+        }),
+    );
+
+    m.insert(
+        "toFloat32".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("byte.toFloat32 expects at least 1 argument (bytes)".to_string());
+            }
+            let bytes = extract_bytes(&args[0]).map_err(|e| format!("byte.toFloat32: {}", e))?;
+            let offset = args.get(1).and_then(|v| v.as_int().ok()).unwrap_or(0) as usize;
+            let le = args.get(2).map(|v| v.is_truthy()).unwrap_or(true);
+            if offset + 4 > bytes.len() {
+                return Err(format!("byte.toFloat32: buffer length {} too short for offset {}", bytes.len(), offset));
+            }
+            let slice: [u8; 4] = [bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]];
+            let num = if le { f32::from_le_bytes(slice) } else { f32::from_be_bytes(slice) };
+            Ok(Value::Float(num as f64))
+        }),
+    );
+
+    m.insert(
+        "toFloat64".to_string(),
+        Value::NativeCallback(|args| {
+            if args.is_empty() {
+                return Err("byte.toFloat64 expects at least 1 argument (bytes)".to_string());
+            }
+            let bytes = extract_bytes(&args[0]).map_err(|e| format!("byte.toFloat64: {}", e))?;
+            let offset = args.get(1).and_then(|v| v.as_int().ok()).unwrap_or(0) as usize;
+            let le = args.get(2).map(|v| v.is_truthy()).unwrap_or(true);
+            if offset + 8 > bytes.len() {
+                return Err(format!("byte.toFloat64: buffer length {} too short for offset {}", bytes.len(), offset));
+            }
+            let mut slice = [0u8; 8];
+            slice.copy_from_slice(&bytes[offset..offset + 8]);
+            let num = if le { f64::from_le_bytes(slice) } else { f64::from_be_bytes(slice) };
+            Ok(Value::Float(num))
         }),
     );
 
@@ -294,4 +501,27 @@ pub fn init() -> HashMap<String, Value> {
     );
 
     m
+}
+
+pub fn parse_hex_string(s: &str) -> Result<Vec<u8>, String> {
+    let mut clean = s.trim().to_string();
+    if clean.starts_with("0x") || clean.starts_with("0X") {
+        clean = clean[2..].to_string();
+    }
+    clean = clean
+        .replace("0x", "")
+        .replace("0X", "")
+        .replace([',', ' ', '\t', '\n', '\r'], "");
+    if clean.len() % 2 != 0 {
+        return Err("hex string must have an even number of hex characters".to_string());
+    }
+    let mut bytes = Vec::with_capacity(clean.len() / 2);
+    for i in (0..clean.len()).step_by(2) {
+        let byte_str = &clean[i..i + 2];
+        match u8::from_str_radix(byte_str, 16) {
+            Ok(b) => bytes.push(b),
+            Err(e) => return Err(format!("invalid hex byte '{}': {}", byte_str, e)),
+        }
+    }
+    Ok(bytes)
 }

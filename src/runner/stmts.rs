@@ -392,7 +392,7 @@ impl Runner {
                 }
                 let mod_name = path.join(".");
                 let bind_name = alias.clone().unwrap_or_else(|| path.last().unwrap().clone());
-                if mod_name.starts_with("std.") {
+                if mod_name.starts_with("std.") || crate::stdlib::is_known_std(&mod_name) {
                     let mut stdlib_dir = None;
                     let mut current =
                         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));

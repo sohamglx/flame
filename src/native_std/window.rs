@@ -977,7 +977,7 @@ mod platform {
     const WM_CLOSE: u32 = 0x0010;
 
     #[link(name = "user32")]
-    extern "system" {
+    unsafe extern "system" {
         fn EnumWindows(lpEnumFunc: WNDENUMPROC, lParam: LPARAM) -> BOOL;
         fn IsWindowVisible(hWnd: HWND) -> BOOL;
         fn GetWindowTextW(hWnd: HWND, lpString: *mut u16, nMaxCount: i32) -> i32;
@@ -999,50 +999,52 @@ mod platform {
     }
 
     unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        let list = &mut *(lparam as *mut Vec<WindowData>);
-        if IsWindowVisible(hwnd) == 0 {
-            return 1;
+        unsafe {
+            let list = &mut *(lparam as *mut Vec<WindowData>);
+            if IsWindowVisible(hwnd) == 0 {
+                return 1;
+            }
+
+            let len = GetWindowTextLengthW(hwnd);
+            if len == 0 {
+                return 1;
+            }
+
+            let mut buf: Vec<u16> = vec![0; (len + 1) as usize];
+            let read = GetWindowTextW(hwnd, buf.as_mut_ptr(), len + 1);
+            let title = String::from_utf16_lossy(&buf[..read as usize]);
+
+            let mut pid: u32 = 0;
+            GetWindowThreadProcessId(hwnd, &mut pid);
+
+            let mut rect = RECT {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            };
+            GetWindowRect(hwnd, &mut rect);
+
+            let x = rect.left as i64;
+            let y = rect.top as i64;
+            let width = (rect.right - rect.left).max(0) as i64;
+            let height = (rect.bottom - rect.top).max(0) as i64;
+
+            let id = format!("{:p}", hwnd);
+
+            list.push(WindowData {
+                id,
+                title,
+                app_name: String::new(),
+                pid: pid as i64,
+                x,
+                y,
+                width,
+                height,
+            });
+
+            1
         }
-
-        let len = GetWindowTextLengthW(hwnd);
-        if len == 0 {
-            return 1;
-        }
-
-        let mut buf: Vec<u16> = vec![0; (len + 1) as usize];
-        let read = GetWindowTextW(hwnd, buf.as_mut_ptr(), len + 1);
-        let title = String::from_utf16_lossy(&buf[..read as usize]);
-
-        let mut pid: u32 = 0;
-        GetWindowThreadProcessId(hwnd, &mut pid);
-
-        let mut rect = RECT {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        };
-        GetWindowRect(hwnd, &mut rect);
-
-        let x = rect.left as i64;
-        let y = rect.top as i64;
-        let width = (rect.right - rect.left).max(0) as i64;
-        let height = (rect.bottom - rect.top).max(0) as i64;
-
-        let id = format!("{:p}", hwnd);
-
-        list.push(WindowData {
-            id,
-            title,
-            app_name: String::new(),
-            pid: pid as i64,
-            x,
-            y,
-            width,
-            height,
-        });
-
-        1
     }
 
     pub fn list_windows() -> Vec<WindowData> {

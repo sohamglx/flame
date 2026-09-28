@@ -1,5 +1,44 @@
 package fs
 
+@Docs("Represents a file handle for stateful operations.\n\n**Example:**\n```flame\nlet file = fs.open(\"data.txt\")\n```")
+struct File {}
+
+impl File {
+    @Docs("Reads entire file contents into a UTF-8 string.\n\n**Example:**\n```flame\nlet content = file.read()\n```")
+    fn read() -> String {}
+
+    @Docs("Overwrites the file with the given string or binary bytes.\n\n**Example:**\n```flame\nfile.write(\"Hello World\")\nfile.write(bytes)\n```")
+    fn write(data: Any) {}
+
+    @Docs("Appends the string or binary bytes to the end of the file.\n\n**Example:**\n```flame\nfile.append(\"Hello World\")\nfile.append(bytes)\n```")
+    fn append(data: Any) {}
+
+    @Docs("Reads entire file contents into raw binary Bytes.\n\n**Example:**\n```flame\nlet b = file.readBytes()\n```")
+    fn readBytes() -> Bytes {}
+
+    @Docs("Writes raw binary bytes to the file, replacing existing content.\n\n**Example:**\n```flame\nfile.writeBytes(bytes)\n```")
+    fn writeBytes(data: Any) {}
+
+    @Docs("Appends raw binary bytes to the end of the file.\n\n**Example:**\n```flame\nfile.appendBytes(bytes)\n```")
+    fn appendBytes(data: Any) {}
+
+    @Docs("Returns true if this specific file exists.\n\n**Example:**\n
+    if file.exists() {
+        println(\"File exists\")
+    }
+    ")
+    fn exists() -> Bool {}
+
+    @Docs("Returns the file size in bytes.\n\n**Example:**\n```flame\nlet size = file.size()\n```")
+    fn size() -> Int {}
+
+    @Docs("Deletes this file from the filesystem.\n\n**Example:**\n```flame\nfile.delete()\n```")
+    fn delete() {}
+}
+
+@Docs("Opens a file for reading and/or writing. Returns a File handle for stateful operations.\n\n**Example:**\n```flame\nlet file = fs.open(\"data.txt\")\n```")
+export fn open(path: String) -> File {}
+
 @Docs("Reads the entire contents of a file as a UTF-8 String.\n\n**Example:**\n```flame\nlet text = fs.read(\"config.toml\")\n```")
 export fn read(path: String) -> String {}
 
@@ -26,6 +65,15 @@ export fn exists(path: String) -> Bool {}
 
 @Docs("Reads directory contents and returns an array of child file and folder names.\n\n**Example:**\n```flame\nlet files = fs.readDir(\"./src\")\n```")
 export fn readDir(path: String) -> [String] {}
+
+@Docs("Returns `true` if the path is a directory, otherwise `false`.\n\n**Example:**\n```flame\nif fs.isDir(\"./src\") {\n    println(\"is directory\")\n}\n```")
+export fn isDir(path: String) -> Bool {}
+
+@Docs("Returns `true` if the path is a regular file, otherwise `false`.\n\n**Example:**\n```flame\nif fs.isFile(\"config.toml\") {\n    println(\"is file\")\n}\n```")
+export fn isFile(path: String) -> Bool {}
+
+@Docs("Returns the size of the file in bytes.\n\n**Example:**\n```flame\nlet bytes_count = fs.size(\"data.bin\")\n```")
+export fn size(path: String) -> Int {}
 
 @Docs("Creates a directory on the file system.\n\n**Example:**\n```flame\nfs.makeDir(\"build\")\n```")
 export fn makeDir(path: String) {}

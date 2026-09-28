@@ -386,15 +386,26 @@ impl Runner {
                 name, annotations, ..
             } = stmt
             {
-                if annotations.iter().any(|a| a.name == "Application") {
+                if annotations.iter().any(|a| a.name == "Application" || a.name == "Cli" || a.name == "Web") {
                     app_entry = Some(name.clone());
                     app_count += 1;
                 }
             }
         }
 
+        if app_entry.is_none() {
+            for stmt in stmts {
+                if let Stmt::FuncDecl { name, .. } = stmt {
+                    if name == "main" {
+                        app_entry = Some("main".to_string());
+                        break;
+                    }
+                }
+            }
+        }
+
         if app_count > 1 {
-            return Err("Only one @Application entry point is allowed.".to_string());
+            return Err("Only one @Application / @Cli / @Web entry point is allowed.".to_string());
         }
 
         let mut last_val = Value::Nil;
@@ -437,58 +448,52 @@ impl Runner {
             }
         }
 
-        if let Some(app_name) = app_entry {
-            let app_func = self.env.lock().unwrap().get(&app_name);
-            if let Some(app_val @ Value::Function { .. }) = app_func {
-                let res = self.invoke_callback_value(&app_val, Vec::new())?;
-                last_val = res;
-            }
-            let main_func = self.env.lock().unwrap().get("main");
-            if let Some(main_val) = main_func {
-                if let Value::Function {
-                    ref annotations, ..
-                } = main_val
-                {
-                    let is_web = annotations.iter().any(|a| a.name == "Web");
-                    let explicitly_called = stmts.iter().any(|s| match s {
-                        Stmt::ExprStmt(Expr::Call(callee, ..)) => match &**callee {
-                            Expr::Identifier(id, _) => id == "main",
-                            _ => false,
-                        },
-                        Stmt::ExprStmt(Expr::Await(inner, _)) => {
-                            if let Expr::Call(callee, ..) = &**inner {
-                                match &**callee {
-                                    Expr::Identifier(id, _) => id == "main",
-                                    _ => false,
-                                }
-                            } else {
-                                false
-                            }
-                        }
+        if let Some(entry_name) = app_entry {
+            let func_opt = self.env.lock().unwrap().get(&entry_name);
+            if let Some(ref entry_val) = func_opt {
+                let is_web = if let Value::Function { annotations, .. } = entry_val {
+                    annotations.iter().any(|a| a.name == "Web")
+                } else {
+                    false
+                };
+                let explicitly_called = stmts.iter().any(|s| match s {
+                    Stmt::ExprStmt(Expr::Call(callee, ..)) => match &**callee {
+                        Expr::Identifier(id, _) => id == &entry_name,
                         _ => false,
-                    });
-                    if !explicitly_called {
-                        let res = self.invoke_callback_value(&main_val, Vec::new())?;
-                        last_val = res;
+                    },
+                    Stmt::ExprStmt(Expr::Await(inner, _)) => {
+                        if let Expr::Call(callee, ..) = &**inner {
+                            match &**callee {
+                                Expr::Identifier(id, _) => id == &entry_name,
+                                _ => false,
+                            }
+                        } else {
+                            false
+                        }
                     }
-                    if is_web {
-                        let project_dir = std::path::Path::new(".");
-                        match crate::web::build_web_project(project_dir) {
-                            Ok(build_res) => {
-                                let config = crate::web::WebServerConfig {
-                                    dist_dir: build_res.dist_dir,
-                                    port: build_res.port,
-                                    routes: build_res.routes,
-                                    hot_reload: false,
-                                };
-                                let _ = crate::web::serve_dist(config);
-                            }
-                            Err(e) => {
-                                eprintln!(
-                                    "\x1b[1;31merror:\x1b[0m Failed to build web project: {}",
-                                    e
-                                );
-                            }
+                    _ => false,
+                });
+                if !explicitly_called {
+                    let res = self.invoke_callback_value(&entry_val, Vec::new())?;
+                    last_val = res;
+                }
+                if is_web {
+                    let project_dir = std::path::Path::new(".");
+                    match crate::web::build_web_project(project_dir) {
+                        Ok(build_res) => {
+                            let config = crate::web::WebServerConfig {
+                                dist_dir: build_res.dist_dir,
+                                port: build_res.port,
+                                routes: build_res.routes,
+                                hot_reload: false,
+                            };
+                            let _ = crate::web::serve_dist(config);
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "\x1b[1;31merror:\x1b[0m Failed to build web project: {}",
+                                e
+                            );
                         }
                     }
                 }

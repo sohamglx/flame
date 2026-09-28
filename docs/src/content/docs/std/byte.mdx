@@ -1,138 +1,331 @@
 ---
 title: Byte Manipulation (std.byte)
-description: Utilities for reading, writing, and mutating binary data in Flame.
+description: Complete guide to binary data, Bytes buffers, endian encoding, binary file I/O, and low-level byte manipulation in Flame.
 ---
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-The `std.byte` module provides a comprehensive API for handling raw binary data (`Bytes` and `Byte`). It mirrors many filesystem (`std.fs`) operations but is strictly typed for raw bytes instead of UTF-8 text strings.
+Flame provides first-class support for binary computing with dedicated `Bytes` (contiguous buffer of 8-bit unsigned integers) and `Byte` (single 8-bit value) types. The `std.byte` module provides utilities for endian-aware numerical encoding, hex conversion, binary file I/O, buffer allocation, and byte slicing.
 
 ---
 
-## File I/O with Bytes
+## Creating & Constructing Bytes
 
-You can perform direct binary I/O operations without string encodings. This is essential when dealing with binary files like images, executables, custom formats (e.g. `.fmp`), or compressed archives.
+You can construct `Bytes` buffers from numbers, arrays, strings, hex literals, or allocate empty buffers:
 
 ```flame
-import std.byte as byte
+import std.byte
 
-// Read an entire file as a byte array (Bytes)
-let raw_data = byte.readBytes("image.png")
-println(raw_data.type()) // "Bytes"
-println($"Length: {raw_data.len()} bytes")
+// 1. From an array of numbers (0..255) or hex literals
+let magic = byte.fromBytes([0x46, 0x4D, 0x50, 0x01]) // 'F', 'M', 'P', 0x01
+println($"Magic length: {magic.len()}, Hex: {magic.toHex()}") // "464d5001"
 
-// Write an entire byte array to a file
-byte.writeBytes("copy.png", raw_data)
+// 2. From a hexadecimal string (whitespace and optional '0x' prefix are automatically handled)
+let png_sig = byte.fromHex("89504E470D0A1A0A")
+println($"PNG signature bytes: {png_sig.len()}") // 8
 
-// Append bytes to an existing file
-let extra = byte.fromBytes("trailer data")
-byte.appendBytes("copy.png", extra)
+// 3. Pre-allocated buffer filled with a specific byte value (default 0)
+let zero_buffer = byte.buffer(1024, 0) // 1 KB zero-filled buffer
+let pattern = byte.buffer(16, 0xFF)    // 16 bytes of 0xFF
+
+// 4. Using fluent conversion methods directly on values:
+let text_bytes = "Hello World".toBytes()
+let list_bytes = [10, 20, 30].toBytes()
+let single_b   = 65.toByte() // ASCII 'A'
 ```
 
 ---
 
-## Creating & Converting Bytes
+## In-Memory `Bytes` Operations
 
-Flame supports converting text strings, integer arrays, and individual numbers into byte buffers:
+`Bytes` instances support indexing, slicing, concatenation, conversion, and in-place mutation:
+
+### Indexing & Slicing
 
 ```flame
-import std.byte as byte
+import std.byte
 
-// Convert a UTF-8 text string to Bytes
-let text_bytes = byte.fromBytes("Hello Flame!")
-println(text_bytes.len()) // 12
+let mut buf = byte.fromBytes([0x10, 0x20, 0x30, 0x40, 0x50])
 
-// Convert an array of integer values (0..255) to Bytes
-let header = byte.fromBytes([0x46, 0x4D, 0x50, 0x01])
+// Reading bytes (returns Byte type)
+let first = buf[0]
+println(first.toInt()) // 16 (0x10)
+
+// Negative indexing from the end of the buffer
+let last = buf[-1]
+println(last.toInt())  // 80 (0x50)
+
+// In-place mutation via index assignment
+buf[1] = 0xAA
+println(buf.toHex()) // "10aa304050"
+
+// Slicing (start index inclusive, end index exclusive)
+let sub = buf.slice(1, 4)
+println(sub.toHex()) // "aa3040"
+```
+
+### Buffer Inspection & Transformations
+
+```flame
+import std.byte
+
+let b1 = "Flame".toBytes()
+let b2 = " Lang".toBytes()
+
+// Concatenate two Bytes buffers
+let combined = b1.concat(b2)
+println(combined.toString()) // "Flame Lang"
 
 // Convert to hex string
-println(header.toHex()) // "464d5001"
+println(combined.toHex())    // "466c616d65204c616e67"
 
-// Convert back to string
-println(text_bytes.toString()) // "Hello Flame!"
+// Convert to Base64 string
+println(combined.toBase64()) // "RmxhbWUgTGFuZw=="
 
-// Individual byte conversions
-let b = byte.fromByte(65)
-println(b.toInt())    // 65
-println(b.toString()) // "A"
-println(b.toHex())    // "41"
+// Convert to integer list [Int]
+let numbers = combined.toList() // or combined.toArray()
+println(numbers) // [70, 108, 97, 109, 101, 32, 76, 97, 110, 103]
+
+// Convert to UTF-8 String
+let utf8_text = combined.toUtf8()
+// Or tryUtf8() which returns nil if bytes are invalid UTF-8:
+let maybe_text = combined.tryUtf8()
 ```
 
 ---
 
-## Single Byte Level Operations
+## Endian-Aware Numerical Encoding & Decoding
 
-If you only need to modify or read a single 8-bit `Byte` (which maps internally to `u8`), you can use byte-level methods:
+Binary protocols and file formats frequently require packing integers and floating-point values with specific endianness (Little-Endian or Big-Endian). `std.byte` provides full support:
 
-#### `byte.readByte(path)`
-Reads the first byte of a file.
-
-#### `byte.readByteAt(path, offset)`
-Reads a single byte at the specified `offset`.
-
-#### `byte.writeByteAt(path, offset, byte)`
-Writes a single `byte` at the specified `offset` without truncating the rest of the file.
+### Encoding Numbers to `Bytes`
 
 ```flame
-import std.byte as byte
+import std.byte
 
-// Write byte 0 at offset 128
-byte.writeByteAt("data.bin", 128, 0.toByte())
+// 16-bit integer (2 bytes)
+let u16_le = byte.fromInt16(1000, true)   // Little-Endian (default)
+let u16_be = byte.fromInt16(1000, false)  // Big-Endian
+println(u16_le.toHex()) // "e803"
+println(u16_be.toHex()) // "03e8"
 
-// Read the byte located at offset 128
-let b = byte.readByteAt("data.bin", 128)
+// 32-bit integer (4 bytes)
+let u32_le = byte.fromInt32(100000, true)
+println(u32_le.toHex()) // "a0860100"
 
-// Write a single byte to a file (creates or overwrites)
-byte.writeByte("flag.bin", 255.toByte())
+// 64-bit integer (8 bytes)
+let u64_le = byte.fromInt64(12345678901234, true)
 
-// Append a single byte to the end of a file
-byte.appendByte("flag.bin", 0)
+// Floating point numbers (IEEE 754)
+let f32_bytes = byte.fromFloat32(3.14159, true) // 4 bytes
+let f64_bytes = byte.fromFloat64(3.141592653589793, true) // 8 bytes
+```
+
+### Decoding Numbers from `Bytes`
+
+All decode functions accept an optional `offset` and an optional `le` boolean (default `true` for Little-Endian):
+
+```flame
+import std.byte
+
+let payload = byte.fromHex("a0860100" + "e803") // u32 (100000) followed by u16 (1000)
+
+let count = byte.toInt32(payload, 0, true)
+let port  = byte.toInt16(payload, 4, true)
+
+println($"Count: {count}") // 100000
+println($"Port:  {port}")  // 1000
+
+// Floating point decoding
+let f_val = byte.toFloat32(f32_bytes, 0, true)
+println($"Decoded Float: {f_val}")
 ```
 
 ---
 
-## `Bytes` Buffer Methods
+## Binary File I/O
 
-Values of type `Bytes` have built-in methods:
+Work directly with binary files without string encoding corruption:
 
-| Method | Returns | Description |
-| :--- | :--- | :--- |
-| `bytes.len()` | `Int` | Returns the total count of bytes in the buffer. |
-| `bytes.isEmpty()` | `Bool` | Returns `true` if the buffer has length 0. |
-| `bytes.get(index)` | `Byte` | Accesses the byte at the specified 0-based index. |
-| `bytes.toHex()` | `String` | Converts the byte buffer into a lowercase hexadecimal string. |
-| `bytes.toString()` | `String` | Decodes the byte buffer as a UTF-8 string. |
+```flame
+import std.byte
+
+// 1. Read entire binary file into Bytes
+let file_data = byte.readBytes("firmware.bin")
+println($"Loaded firmware: {file_data.len()} bytes")
+
+// 2. Write entire byte buffer to a file (creates or overwrites)
+byte.writeBytes("output.bin", file_data)
+
+// 3. Append byte buffer to an existing file
+let extra_signature = byte.fromHex("cafebeef")
+byte.appendBytes("output.bin", extra_signature)
+
+// 4. Fluent file writing directly from Bytes buffer:
+file_data.save("backup.bin")  // or file_data.write("backup.bin")
+extra_signature.append("backup.bin")
+```
 
 ---
 
-## `Byte` Value Methods
+## Single Byte Operations
 
-Values of type `Byte` represent a single 8-bit unsigned integer:
+For low-level byte-by-byte file inspection and patch operations:
 
-| Method | Returns | Description |
-| :--- | :--- | :--- |
-| `byte.toInt()` | `Int` | Returns the numeric value (0..255). |
-| `byte.toHex()` | `String` | Returns a 2-character lowercase hex string (e.g. `"46"`). |
-| `byte.toString()` | `String` | Returns the ASCII character representation. |
+```flame
+import std.byte
+
+// Read the first byte of a file
+let first_byte = byte.readByte("data.bin")
+
+// Read a byte at a specific file offset without loading the whole file
+let magic_byte = byte.readByteAt("archive.fmp", 3)
+println($"Byte at offset 3: {magic_byte.toInt()} (hex: {magic_byte.toHex()})")
+
+// Overwrite a single byte at a specific offset
+byte.writeByteAt("archive.fmp", 0, 0x46.toByte())
+
+// Append a single byte to the end of a file
+byte.appendByte("archive.fmp", 0)
+```
 
 ---
 
-## API Reference
+## Complete Example: Building a Binary Archive (`.fmp`)
 
-### Module Functions (`std.byte`)
+Here is an example building and reading a custom binary archive containing multiple files:
+
+```flame
+import std.byte
+import std.fs
+
+fn create_archive(out_path: String, entries: [Formula]) {
+    let mut header = byte.fromBytes([0x46, 0x4D, 0x50, 0x01]) // 'F','M','P', version 1
+    
+    // Write number of files as 32-bit int
+    let count_bytes = byte.fromInt32(entries.len(), true)
+    let mut archive = header.concat(count_bytes)
+
+    for entry in entries {
+        let name_bytes = entry.name.toBytes()
+        let name_len   = byte.fromInt16(name_bytes.len(), true)
+        
+        let data_bytes = entry.data
+        let data_len   = byte.fromInt32(data_bytes.len(), true)
+
+        archive = archive.concat(name_len)
+                         .concat(name_bytes)
+                         .concat(data_len)
+                         .concat(data_bytes)
+    }
+
+    archive.save(out_path)
+    println($"Saved binary archive '{out_path}' ({archive.len()} bytes)")
+}
+
+fn inspect_archive(path: String) {
+    let raw = byte.readBytes(path)
+    
+    // Verify magic signature
+    let magic = raw.slice(0, 3).toString()
+    let version = raw[3].toInt()
+    if magic != "FMP" {
+        println("Invalid archive format!")
+        return
+    }
+
+    let file_count = byte.toInt32(raw, 4, true)
+    println($"Archive '{path}' Version {version} with {file_count} files:")
+
+    let mut offset = 8
+    let mut i = 0
+    while i < file_count {
+        let name_len = byte.toInt16(raw, offset, true)
+        offset = offset + 2
+
+        let name = raw.slice(offset, offset + name_len).toString()
+        offset = offset + name_len
+
+        let data_len = byte.toInt32(raw, offset, true)
+        offset = offset + 4
+
+        println($" - File [{i + 1}]: {name} ({data_len} bytes)")
+        offset = offset + data_len
+        i = i + 1
+    }
+}
+
+// Usage:
+let files = [
+    { name: "hello.txt", data: "Hello World!".toBytes() },
+    { name: "test.bin",  data: byte.fromHex("00ff0180fe42") }
+]
+
+create_archive("bundle.fmp", files)
+inspect_archive("bundle.fmp")
+```
+
+---
+
+## API Summary Table
+
+### `std.byte` Module Functions
 
 | Function | Arguments | Returns | Description |
 | :--- | :--- | :--- | :--- |
-| `byte.fromBytes` | `data: Any` | `Bytes` | Converts an array of ints, byte buffer, or string to `Bytes`. |
-| `byte.fromByte` | `data: Any` | `Byte` | Converts an int (0..255), string, or byte to `Byte`. |
-| `byte.toString` | `bytes: Any` | `String` | Converts byte data into a UTF-8 string. |
-| `byte.toHex` | `bytes: Any` | `String` | Converts byte data into a hexadecimal string. |
-| `byte.toInt` | `byte: Any` | `Int` | Converts a `Byte` into an integer value. |
-| `byte.readBytes` | `path: String` | `Bytes` | Reads all bytes from the file at `path`. |
-| `byte.writeBytes` | `path: String, bytes: Any` | `Nil` | Writes byte buffer, array, or string to `path`. |
-| `byte.appendBytes` | `path: String, bytes: Any` | `Nil` | Appends byte buffer, array, or string to `path`. |
+| `byte.fromBytes` | `val: Any` | `Bytes` | Converts array of ints, string, or bytes into a `Bytes` buffer. |
+| `byte.fromByte` | `val: Any` | `Byte` | Converts integer (0..255), ASCII string, or byte into `Byte`. |
+| `byte.fromHex` | `hex: String` | `Bytes` | Parses hexadecimal string into raw binary `Bytes`. |
+| `byte.buffer` | `size: Int, fill: Int = 0` | `Bytes` | Allocates a byte buffer of `size` filled with `fill`. |
+| `byte.fromInt16` | `val: Int, le: Bool = true` | `Bytes` | Encodes 16-bit int to 2 bytes (little-endian by default). |
+| `byte.fromInt32` | `val: Int, le: Bool = true` | `Bytes` | Encodes 32-bit int to 4 bytes (little-endian by default). |
+| `byte.fromInt64` | `val: Int, le: Bool = true` | `Bytes` | Encodes 64-bit int to 8 bytes (little-endian by default). |
+| `byte.fromFloat32` | `val: Float, le: Bool = true` | `Bytes` | Encodes 32-bit float to 4 bytes. |
+| `byte.fromFloat64` | `val: Float, le: Bool = true` | `Bytes` | Encodes 64-bit float to 8 bytes. |
+| `byte.toInt16` | `bytes: Any, offset: Int = 0, le: Bool = true` | `Int` | Decodes 16-bit integer from bytes at `offset`. |
+| `byte.toInt32` | `bytes: Any, offset: Int = 0, le: Bool = true` | `Int` | Decodes 32-bit integer from bytes at `offset`. |
+| `byte.toInt64` | `bytes: Any, offset: Int = 0, le: Bool = true` | `Int` | Decodes 64-bit integer from bytes at `offset`. |
+| `byte.toFloat32` | `bytes: Any, offset: Int = 0, le: Bool = true` | `Float` | Decodes 32-bit float from bytes at `offset`. |
+| `byte.toFloat64` | `bytes: Any, offset: Int = 0, le: Bool = true` | `Float` | Decodes 64-bit float from bytes at `offset`. |
+| `byte.toString` | `val: Any` | `String` | Decodes a `Bytes` buffer into a UTF-8 string. |
+| `byte.toHex` | `val: Any` | `String` | Converts `Bytes` or `Byte` to a lowercase hex string. |
+| `byte.toInt` | `val: Any` | `Int` | Converts a `Byte` to its numeric value (0..255). |
+| `byte.readBytes` | `path: String` | `Bytes` | Reads an entire file into a `Bytes` buffer. |
+| `byte.writeBytes` | `path: String, bytes: Any` | `Nil` | Overwrites a file with binary data. |
+| `byte.appendBytes` | `path: String, bytes: Any` | `Nil` | Appends binary data to a file. |
 | `byte.readByte` | `path: String` | `Byte` | Reads the first byte of a file. |
-| `byte.writeByte` | `path: String, byte: Any` | `Nil` | Writes a single 8-bit `Byte` to `path`. |
-| `byte.appendByte` | `path: String, byte: Any` | `Nil` | Appends a single 8-bit `Byte` to `path`. |
+| `byte.writeByte` | `path: String, byte: Int` | `Nil` | Writes a single byte to a file. |
+| `byte.appendByte` | `path: String, byte: Int` | `Nil` | Appends a single byte to a file. |
 | `byte.readByteAt` | `path: String, offset: Int` | `Byte` | Reads a single byte at the specified file offset. |
-| `byte.writeByteAt` | `path: String, offset: Int, byte: Any` | `Nil` | Writes a byte at the specified offset. |
+| `byte.writeByteAt` | `path: String, offset: Int, byte: Int` | `Nil` | Writes a byte at the specified file offset. |
+
+---
+
+### `Bytes` Instance Methods
+
+| Method | Arguments | Returns | Description |
+| :--- | :--- | :--- | :--- |
+| `bytes.len()` / `length` | None | `Int` | Total byte count of the buffer. |
+| `bytes.isEmpty()` | None | `Bool` | Returns `true` if length is 0. |
+| `bytes[i]` | `i: Int` | `Byte` | Reads byte at index (supports negative indexing). |
+| `bytes[i] = val` | `i: Int, val: Byte \| Int` | `Nil` | In-place mutation of byte at index. |
+| `bytes.slice` | `start: Int, end: Int` | `Bytes` | Extracts a sub-slice buffer. |
+| `bytes.concat` | `other: Bytes` | `Bytes` | Concatenates two `Bytes` buffers. |
+| `bytes.toHex()` | None | `String` | Formats as a lowercase hexadecimal string. |
+| `bytes.toString()` | None | `String` | Decodes buffer as a UTF-8 string. |
+| `bytes.toUtf8()` | None | `String` | Decodes buffer as a UTF-8 string (errors if invalid). |
+| `bytes.tryUtf8()` | None | `String \| Nil` | Decodes buffer as UTF-8, returning `nil` if invalid. |
+| `bytes.toBase64()` | None | `String` | Encodes buffer to Base64 string. |
+| `bytes.toList()` / `toArray` | None | `[Int]` | Converts byte buffer to an array of integers. |
+| `bytes.save(path)` / `write` | `path: String` | `Nil` | Writes bytes directly to the specified file path. |
+| `bytes.append(path)` | `path: String` | `Nil` | Appends bytes directly to the specified file path. |
+
+---
+
+### `Byte` Instance Methods
+
+| Method | Arguments | Returns | Description |
+| :--- | :--- | :--- | :--- |
+| `byte.toInt()` | None | `Int` | Returns the numeric value (0..255). |
+| `byte.toHex()` | None | `String` | Returns a 2-character hex string (e.g. `"46"`). |
+| `byte.toString()` | None | `String` | Returns the ASCII character representation. |
