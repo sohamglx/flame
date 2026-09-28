@@ -8,19 +8,19 @@ impl File {
     fn read() -> String {}
 
     @Docs("Overwrites the file with the given string or binary bytes.\n\n**Example:**\n```flame\nfile.write(\"Hello World\")\nfile.write(bytes)\n```")
-    fn write(data: Any) {}
+    fn write(data: Unknown) {}
 
     @Docs("Appends the string or binary bytes to the end of the file.\n\n**Example:**\n```flame\nfile.append(\"Hello World\")\nfile.append(bytes)\n```")
-    fn append(data: Any) {}
+    fn append(data: Unknown) {}
 
     @Docs("Reads entire file contents into raw binary Bytes.\n\n**Example:**\n```flame\nlet b = file.readBytes()\n```")
     fn readBytes() -> Bytes {}
 
     @Docs("Writes raw binary bytes to the file, replacing existing content.\n\n**Example:**\n```flame\nfile.writeBytes(bytes)\n```")
-    fn writeBytes(data: Any) {}
+    fn writeBytes(data: Unknown) {}
 
     @Docs("Appends raw binary bytes to the end of the file.\n\n**Example:**\n```flame\nfile.appendBytes(bytes)\n```")
-    fn appendBytes(data: Any) {}
+    fn appendBytes(data: Unknown) {}
 
     @Docs("Returns true if this specific file exists.\n\n**Example:**\n
     if file.exists() {
@@ -52,10 +52,10 @@ export fn append(path: String, content: String) {}
 export fn readBytes(path: String) -> Bytes {}
 
 @Docs("Writes raw binary bytes to a file, replacing its contents if it already exists.\n\n**Example:**\n```flame\nfs.writeBytes(\"data.bin\", bytes)\n```")
-export fn writeBytes(path: String, bytes: Any) {}
+export fn writeBytes(path: String, bytes: Unknown) {}
 
 @Docs("Appends raw binary bytes to the end of a file.\n\n**Example:**\n```flame\nfs.appendBytes(\"data.bin\", extra_bytes)\n```")
-export fn appendBytes(path: String, bytes: Any) {}
+export fn appendBytes(path: String, bytes: Unknown) {}
 
 @Docs("Deletes a file from the file system.\n\n**Example:**\n```flame\nfs.delete(\"temp.txt\")\n```")
 export fn delete(path: String) {}

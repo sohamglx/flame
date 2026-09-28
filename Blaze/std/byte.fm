@@ -1,97 +1,73 @@
 package byte
 
 @Docs("Converts an Int (0-255), Byte, or ASCII string into a single Byte value.\n\n**Example:**\n```flame\nlet b = byte.fromByte(65)\n```")
-export fn fromByte(val: Any) -> Byte {
-}
+export fn fromByte(val: Unknown) -> Byte {}
 
 @Docs("Converts a list of integers/bytes, string, or byte slice into a Bytes buffer.\n\n**Example:**\n```flame\nlet buf = byte.fromBytes([0x46, 0x4D, 0x50])\nlet header = byte.fromBytes(0x89, 0x50, 0x4E, 0x47)\n```")
-export fn fromBytes(val: Any) -> Bytes {
-}
+export fn fromBytes(val: Unknown) -> Bytes {}
 
 @Docs("Parses a hexadecimal string into raw binary Bytes.\n\n**Example:**\n```flame\nlet png_header = byte.fromHex(\"89504E470D0A1A0A\")\n```")
-export fn fromHex(hex: String) -> Bytes {
-}
+export fn fromHex(hex: String) -> Bytes {}
 
 @Docs("Creates a pre-allocated Bytes buffer filled with specified byte value (default 0).\n\n**Example:**\n```flame\nlet buf = byte.buffer(1024, 0)\n```")
-export fn buffer(size: Int, fill: Int = 0) -> Bytes {
-}
+export fn buffer(size: Int, fill: Int = 0) -> Bytes {}
 
 @Docs("Converts a 16-bit integer into a 2-byte Bytes buffer (little-endian by default).\n\n**Example:**\n```flame\nlet b = byte.fromInt16(1234, true)\n```")
-export fn fromInt16(val: Int, le: Bool = true) -> Bytes {
-}
+export fn fromInt16(val: Int, le: Bool = true) -> Bytes {}
 
 @Docs("Converts a 32-bit integer into a 4-byte Bytes buffer (little-endian by default).\n\n**Example:**\n```flame\nlet b = byte.fromInt32(500000, true)\n```")
-export fn fromInt32(val: Int, le: Bool = true) -> Bytes {
-}
+export fn fromInt32(val: Int, le: Bool = true) -> Bytes {}
 
 @Docs("Converts a 64-bit integer into an 8-byte Bytes buffer (little-endian by default).\n\n**Example:**\n```flame\nlet b = byte.fromInt64(9876543210, true)\n```")
-export fn fromInt64(val: Int, le: Bool = true) -> Bytes {
-}
+export fn fromInt64(val: Int, le: Bool = true) -> Bytes {}
 
 @Docs("Converts a 32-bit float into a 4-byte Bytes buffer (little-endian by default).\n\n**Example:**\n```flame\nlet b = byte.fromFloat32(3.1415, true)\n```")
-export fn fromFloat32(val: Float, le: Bool = true) -> Bytes {
-}
+export fn fromFloat32(val: Float, le: Bool = true) -> Bytes {}
 
 @Docs("Converts a 64-bit float into an 8-byte Bytes buffer (little-endian by default).\n\n**Example:**\n```flame\nlet b = byte.fromFloat64(3.1415926535, true)\n```")
-export fn fromFloat64(val: Float, le: Bool = true) -> Bytes {
-}
+export fn fromFloat64(val: Float, le: Bool = true) -> Bytes {}
 
 @Docs("Reads a 16-bit integer from binary bytes at offset (little-endian by default).\n\n**Example:**\n```flame\nlet val = byte.toInt16(bytes, 0, true)\n```")
-export fn toInt16(bytes: Any, offset: Int = 0, le: Bool = true) -> Int {
-}
+export fn toInt16(bytes: Unknown, offset: Int = 0, le: Bool = true) -> Int {}
 
 @Docs("Reads a 32-bit integer from binary bytes at offset (little-endian by default).\n\n**Example:**\n```flame\nlet val = byte.toInt32(bytes, 0, true)\n```")
-export fn toInt32(bytes: Any, offset: Int = 0, le: Bool = true) -> Int {
-}
+export fn toInt32(bytes: Unknown, offset: Int = 0, le: Bool = true) -> Int {}
 
 @Docs("Reads a 64-bit integer from binary bytes at offset (little-endian by default).\n\n**Example:**\n```flame\nlet val = byte.toInt64(bytes, 0, true)\n```")
-export fn toInt64(bytes: Any, offset: Int = 0, le: Bool = true) -> Int {
-}
+export fn toInt64(bytes: Unknown, offset: Int = 0, le: Bool = true) -> Int {}
 
 @Docs("Reads a 32-bit float from binary bytes at offset (little-endian by default).\n\n**Example:**\n```flame\nlet val = byte.toFloat32(bytes, 0, true)\n```")
-export fn toFloat32(bytes: Any, offset: Int = 0, le: Bool = true) -> Float {
-}
+export fn toFloat32(bytes: Unknown, offset: Int = 0, le: Bool = true) -> Float {}
 
 @Docs("Reads a 64-bit float from binary bytes at offset (little-endian by default).\n\n**Example:**\n```flame\nlet val = byte.toFloat64(bytes, 0, true)\n```")
-export fn toFloat64(bytes: Any, offset: Int = 0, le: Bool = true) -> Float {
-}
+export fn toFloat64(bytes: Unknown, offset: Int = 0, le: Bool = true) -> Float {}
 
 @Docs("Decodes a Bytes buffer or Byte into a UTF-8 String.\n\n**Example:**\n```flame\nlet text = byte.toString(buf)\n```")
-export fn toString(val: Any) -> String {
-}
+export fn toString(val: Unknown) -> String {}
 
 @Docs("Formats a Bytes buffer or Byte as a hexadecimal string.\n\n**Example:**\n```flame\nlet hex = byte.toHex(buf)\n```")
-export fn toHex(val: Any) -> String {
-}
+export fn toHex(val: Unknown) -> String {}
 
 @Docs("Converts a Byte value into its numeric Int representation (0-255).\n\n**Example:**\n```flame\nlet num = byte.toInt(b)\n```")
-export fn toInt(val: Any) -> Int {
-}
+export fn toInt(val: Unknown) -> Int {}
 
 @Docs("Reads all bytes from a file.\n\n**Example:**\n```flame\nlet b = byte.readBytes(\"data.bin\")\n```")
-export fn readBytes(path: String) -> Bytes {
-}
+export fn readBytes(path: String) -> Bytes {}
 
 @Docs("Writes a byte array to a file, overwriting existing contents.\n\n**Example:**\n```flame\nbyte.writeBytes(\"data.bin\", bytes)\n```")
-export fn writeBytes(path: String, bytes: Any) {
-}
+export fn writeBytes(path: String, bytes: Unknown) {}
 
 @Docs("Appends bytes to the end of a file.\n\n**Example:**\n```flame\nbyte.appendBytes(\"archive.fmp\", payload)\n```")
-export fn appendBytes(path: String, bytes: Any) {
-}
+export fn appendBytes(path: String, bytes: Unknown) {}
 
 @Docs("Reads a single byte from a file at offset 0.\n\n**Example:**\n```flame\nlet b = byte.readByte(\"data.bin\")\n```")
-export fn readByte(path: String) -> Int {
-}
+export fn readByte(path: String) -> Int {}
 
 @Docs("Writes a single byte (0-255) to a file.\n\n**Example:**\n```flame\nbyte.writeByte(\"data.bin\", 65)\n```")
-export fn writeByte(path: String, byte: Int) {
-}
+export fn writeByte(path: String, byte: Int) {}
 
 @Docs("Reads a single byte at a specific offset.\n\n**Example:**\n```flame\nlet magic = byte.readByteAt(\"archive.fmp\", 3)\n```")
-export fn readByteAt(path: String, offset: Int) -> Int {
-}
+export fn readByteAt(path: String, offset: Int) -> Int {}
 
 @Docs("Writes a single byte at a specific offset.\n\n**Example:**\n```flame\nbyte.writeByteAt(\"archive.fmp\", 0, 70)\n```")
-export fn writeByteAt(path: String, offset: Int, byte: Int) {
-}
+export fn writeByteAt(path: String, offset: Int, byte: Int) {}
