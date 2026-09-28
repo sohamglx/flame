@@ -368,3 +368,150 @@ pub fn run_tests(args: &[String]) {
     );
 }
 
+pub fn has_benchmark_annotations(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(|stmt| {
+        let check_stmt = if let Stmt::ExportDecl(inner, _) = stmt {
+            inner.as_ref()
+        } else {
+            stmt
+        };
+
+        if let Stmt::FuncDecl { annotations, .. } = check_stmt {
+            annotations.iter().any(|anno| {
+                matches!(
+                    anno.name.as_str(),
+                    "Benchmark" | "benchmark"
+                )
+            })
+        } else {
+            false
+        }
+    })
+}
+
+pub fn run_benchmarks(args: &[String]) {
+    println!("\x1b[1;36mFlame Benchmark Engine\x1b[0m");
+
+    let manifest_content = fs::read_to_string("flame.toml").unwrap_or_default();
+    let mut _pkg_name = "app".to_string();
+    for line in manifest_content.lines() {
+        if line.starts_with("name =") {
+            if let Some(val) = line.split('=').nth(1) {
+                _pkg_name = val.trim().trim_matches('"').trim_matches('\'').to_string();
+            }
+        }
+    }
+
+    let mut candidate_files = Vec::new();
+
+    // Check if user passed a specific file or directory
+    let filter_arg = args.iter().skip(2).find(|a| !a.starts_with('-'));
+    if let Some(target) = filter_arg {
+        let p = Path::new(target);
+        if p.is_file() {
+            candidate_files.push(p.to_path_buf());
+        } else if p.is_dir() {
+            collect_fm_files(p, &mut candidate_files, true);
+        }
+    }
+
+    if candidate_files.is_empty() {
+        if Path::new("tests").exists() {
+            collect_fm_files(Path::new("tests"), &mut candidate_files, true);
+        }
+        if Path::new("benchmarks").exists() {
+            collect_fm_files(Path::new("benchmarks"), &mut candidate_files, true);
+        }
+        if Path::new("src").exists() {
+            collect_fm_files(Path::new("src"), &mut candidate_files, true);
+        }
+    }
+
+    let mut files_to_bench = Vec::new();
+    for path in candidate_files {
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let stmts = match parse_file_stmts(&path, &content) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        if has_benchmark_annotations(&stmts) {
+            files_to_bench.push(path);
+        }
+    }
+
+    if files_to_bench.is_empty() {
+        println!("No files with @Benchmark annotations found.");
+        return;
+    }
+
+    let mut total_measured = 0;
+    let mut total_failed = 0;
+    let total_start = std::time::Instant::now();
+
+    for path in &files_to_bench {
+        println!("\nrunning benchmarks in \x1b[1m{}\x1b[0m:", path.display());
+        let content = match fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(e) => {
+                println!("  \x1b[1;31mfatal:\x1b[0m failed to read file: {}", e);
+                continue;
+            }
+        };
+
+        let mut lexer = Lexer::new(&content);
+        let mut tokens = Vec::new();
+        loop {
+            let tok = lexer.next_token();
+            let is_eof = tok.kind == TokenKind::EOF;
+            tokens.push(tok);
+            if is_eof {
+                break;
+            }
+        }
+        let mut parser = Parser::new(tokens, path.to_string_lossy().to_string());
+        let stmts = match parser.parse() {
+            Ok(s) => s,
+            Err(e) => {
+                println!("  \x1b[1;31mparse error:\x1b[0m {}", e.message);
+                total_failed += 1;
+                continue;
+            }
+        };
+
+        let mut runner = crate::runner::Runner::new(path.clone());
+        if let Ok(content) = fs::read_to_string("flame.toml") {
+            runner.granted_permissions =
+                crate::package_manager::parse_manifest_permissions(&content);
+        }
+        runner.interactive = false;
+        runner.test_mode = true;
+        let _ = runner.run(&stmts);
+
+        let stats = crate::test_engine::execute_test_suite(
+            &mut runner,
+            &stmts,
+            &path.display().to_string(),
+        );
+        total_measured += stats.measured;
+        total_failed += stats.failed;
+    }
+
+    let total_elapsed = total_start.elapsed().as_secs_f64() * 1000.0;
+    let result_str = if total_failed == 0 {
+        "\x1b[1;32mok.\x1b[0m"
+    } else {
+        "\x1b[1;31mFAILED.\x1b[0m"
+    };
+    println!(
+        "\n\x1b[1;32mbenchmark result:\x1b[0m {} {} measured; {} failed; finished in {:.2}ms",
+        result_str,
+        total_measured,
+        total_failed,
+        total_elapsed
+    );
+}
+
+

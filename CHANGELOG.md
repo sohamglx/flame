@@ -2,6 +2,91 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.6.1] - 2026-09-28 (Codename: *Sixth Spark*)
+
+### 🏁 First-Class Declarative Benchmarking Engine (`@Benchmark` & `flame bench`)
+
+- **Dedicated Benchmark CLI Command (`flame bench`)**:
+  - Added native CLI support for `flame bench` and `flamelang bench` (alias: `flame benchmark`), with optional path filtering:
+    ```bash
+    flame bench                # Auto-discovers benchmarks across tests/, benchmarks/, and src/
+    flame bench src/main.fm    # Runs benchmarks in a specific file
+    ```
+  - Isolates benchmark suites from standard test runs, automatically discovering functions decorated with `@Benchmark`.
+- **First-Class `@Benchmark` Annotation**:
+  - Added `@Benchmark` with configurable execution options:
+    ```flame
+    @Benchmark(warmup: 10, iterations: 100, group: "json", name: "100k User Scan & Compute")
+    fn benchmark_user_scan() {
+        // Benchmark code
+    }
+    ```
+  - **Parameters**:
+    - `warmup: Int = 10`: Number of untimed warmup iterations executed before recording data to prime CPU cache lines, TLBs, and branch predictors.
+    - `iterations: Int = 100`: Number of timed measurement runs recorded for statistical metrics.
+    - `group: String = ""`: Grouping tag for automated comparative performance ranking tables.
+    - `name: String = ""`: Custom descriptive benchmark label for display in the report.
+- **Hardware-Accurate Statistical Profiling**:
+  - Measures execution using monotonic hardware timestamps (`Instant::now()`) per iteration.
+  - Outputs detailed distribution profiles:
+    - **Execution Timing**: Total time, Average time/op, Min and Max times.
+    - **Latency Percentiles**: Median (`p50`), 95th percentile (`p95`), and 99th percentile (`p99`) latency tails.
+    - **Throughput**: Calculated operations per second (`ops/sec`).
+    - **Memory Tracking**: Process RSS delta tracking and calculated memory allocated per operation (`per op`).
+  - **Dead-Code Elimination Defense**: Automatically wraps benchmark function return values in `std::hint::black_box` to prevent compiler optimizations from stripping benchmarked computations.
+- **Comparative Group Ranking Tables**:
+  - Automatically aggregates benchmarks sharing a common `group` tag into a comparative leaderboard.
+  - Ranks benchmarks from fastest to slowest and calculates relative performance improvement percentages (`+71.4%`).
+- **Zero-Cost Production Stripping**:
+  - All `@Benchmark`-annotated functions are completely stripped during `flame build --release`, introducing zero overhead and zero binary bloat in production builds.
+
+### ⏱️ High-Precision Monotonic Performance Counters (`std.time`)
+
+- **Zero-Allocation High-Resolution Timers**:
+  - Introduced `time.perfCounter()` and `time.counter()`, returning high-resolution monotonic fractional seconds (`Float`) since process initialization.
+  - Operates with zero heap allocations, eliminating allocator interference in high-frequency profiling loops:
+    ```flame
+    let start = time.perfCounter()
+    // Heavy computation
+    let elapsed = time.perfCounter() - start
+    print($"Elapsed: {elapsed} seconds")
+    ```
+- **Fractional Precision for `Duration` & `Instant`**:
+  - Upgraded `time.instant()` and `Duration` methods (`toMillis()`, `toMilliseconds()`, `toSeconds()`) to return `Float` with fractional sub-millisecond precision instead of truncated integers.
+
+### 💻 System Telemetry & Process Metrics (`std.os`)
+
+- **Real-Time Process & Memory Telemetry**:
+  - Added `os.memory()` returning detailed process memory usage (`{ rss, vms, data, stack, format: "..." }`) with human-readable byte formatting (`B`, `KB`, `MB`, `GB`).
+  - Added `os.cpu()` / `os.cpuUsage()` calculating accurate process CPU utilization percentages across interval deltas.
+  - Added `os.pid()` and `os.ppid()` for process ID introspection.
+- **Host System Resource Monitoring**:
+  - Added `os.systemMemory()` / `os.ram()` returning total, free, available, and used physical RAM.
+  - Added `os.systemCpu()` measuring overall system multi-core CPU load.
+  - Added `os.uptime()` tracking host operating system and process uptime.
+
+### 📦 Complete Native JSON Standard Library (`std.json`)
+
+- **Expanded JSON API Surface**:
+  - Native filesystem reading and writing:
+    - `json.read(path: String) -> Formula | [Unknown]`: Reads and parses a JSON file directly into Flame data structures.
+    - `json.write(path: String, data: Unknown, pretty: Bool = false)`: Directly serializes and writes data structures to disk.
+  - In-memory transformations:
+    - `json.parse(str: String)` & `json.stringify(data: Unknown, pretty: Bool = false)`.
+    - `json.valid(str: String)` / `json.isValid(str: String)`: Fast validation without AST allocation.
+    - `json.get(json_str: String, path: String)`: Direct value queries via JSONPointer / dot syntax.
+    - `json.merge(a: Unknown, b: Unknown)`: Merges two JSON objects or formulas.
+    - `json.size(json_str: String)`: Key and array element counting.
+- **Documentation & Starlight Integration**:
+  - Added dedicated documentation in `docs/src/content/docs/std/json.mdx` and registered the module in sidebar configurations and overview pages.
+
+### 🛠️ IDE & Language Server Support
+
+- **LSP Hover & Autocomplete for `@Benchmark`**:
+  - Integrated `@Benchmark` hover documentation, parameter signatures, and completions across `src/ide/keywords.rs`, `src/ide/definition.rs`, and `src/typechecker/checker.rs`.
+
+---
+
 ## [0.6.0] - 2026-09-27 (Codename: *Sixth Spark*)
 
 ### ⚡ High-Speed Native TOML Configuration (`import "flame.toml"`)

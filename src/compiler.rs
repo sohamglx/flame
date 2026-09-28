@@ -239,6 +239,7 @@ tokio = {{ version = "1", features = ["rt-multi-thread", "macros", "time", "net"
 {deps}
 
 [profile.dev]
+opt-level = 2
 split-debuginfo = "unpacked"
 codegen-units = 256
 

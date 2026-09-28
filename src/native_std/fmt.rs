@@ -34,7 +34,33 @@ pub fn stringify_value(v: &Value) -> String {
             let inner: Vec<String> = t.iter().map(|item| stringify_value(item)).collect();
             format!("({})", inner.join(", "))
         }
+        Value::SharedTuple(t) => {
+            let inner: Vec<String> = t.iter().map(|item| stringify_value(item)).collect();
+            format!("({})", inner.join(", "))
+        }
         Value::Formula(m) | Value::Object(m) => {
+            let mut keys: Vec<&String> = m.keys().filter(|k| !k.starts_with("__")).collect();
+            keys.sort();
+            let mut inner = Vec::new();
+            for k in keys {
+                if let Some(val) = m.get(k) {
+                    if !matches!(val, Value::NativeCallback(_) | Value::Function { .. }) {
+                        let val_str = if let Value::String(s) = val {
+                            format!("\"{}\"", s)
+                        } else {
+                            stringify_value(val)
+                        };
+                        inner.push(format!("{}: {}", k, val_str));
+                    }
+                }
+            }
+            if let Some(Value::String(mod_name)) = m.get("__module__") {
+                format!("{} {{ {} }}", mod_name, inner.join(", "))
+            } else {
+                format!("Object {{ {} }}", inner.join(", "))
+            }
+        }
+        Value::SharedObject(m) => {
             let mut keys: Vec<&String> = m.keys().filter(|k| !k.starts_with("__")).collect();
             keys.sort();
             let mut inner = Vec::new();

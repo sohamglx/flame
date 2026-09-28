@@ -50,6 +50,32 @@ impl Runner {
                 }
             }
             RefPath::Index { owner, index, env } => {
+                let direct_res = env.lock().unwrap().with_ref(&owner, |owner_val| {
+                    match owner_val {
+                        Value::Moved(moved_name) => {
+                            Some(Err(format!("use of moved value '{}'.", moved_name)))
+                        }
+                        Value::Tuple(elems) => {
+                            if index < elems.len() {
+                                Some(Ok(elems[index].clone()))
+                            } else {
+                                Some(Err(format!("Index out of bounds: {}", index)))
+                            }
+                        }
+                        Value::SharedTuple(elems) => {
+                            if index < elems.len() {
+                                Some(Ok(elems[index].clone()))
+                            } else {
+                                Some(Err(format!("Index out of bounds: {}", index)))
+                            }
+                        }
+                        Value::RefPath(..) => None,
+                        _ => Some(Err(format!("cannot index non-tuple/array '{}'", owner))),
+                    }
+                });
+                if let Some(Some(res)) = direct_res {
+                    return res;
+                }
                 let owner_val = {
                     let e = env.lock().unwrap();
                     e.get(&owner)
@@ -60,7 +86,7 @@ impl Runner {
                     }
                     Some(Value::RefPath(next, _)) => {
                         let resolved_owner = self.read_target(env.clone(), next)?;
-                        if let Value::Tuple(elems) = resolved_owner {
+                        if let Some(elems) = resolved_owner.as_tuple() {
                             if index < elems.len() {
                                 Ok(elems[index].clone())
                             } else {
@@ -71,6 +97,13 @@ impl Runner {
                         }
                     }
                     Some(Value::Tuple(elems)) => {
+                        if index < elems.len() {
+                            Ok(elems[index].clone())
+                        } else {
+                            Err(format!("Index out of bounds: {}", index))
+                        }
+                    }
+                    Some(Value::SharedTuple(elems)) => {
                         if index < elems.len() {
                             Ok(elems[index].clone())
                         } else {
@@ -197,6 +230,14 @@ impl Runner {
                             return Err(format!("Index out of bounds: {}", index));
                         }
                     }
+                    Value::SharedTuple(elems) => {
+                        let vec = std::sync::Arc::make_mut(elems);
+                        if index < vec.len() {
+                            vec[index] = new_val.clone();
+                        } else {
+                            return Err(format!("Index out of bounds: {}", index));
+                        }
+                    }
                     _ => {
                         return Err(format!(
                             "cannot assign to index of non-array value in '{}'",
@@ -237,8 +278,11 @@ impl Runner {
                     ));
                 };
                 match &mut owner_val {
-                    Value::Formula(map) => {
+                    Value::Formula(map) | Value::Object(map) => {
                         map.insert(member, new_val);
+                    }
+                    Value::SharedObject(map) => {
+                        std::sync::Arc::make_mut(map).insert(member, new_val);
                     }
                     Value::StructInstance {
                         name: _,

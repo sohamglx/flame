@@ -70,6 +70,7 @@ impl Runner {
                     let vars: Vec<&str> = trimmed.split(',').map(|s| s.trim()).collect();
                     let items_opt = match val {
                         Value::Tuple(items) => Some(items.clone()),
+                        Value::SharedTuple(items) => Some((*items).clone()),
                         _ => None,
                     };
                     if let Some(items) = items_opt {
@@ -111,32 +112,33 @@ impl Runner {
                 } else if name.starts_with('{') && name.ends_with('}') {
                     let trimmed = &name[1..name.len() - 1];
                     let vars: Vec<&str> = trimmed.split(',').map(|s| s.trim()).collect();
-                    match val {
-                        Value::Formula(map)
-                        | Value::Object(map)
-                        | Value::StructInstance { fields: map, .. } => {
-                            for var in vars {
-                                if env.lock().unwrap().variables.contains_key(var) {
-                                    return Err(format!(
-                                        "cannot redeclare variable '{}' in the same scope",
-                                        var
-                                    ));
-                                }
-                                if let Some(field_val) = map.get(var) {
-                                    env.lock().unwrap().define(
-                                        var.to_string(),
-                                        field_val.clone(),
-                                        *is_mut,
-                                    );
-                                } else {
-                                    return Err(format!(
-                                        "field '{}' not found in object destructuring",
-                                        var
-                                    ));
-                                }
+                    let map_opt = val.as_map().or_else(|| match &val {
+                        Value::StructInstance { fields: map, .. } => Some(map),
+                        _ => None,
+                    });
+                    if let Some(map) = map_opt {
+                        for var in vars {
+                            if env.lock().unwrap().variables.contains_key(var) {
+                                return Err(format!(
+                                    "cannot redeclare variable '{}' in the same scope",
+                                    var
+                                ));
+                            }
+                            if let Some(field_val) = map.get(var) {
+                                env.lock().unwrap().define(
+                                    var.to_string(),
+                                    field_val.clone(),
+                                    *is_mut,
+                                );
+                            } else {
+                                return Err(format!(
+                                    "field '{}' not found in object destructuring",
+                                    var
+                                ));
                             }
                         }
-                        _ => return Err(format!("cannot destructure a non-object value")),
+                    } else {
+                        return Err(format!("cannot destructure a non-object value"));
                     }
                 } else {
                     if env.lock().unwrap().variables.contains_key(name) {
@@ -342,37 +344,17 @@ impl Runner {
                                 if direct.exists() { Some(direct) } else { None }
                             });
                         if let Some(res_path) = resolved_opt {
+                            let ext = res_path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                            if (ext == "json" || ext == "fmi") && self.vfs.is_none() && res_path.exists() {
+                                if let Ok(val) = crate::native_std::json::parse_json_file(&res_path) {
+                                    env.lock().unwrap().define(bind_name, val, false);
+                                    return Ok(Value::Nil);
+                                }
+                            }
                             if let Ok(content) = self.read_file_or_vfs(&res_path) {
-                                let ext = res_path.extension().and_then(|s| s.to_str()).unwrap_or("");
                                 if ext == "json" || ext == "fmi" {
-                                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                                        fn json_to_val(v: &serde_json::Value) -> Value {
-                                            match v {
-                                                serde_json::Value::Null => Value::Nil,
-                                                serde_json::Value::Bool(b) => Value::Bool(*b),
-                                                serde_json::Value::Number(n) => {
-                                                    if let Some(i) = n.as_i64() {
-                                                        Value::Int(i)
-                                                    } else if let Some(f) = n.as_f64() {
-                                                        Value::Float(f)
-                                                    } else {
-                                                        Value::Nil
-                                                    }
-                                                }
-                                                serde_json::Value::String(s) => Value::String(s.clone()),
-                                                serde_json::Value::Array(arr) => {
-                                                    Value::Tuple(arr.iter().map(json_to_val).collect())
-                                                }
-                                                serde_json::Value::Object(map) => {
-                                                    let mut m = std::collections::HashMap::new();
-                                                    for (k, v) in map {
-                                                        m.insert(k.clone(), json_to_val(v));
-                                                    }
-                                                    Value::Object(m)
-                                                }
-                                            }
-                                        }
-                                        env.lock().unwrap().define(bind_name, json_to_val(&val), false);
+                                    if let Ok(val) = crate::native_std::json::parse_json_str(&content) {
+                                        env.lock().unwrap().define(bind_name, val, false);
                                         return Ok(Value::Nil);
                                     }
                                 } else if ext == "toml" {
@@ -1101,9 +1083,34 @@ impl Runner {
 
                 match iter_val {
                     Value::Tuple(items) => {
+                        let child = Arc::new(Mutex::new(Env::new_child(env.clone())));
                         for it in items {
-                            let child = Arc::new(Mutex::new(Env::new_child(env.clone())));
-                            child.lock().unwrap().define(var_name.clone(), it, false);
+                            {
+                                let mut lk = child.lock().unwrap();
+                                lk.variables.clear();
+                                lk.define(var_name.clone(), it, false);
+                            }
+
+                            for s in body {
+                                let res = self.execute_statement(s, child.clone())?;
+                                if matches!(res, Value::Return(_)) {
+                                    return Ok(res);
+                                }
+                                if matches!(res, Value::Break) {
+                                    return Ok(Value::Nil);
+                                }
+                            }
+                        }
+                    }
+
+                    Value::SharedTuple(items) => {
+                        let child = Arc::new(Mutex::new(Env::new_child(env.clone())));
+                        for it in items.iter() {
+                            {
+                                let mut lk = child.lock().unwrap();
+                                lk.variables.clear();
+                                lk.define(var_name.clone(), it.clone(), false);
+                            }
 
                             for s in body {
                                 let res = self.execute_statement(s, child.clone())?;
@@ -1118,12 +1125,13 @@ impl Runner {
                     }
 
                     Value::Int(limit) => {
+                        let child = Arc::new(Mutex::new(Env::new_child(env.clone())));
                         for i in 0..limit {
-                            let child = Arc::new(Mutex::new(Env::new_child(env.clone())));
-                            child
-                                .lock()
-                                .unwrap()
-                                .define(var_name.clone(), Value::Int(i), false);
+                            {
+                                let mut lk = child.lock().unwrap();
+                                lk.variables.clear();
+                                lk.define(var_name.clone(), Value::Int(i), false);
+                            }
 
                             for s in body {
                                 let res = self.execute_statement(s, child.clone())?;
@@ -1138,12 +1146,13 @@ impl Runner {
                     }
 
                     Value::Range(start, end) => {
+                        let child = Arc::new(Mutex::new(Env::new_child(env.clone())));
                         for i in start..end {
-                            let child = Arc::new(Mutex::new(Env::new_child(env.clone())));
-                            child
-                                .lock()
-                                .unwrap()
-                                .define(var_name.clone(), Value::Int(i), false);
+                            {
+                                let mut lk = child.lock().unwrap();
+                                lk.variables.clear();
+                                lk.define(var_name.clone(), Value::Int(i), false);
+                            }
 
                             for s in body {
                                 let res = self.execute_statement(s, child.clone())?;
@@ -1157,10 +1166,12 @@ impl Runner {
                         }
                     }
 
-                    Value::Formula(map) | Value::Object(map) => {
+                    val if val.as_map().is_some() => {
+                        let map = val.as_map().unwrap();
                         // Check for 'accept' or 'next' method
                         let method = map.get("accept").or_else(|| map.get("next"));
                         if let Some(m) = method {
+                            let child = Arc::new(Mutex::new(Env::new_child(env.clone())));
                             loop {
                                 let item_res = self.invoke_callback_value(m, vec![]);
                                 match item_res {
@@ -1168,9 +1179,11 @@ impl Runner {
                                         if matches!(val, Value::Nil) {
                                             break; // End of iteration
                                         }
-                                        let child =
-                                            Arc::new(Mutex::new(Env::new_child(env.clone())));
-                                        child.lock().unwrap().define(var_name.clone(), val, false);
+                                        {
+                                            let mut lk = child.lock().unwrap();
+                                            lk.variables.clear();
+                                            lk.define(var_name.clone(), val, false);
+                                        }
 
                                         for s in body {
                                             let res = self.execute_statement(s, child.clone())?;
@@ -1215,7 +1228,7 @@ impl Runner {
             }
             if let Some(mut curr) = current {
                 for part in &parts[1..] {
-                    if let Value::Object(map) | Value::Formula(map) = &curr {
+                    if let Some(map) = curr.as_map() {
                         if let Some(next) = map.get(*part) {
                             curr = next.clone();
                         } else {
@@ -1232,7 +1245,7 @@ impl Runner {
         {
             let env_lock = env.lock().unwrap();
             for (_, var) in env_lock.variables.iter() {
-                if let Value::Object(map) | Value::Formula(map) = &var.value {
+                if let Some(map) = var.value.as_map() {
                     if let Some(val) = map.get(name) {
                         return Some(val.clone());
                     }

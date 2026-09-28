@@ -22,7 +22,9 @@ pub fn run_file(path_str: &str, force_local: bool, script_args: &[String]) {
     }
 
     let pkg_name = get_manifest_pkg_name();
-    let profile = "dev";
+    let is_release = script_args.iter().any(|a| a == "--release" || a == "-r")
+        || std::env::args().any(|a| a == "--release" || a == "-r");
+    let profile = if is_release { "release" } else { "dev" };
     let ext = std::env::consts::EXE_SUFFIX;
     let exe_name = format!("{}{}", pkg_name, ext);
     let dev_exe = Path::new("target").join(profile).join(&exe_name);
@@ -34,11 +36,13 @@ pub fn run_file(path_str: &str, force_local: bool, script_args: &[String]) {
     {
         dev_exe
     } else {
-        let build_args = if force_local {
-            vec!["--local".to_string()]
-        } else {
-            vec![]
-        };
+        let mut build_args = Vec::new();
+        if force_local {
+            build_args.push("--local".to_string());
+        }
+        if is_release {
+            build_args.push("--release".to_string());
+        }
         match build_project(&build_args) {
             Some(p) => p,
             None => return,

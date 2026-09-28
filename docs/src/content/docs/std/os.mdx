@@ -50,6 +50,81 @@ println($"Free: {freeGb} GB")
 
 ---
 
+## Process Memory & CPU Introspection
+
+Flame provides high-precision, non-blocking telemetry for monitoring the currently running process without external profiling tools.
+
+### Complete Process Telemetry (`os.processMemory`)
+
+`os.processMemory()` queries the process statistics directly. On Linux, it uses `/proc/self/statm` and `getrusage(RUSAGE_SELF)` for microsecond-level metrics with zero memory allocation and zero thread suspension.
+
+```flame
+import std.os
+
+let proc = os.processMemory()
+
+println($"Resident Memory (RSS): {proc.rssMb} MB ({proc.rss} bytes)")
+println($"Virtual Memory: {proc.virtualMb} MB")
+println($"Process CPU Usage: {proc.cpu}%")
+println($"Total CPU Time: {proc.cpuTime}s")
+```
+
+### Direct Process Memory (`os.memoryUsage`)
+
+If you only need the current memory footprint in megabytes (MB) for logging or benchmarking:
+
+```flame
+import std.os
+
+let memMb = os.memoryUsage()
+println($"Memory consumption: {memMb} MB")
+```
+
+### Direct Process CPU (`os.cpuUsage`)
+
+To measure process CPU utilization:
+
+```flame
+import std.os
+
+let cpuPercent = os.cpuUsage()
+println($"Current CPU: {cpuPercent}%")
+```
+
+---
+
+## Benchmarking Example
+
+Combine `std.time` and `std.os` to benchmark high-throughput data processing algorithms:
+
+```flame
+import std.time
+import std.os
+import "benchmark.json" as data
+
+let start = time.now()
+
+// Execute intensive workload...
+let mut sum = 0
+for user in data.users {
+    if user.active {
+        sum += user.id
+    }
+}
+
+let elapsed = time.now() - start
+let mem = os.processMemory()
+let cpu = os.cpuUsage()
+
+println($"Processed {data.users.len()} items")
+println($"Elapsed time: {elapsed}")
+println($"Peak memory: {mem.rssMb} MB")
+println($"Virtual memory: {mem.virtualMb} MB")
+println($"CPU utilization: {cpu}%")
+```
+
+---
+
 ## API Reference
 
 ### Functions
@@ -60,7 +135,20 @@ println($"Free: {freeGb} GB")
 | `os.arch` | *None* | `String` | Returns the host CPU processor architecture (e.g., `"x86_64"`, `"aarch64"`). |
 | `os.family` | *None* | `String` | Returns the general OS operating platform family (e.g., `"windows"`, `"unix"`). |
 | `os.hostname` | *None* | `String` | Returns the host machine name / hostname. |
-| `os.mem` | *None* | `memStates` | Returns system physical memory statistics in bytes. |
+| `os.mem` | *None* | `memStates` | Returns overall system physical memory statistics in bytes. |
+| `os.processMemory` | *None* | `ProcessMemoryInfo` | Returns the current process Resident Set Size (`rss`, `rssMb`), virtual memory (`virtualMb`), CPU percentage (`cpu`), and cumulative CPU seconds (`cpuTime`). |
+| `os.memoryUsage` | *None* | `Float` | Returns the current process resident memory consumption directly in Megabytes (MB). |
+| `os.cpuUsage` | *None* | `Float` | Returns the current process CPU usage percentage. |
+
+### `ProcessMemoryInfo` Struct
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `rss` | `Int` | Resident Set Size (physical memory occupied by the process) in bytes. |
+| `rssMb` | `Float` | Resident Set Size converted to Megabytes, rounded to 2 decimal places. |
+| `virtualMb` | `Float` | Total virtual memory mapped by the process in Megabytes. |
+| `cpu` | `Float` | Process CPU utilization percentage. |
+| `cpuTime` | `Float` | Cumulative user and system CPU time consumed by the process in seconds. |
 
 ### `memStates` Struct
 
@@ -70,3 +158,4 @@ println($"Free: {freeGb} GB")
 | `usedMemory` | `Int` | System physical RAM currently in use in bytes. |
 | `availableMemory` | `Int` | System physical RAM available to start new applications without swapping in bytes. |
 | `freeMemory` | `Int` | Completely unallocated system physical RAM in bytes. |
+

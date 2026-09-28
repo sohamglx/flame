@@ -360,6 +360,110 @@ fn compute_fibonacci(n: Int) -> Int {
 
 ---
 
+## Built-in First-Class `@Benchmark` Harness
+
+Flame provides a built-in, first-class `@Benchmark` annotation and dedicated CLI runner (`flame bench`). Unlike a simple timing wrapper, the benchmark engine performs automated warmup runs, executes repeated measurement iterations using a zero-allocation monotonic hardware clock, and outputs detailed statistical profiles.
+
+### Declaring Benchmarks
+
+Decorate any parameterless function with `@Benchmark`:
+
+```flame
+@Benchmark
+fn json_parse() {
+    let data = parse_json(input)
+}
+```
+
+### Configurable Benchmark Options
+
+Pass configuration parameters directly to `@Benchmark`:
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `warmup` | `Int` | `10` | Number of unmeasured warmup iterations to prime caches and branch predictors. |
+| `iterations` | `Int` | `100` | Number of timed measurement iterations. |
+| `group` | `String` | `""` | Grouping identifier for automated comparative benchmark tables. |
+| `name` | `String` | Function Name | Custom human-readable label for reporting. |
+
+```flame
+@Benchmark(
+    warmup: 100,
+    iterations: 1000,
+    group: "json",
+    name: "Standard JSON Parser"
+)
+fn benchmark_standard_json() {
+    let parsed = json.read("dataset.json")
+}
+
+@Benchmark(
+    warmup: 100,
+    iterations: 1000,
+    group: "json",
+    name: "Fast Streaming JSON"
+)
+fn benchmark_fast_json() {
+    let parsed = json.fromJson(raw_bytes)
+}
+```
+
+### Running Benchmarks via CLI
+
+Execute every benchmark across your project using:
+
+```bash
+flame bench
+```
+
+Or target a specific benchmark file:
+
+```bash
+flame bench tests/json_bench.fm
+```
+
+### Statistical Report Output
+
+Flame's benchmark engine generates comprehensive statistical metrics for every benchmark:
+
+```text
+  [PASS] @Benchmark benchmark_standard_json
+    Benchmark: Standard JSON Parser
+
+    Warmup              100 iterations
+    Iterations        1,000 iterations
+
+    Time
+      total          182.43 ms
+      avg             18.24 µs
+      min             15.81 µs
+      max             31.92 µs
+      p50             17.92 µs
+      p95             21.44 µs
+      p99             26.73 µs
+
+    Throughput
+      54,812 ops/sec
+
+    Memory
+      allocated        2.41 MB
+      per op           246 B
+
+    Result: PASS
+
+  ──────────────────────────────────────────────────────────
+  Benchmark Group: json
+  Benchmark                         time/op        ops/sec
+  ──────────────────────────────────────────────────────────
+  Fast Streaming JSON              11.02 µs         90,744
+  Standard JSON Parser             18.24 µs         54,812
+  ──────────────────────────────────────────────────────────
+  improvement                       +65.5%
+  ──────────────────────────────────────────────────────────
+```
+
+---
+
 ### Use Case 4: Struct & Model Reflection
 
 Annotations can decorate structs and enums to inspect schema structures for ORMs or serializers:

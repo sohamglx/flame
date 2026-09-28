@@ -63,6 +63,10 @@ pub fn print_help() {
         cyan, reset
     );
     println!(
+        "  {}bench{} [filter]      Execute performance benchmarks declared with @Benchmark",
+        cyan, reset
+    );
+    println!(
         "  {}new --plugin{} <name> Scaffold native Rust FFI bridges & Cargo configuration (alias: native init)",
         cyan, reset
     );

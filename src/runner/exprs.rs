@@ -22,7 +22,11 @@ impl Runner {
     ) -> Option<Result<Value, String>> {
         match member {
             "toString" => {
-                if let Value::Object(map) | Value::Formula(map) | Value::StructInstance { fields: map, .. } = val {
+                let map_opt = val.as_map().or_else(|| match val {
+                    Value::StructInstance { fields: map, .. } => Some(map),
+                    _ => None,
+                });
+                if let Some(map) = map_opt {
                     if let Some(to_string_val) = map.get("toString") {
                         let mut evaled_args = Vec::new();
                         for (_, arg_expr) in args {
@@ -451,7 +455,8 @@ impl Runner {
                         }
                         Ok(Value::Nil)
                     }
-                    Value::Formula(map) | Value::Object(map) => {
+                    val if val.as_map().is_some() => {
+                        let map = val.as_map().unwrap();
                         if let Some(val) = map.get(member) {
                             Ok(val.clone())
                         } else {
@@ -1167,6 +1172,19 @@ impl Runner {
                             op
                         )),
                     },
+                    (l_obj, r_obj) if *op == BinaryOp::Sub && l_obj.as_map().is_some() && r_obj.as_map().is_some() => {
+                        let m1 = l_obj.as_map().unwrap();
+                        let m2 = r_obj.as_map().unwrap();
+                        if let (Some(Value::Int(n1)), Some(Value::Int(n2))) = (m1.get("nanos"), m2.get("nanos")) {
+                            let diff_secs = ((n1 - n2).max(0) as f64) / 1_000_000_000.0;
+                            Ok(Value::String(format!("{:.6}s", diff_secs)))
+                        } else if let (Some(Value::Int(t1)), Some(Value::Int(t2))) = (m1.get("millis"), m2.get("millis")) {
+                            let diff_secs = ((t1 - t2).max(0) as f64) / 1000.0;
+                            Ok(Value::String(format!("{:.6}s", diff_secs)))
+                        } else {
+                            Ok(Value::Nil)
+                        }
+                    },
                     (l_val, r_val) => match op {
                         BinaryOp::Eq => Ok(Value::Bool(l_val.to_string() == r_val.to_string())),
                         BinaryOp::Ne => Ok(Value::Bool(l_val.to_string() != r_val.to_string())),
@@ -1240,14 +1258,140 @@ impl Runner {
                 }
             }
             Expr::Index(inner, idx, _) => {
+                let idx_val = self.eval_expr(idx, env.clone())?;
+
+                if let Expr::Identifier(name, _) = &**inner {
+                    let direct_res = env.lock().unwrap().with_ref(name, |val| {
+                        match (val, &idx_val) {
+                            (val, Value::Int(i)) if val.as_tuple().is_some() => {
+                                let elems = val.as_tuple().unwrap();
+                                let actual_idx = if *i < 0 { elems.len() as i64 + *i } else { *i };
+                                if actual_idx >= 0 && (actual_idx as usize) < elems.len() {
+                                    let elem = &elems[actual_idx as usize];
+                                    Some(Ok(elem.clone()))
+                                } else {
+                                    Some(Err(format!("Index out of bounds: {} for tuple of length {}", i, elems.len())))
+                                }
+                            }
+                            (val, Value::String(s)) if val.as_map().is_some() => {
+                                let map = val.as_map().unwrap();
+                                Some(Ok(map.get(s).cloned().unwrap_or(Value::Nil)))
+                            }
+                            (val, Value::Int(i)) if val.as_map().is_some() => {
+                                let map = val.as_map().unwrap();
+                                let key = i.to_string();
+                                Some(Ok(map.get(&key).cloned().unwrap_or(Value::Nil)))
+                            }
+                            (Value::String(s), Value::Int(i)) => {
+                                let actual_idx = if *i < 0 { s.len() as i64 + *i } else { *i };
+                                if actual_idx >= 0 && (actual_idx as usize) < s.len() {
+                                    Some(Ok(Value::String(s.chars().nth(actual_idx as usize).unwrap().to_string())))
+                                } else {
+                                    Some(Err(format!("Index out of bounds: {}", i)))
+                                }
+                            }
+                            (Value::Bytes(b), Value::Int(i)) => {
+                                let actual_idx = if *i < 0 { b.len() as i64 + *i } else { *i };
+                                if actual_idx >= 0 && (actual_idx as usize) < b.len() {
+                                    Some(Ok(Value::Byte(b[actual_idx as usize])))
+                                } else {
+                                    Some(Err(format!("Index out of bounds: {}", i)))
+                                }
+                            }
+                            (Value::RefPath(..), _) => None,
+                            _ => Some(Err(format!(
+                                "cannot index into {} with index of type {}",
+                                val.type_name(),
+                                idx_val.type_name()
+                            ))),
+                        }
+                    });
+                    if let Some(Some(res)) = direct_res {
+                        return res;
+                    }
+                }
+
+                if let Expr::Dot(inner_obj, member, _) = &**inner {
+                    if let Expr::Identifier(obj_name, _) = &**inner_obj {
+                        let direct_res = env.lock().unwrap().with_ref(obj_name, |obj_val| {
+                            let match_on_val = |v: &Value| -> Option<Value> {
+                                if let Some(map) = v.as_map() {
+                                    map.get(member).cloned()
+                                } else if let Value::StructInstance { fields, .. } = v {
+                                    fields.get(member).cloned()
+                                } else {
+                                    None
+                                }
+                            };
+                            let field_opt = match obj_val {
+                                Value::Object(_) | Value::Formula(_) | Value::SharedObject(_) | Value::StructInstance { .. } => match_on_val(obj_val),
+                                Value::RefPath(RefPath::Index { owner, index, env: target_env }, _) => {
+                                    target_env.lock().unwrap().with_ref(owner, |owner_val| {
+                                        if let Some(elems) = owner_val.as_tuple() {
+                                            if let Some(elem) = elems.get(*index) {
+                                                match_on_val(elem)
+                                            } else { None }
+                                        } else { None }
+                                    }).flatten()
+                                }
+                                _ => None,
+                            };
+                            if let Some(field) = field_opt {
+                                match (&field, &idx_val) {
+                                    (field, Value::Int(i)) if field.as_tuple().is_some() => {
+                                        let elems = field.as_tuple().unwrap();
+                                        let actual_idx = if *i < 0 { elems.len() as i64 + *i } else { *i };
+                                        if actual_idx >= 0 && (actual_idx as usize) < elems.len() {
+                                            Some(Ok(elems[actual_idx as usize].clone()))
+                                        } else {
+                                            Some(Err(format!("Index out of bounds: {} for tuple of length {}", i, elems.len())))
+                                        }
+                                    }
+                                    (field, Value::String(s)) if field.as_map().is_some() => {
+                                        let map = field.as_map().unwrap();
+                                        Some(Ok(map.get(s).cloned().unwrap_or(Value::Nil)))
+                                    }
+                                    (field, Value::Int(i)) if field.as_map().is_some() => {
+                                        let map = field.as_map().unwrap();
+                                        let key = i.to_string();
+                                        Some(Ok(map.get(&key).cloned().unwrap_or(Value::Nil)))
+                                    }
+                                    (Value::String(s), Value::Int(i)) => {
+                                        let actual_idx = if *i < 0 { s.len() as i64 + *i } else { *i };
+                                        if actual_idx >= 0 && (actual_idx as usize) < s.len() {
+                                            Some(Ok(Value::String(s.chars().nth(actual_idx as usize).unwrap().to_string())))
+                                        } else {
+                                            Some(Err(format!("Index out of bounds: {}", i)))
+                                        }
+                                    }
+                                    (Value::Bytes(b), Value::Int(i)) => {
+                                        let actual_idx = if *i < 0 { b.len() as i64 + *i } else { *i };
+                                        if actual_idx >= 0 && (actual_idx as usize) < b.len() {
+                                            Some(Ok(Value::Byte(b[actual_idx as usize])))
+                                        } else {
+                                            Some(Err(format!("Index out of bounds: {}", i)))
+                                        }
+                                    }
+                                    _ => None,
+                                }
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some(Some(res)) = direct_res {
+                            return res;
+                        }
+                    }
+                }
+
                 let mut inner_val = self.eval_expr(inner, env.clone())?;
                 if let Value::RefPath(path, _) = &inner_val {
                     inner_val = self.read_target(env.clone(), path.clone())?;
                 }
-                let idx_val = self.eval_expr(idx, env.clone())?;
 
                 match (&inner_val, &idx_val) {
-                    (Value::Tuple(elems), Value::Int(i)) => {
+                    (val, Value::Int(i)) if val.as_tuple().is_some() => {
+                        let elems = val.as_tuple().unwrap();
                         let actual_idx = if *i < 0 { elems.len() as i64 + *i } else { *i };
                         if actual_idx >= 0 && (actual_idx as usize) < elems.len() {
                             Ok(elems[actual_idx as usize].clone())
@@ -1255,10 +1399,12 @@ impl Runner {
                             Err(format!("Index out of bounds: {} for tuple of length {}", i, elems.len()))
                         }
                     }
-                    (Value::Object(map) | Value::Formula(map), Value::String(s)) => {
+                    (val, Value::String(s)) if val.as_map().is_some() => {
+                        let map = val.as_map().unwrap();
                         Ok(map.get(s).cloned().unwrap_or(Value::Nil))
                     }
-                    (Value::Object(map) | Value::Formula(map), Value::Int(i)) => {
+                    (val, Value::Int(i)) if val.as_map().is_some() => {
+                        let map = val.as_map().unwrap();
                         let key = i.to_string();
                         if let Some(val) = map.get(&key) {
                             Ok(val.clone())
@@ -1303,6 +1449,56 @@ impl Runner {
                         }
                     }
                 }
+
+                if let Expr::Identifier(name, _) = &**inner {
+                    let direct_dot = env.lock().unwrap().with_ref(name, |val| {
+                        if let Some(map) = val.as_map() {
+                            if let Some(field) = map.get(member) {
+                                return Some(Ok(field.clone()));
+                            }
+                            return Some(Err(format!(
+                                "Property '{}' does not exist on this object or .fmi plugin package.",
+                                member
+                            )));
+                        }
+                        match val {
+                            Value::StructInstance { fields, .. } => {
+                                if let Some(field) = fields.get(member) {
+                                    return Some(Ok(field.clone()));
+                                }
+                                None
+                            }
+                            Value::RefPath(RefPath::Index { owner, index, env: target_env }, _) => {
+                                target_env.lock().unwrap().with_ref(owner, |owner_val| {
+                                    if let Some(elems) = owner_val.as_tuple() {
+                                        if let Some(elem) = elems.get(*index) {
+                                            if let Some(map) = elem.as_map() {
+                                                if let Some(field) = map.get(member) {
+                                                    return Some(Ok(field.clone()));
+                                                }
+                                                return Some(Err(format!(
+                                                    "Property '{}' does not exist on this object or .fmi plugin package.",
+                                                    member
+                                                )));
+                                            }
+                                            if let Value::StructInstance { fields, .. } = elem {
+                                                if let Some(field) = fields.get(member) {
+                                                    return Some(Ok(field.clone()));
+                                                }
+                                            }
+                                        }
+                                    }
+                                    None
+                                }).flatten()
+                            }
+                            _ => None,
+                        }
+                    });
+                    if let Some(Some(res)) = direct_dot {
+                        return res;
+                    }
+                }
+
                 let mut left = self.eval_expr(inner, env.clone())?;
                 if let Value::RefPath(path, _) = &left {
                     left = self.read_target(env.clone(), path.clone())?;
@@ -1333,7 +1529,8 @@ impl Runner {
                             member, name
                         ))
                     }
-                    Value::Formula(map) | Value::Object(map) => {
+                    val if val.as_map().is_some() => {
+                        let map = val.as_map().unwrap();
                         if let Some(val) = map.get(member) {
                             Ok(val.clone())
                         } else {
@@ -1677,6 +1874,100 @@ impl Runner {
                         }
                         return self.eval_expr(inner_expr, env.clone());
                     }
+
+                    if (member == "len" || member == "isEmpty") && args.is_empty() {
+                        if let Expr::Identifier(name, _) = &**inner_expr {
+                            let quick_res = env.lock().unwrap().with_ref(name, |val| {
+                                if let Some(vec) = val.as_tuple() {
+                                    if member == "len" {
+                                        return Some(Ok(Value::Int(vec.len() as i64)));
+                                    } else {
+                                        return Some(Ok(Value::Bool(vec.is_empty())));
+                                    }
+                                }
+                                if let Some(map) = val.as_map() {
+                                    if member == "len" {
+                                        return Some(Ok(Value::Int(map.len() as i64)));
+                                    } else {
+                                        return Some(Ok(Value::Bool(map.is_empty())));
+                                    }
+                                }
+                                match val {
+                                    Value::String(s) => {
+                                        if member == "len" {
+                                            Some(Ok(Value::Int(s.len() as i64)))
+                                        } else {
+                                            Some(Ok(Value::Bool(s.is_empty())))
+                                        }
+                                    }
+                                    Value::Bytes(b) => {
+                                        if member == "len" {
+                                            Some(Ok(Value::Int(b.len() as i64)))
+                                        } else {
+                                            Some(Ok(Value::Bool(b.is_empty())))
+                                        }
+                                    }
+                                    _ => None,
+                                }
+                            });
+                            if let Some(Some(res)) = quick_res {
+                                return res;
+                            }
+                        }
+
+                        if let Expr::Dot(owner_expr, sub_member, _) = &**inner_expr {
+                            if let Expr::Identifier(owner_name, _) = &**owner_expr {
+                                let quick_res = env.lock().unwrap().with_ref(owner_name, |obj_val| {
+                                    let field_opt = if let Some(map) = obj_val.as_map() {
+                                        map.get(sub_member)
+                                    } else if let Value::StructInstance { fields, .. } = obj_val {
+                                        fields.get(sub_member)
+                                    } else {
+                                        None
+                                    };
+                                    if let Some(field) = field_opt {
+                                        if let Some(vec) = field.as_tuple() {
+                                            if member == "len" {
+                                                return Some(Ok(Value::Int(vec.len() as i64)));
+                                            } else {
+                                                return Some(Ok(Value::Bool(vec.is_empty())));
+                                            }
+                                        }
+                                        if let Some(map) = field.as_map() {
+                                            if member == "len" {
+                                                return Some(Ok(Value::Int(map.len() as i64)));
+                                            } else {
+                                                return Some(Ok(Value::Bool(map.is_empty())));
+                                            }
+                                        }
+                                        match field {
+                                            Value::String(s) => {
+                                                if member == "len" {
+                                                    Some(Ok(Value::Int(s.len() as i64)))
+                                                } else {
+                                                    Some(Ok(Value::Bool(s.is_empty())))
+                                                }
+                                            }
+                                            Value::Bytes(b) => {
+                                                if member == "len" {
+                                                    Some(Ok(Value::Int(b.len() as i64)))
+                                                } else {
+                                                    Some(Ok(Value::Bool(b.is_empty())))
+                                                }
+                                            }
+                                            _ => None,
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                });
+                                if let Some(Some(res)) = quick_res {
+                                    return res;
+                                }
+                            }
+                        }
+                    }
+
                     let mut inner_val = self.eval_expr(inner_expr, env.clone())?;
                     if let Value::RefPath(path, _) = &inner_val {
                         inner_val = self.read_target(env.clone(), path.clone())?;
@@ -1923,116 +2214,119 @@ impl Runner {
                             }
                             _ => {}
                         },
-                        Value::Tuple(ref vec) => match member.as_str() {
-                            "len" => return Ok(Value::Int(vec.len() as i64)),
-                            "isEmpty" => return Ok(Value::Bool(vec.is_empty())),
-                            "push" => {
-                                if !args.is_empty() {
-                                    let val = self.eval_expr(&args[0].1, env.clone())?;
+                        ref val if val.as_tuple().is_some() => {
+                            let vec = val.as_tuple().unwrap();
+                            match member.as_str() {
+                                "len" => return Ok(Value::Int(vec.len() as i64)),
+                                "isEmpty" => return Ok(Value::Bool(vec.is_empty())),
+                                "push" => {
+                                    if !args.is_empty() {
+                                        let val = self.eval_expr(&args[0].1, env.clone())?;
+                                        if let Expr::Identifier(var_name, _) = &**inner_expr {
+                                            let mut new_vec = vec.to_vec();
+                                            new_vec.push(val);
+                                            env.lock()
+                                                .unwrap()
+                                                .assign(var_name.clone(), Value::Tuple(new_vec))?;
+                                        }
+                                    }
+                                    return Ok(Value::Nil);
+                                }
+                                "pop" => {
                                     if let Expr::Identifier(var_name, _) = &**inner_expr {
-                                        let mut new_vec = vec.clone();
-                                        new_vec.push(val);
+                                        let mut new_vec = vec.to_vec();
+                                        let popped = new_vec.pop().unwrap_or(Value::Nil);
                                         env.lock()
                                             .unwrap()
                                             .assign(var_name.clone(), Value::Tuple(new_vec))?;
+                                        return Ok(popped);
                                     }
+                                    return Ok(Value::Nil);
                                 }
-                                return Ok(Value::Nil);
-                            }
-                            "pop" => {
-                                if let Expr::Identifier(var_name, _) = &**inner_expr {
-                                    let mut new_vec = vec.clone();
-                                    let popped = new_vec.pop().unwrap_or(Value::Nil);
-                                    env.lock()
-                                        .unwrap()
-                                        .assign(var_name.clone(), Value::Tuple(new_vec))?;
-                                    return Ok(popped);
-                                }
-                                return Ok(Value::Nil);
-                            }
-                            "filter" => {
-                                if !args.is_empty() {
-                                    let cb_val = self.eval_expr(&args[0].1, env.clone())?;
-                                    if let Value::Function {
-                                        params,
-                                        body,
-                                        env: closure_env,
-                                        ..
-                                    } = cb_val
-                                    {
-                                        let mut res = Vec::new();
-                                        for item in vec {
-                                            let child_env = Arc::new(Mutex::new(Env::new_child(
-                                                closure_env.clone(),
-                                            )));
-                                            if !params.is_empty() {
-                                                self.bind_param(
-                                                    child_env.clone(),
-                                                    &params[0],
-                                                    item.clone(),
-                                                );
-                                            }
-                                            let mut matched = false;
-                                            for stmt in &body {
-                                                let stmt_res = self
-                                                    .execute_statement(stmt, child_env.clone())?;
-                                                if let Value::Return(ret_val) = stmt_res {
-                                                    if let Value::Bool(b) = *ret_val {
-                                                        matched = b;
+                                "filter" => {
+                                    if !args.is_empty() {
+                                        let cb_val = self.eval_expr(&args[0].1, env.clone())?;
+                                        if let Value::Function {
+                                            params,
+                                            body,
+                                            env: closure_env,
+                                            ..
+                                        } = cb_val
+                                        {
+                                            let mut res = Vec::new();
+                                            for item in vec {
+                                                let child_env = Arc::new(Mutex::new(Env::new_child(
+                                                    closure_env.clone(),
+                                                )));
+                                                if !params.is_empty() {
+                                                    self.bind_param(
+                                                        child_env.clone(),
+                                                        &params[0],
+                                                        item.clone(),
+                                                    );
+                                                }
+                                                let mut matched = false;
+                                                for stmt in &body {
+                                                    let stmt_res = self
+                                                        .execute_statement(stmt, child_env.clone())?;
+                                                    if let Value::Return(ret_val) = stmt_res {
+                                                        if let Value::Bool(b) = *ret_val {
+                                                            matched = b;
+                                                        }
+                                                        break;
                                                     }
-                                                    break;
+                                                }
+                                                if matched {
+                                                    res.push(item.clone());
                                                 }
                                             }
-                                            if matched {
-                                                res.push(item.clone());
-                                            }
+                                            return Ok(Value::Tuple(res));
                                         }
-                                        return Ok(Value::Tuple(res));
                                     }
+                                    return Ok(Value::Tuple(vec.to_vec()));
                                 }
-                                return Ok(Value::Tuple(vec.clone()));
-                            }
-                            "map" => {
-                                if !args.is_empty() {
-                                    let cb_val = self.eval_expr(&args[0].1, env.clone())?;
-                                    if let Value::Function {
-                                        params,
-                                        body,
-                                        env: closure_env,
-                                        ..
-                                    } = cb_val
-                                    {
-                                        let mut res = Vec::new();
-                                        for item in vec {
-                                            let child_env = Arc::new(Mutex::new(Env::new_child(
-                                                closure_env.clone(),
-                                            )));
-                                            if !params.is_empty() {
-                                                self.bind_param(
-                                                    child_env.clone(),
-                                                    &params[0],
-                                                    item.clone(),
-                                                );
-                                            }
-                                            let mut map_res = Value::Nil;
-                                            for stmt in &body {
-                                                let stmt_res = self
-                                                    .execute_statement(stmt, child_env.clone())?;
-                                                if let Value::Return(ret_val) = stmt_res {
-                                                    map_res = *ret_val;
-                                                    break;
+                                "map" => {
+                                    if !args.is_empty() {
+                                        let cb_val = self.eval_expr(&args[0].1, env.clone())?;
+                                        if let Value::Function {
+                                            params,
+                                            body,
+                                            env: closure_env,
+                                            ..
+                                        } = cb_val
+                                        {
+                                            let mut res = Vec::new();
+                                            for item in vec {
+                                                let child_env = Arc::new(Mutex::new(Env::new_child(
+                                                    closure_env.clone(),
+                                                )));
+                                                if !params.is_empty() {
+                                                    self.bind_param(
+                                                        child_env.clone(),
+                                                        &params[0],
+                                                        item.clone(),
+                                                    );
                                                 }
-                                                map_res = stmt_res;
+                                                let mut map_res = Value::Nil;
+                                                for stmt in &body {
+                                                    let stmt_res = self
+                                                        .execute_statement(stmt, child_env.clone())?;
+                                                    if let Value::Return(ret_val) = stmt_res {
+                                                        map_res = *ret_val;
+                                                        break;
+                                                    }
+                                                    map_res = stmt_res;
+                                                }
+                                                res.push(map_res);
                                             }
-                                            res.push(map_res);
+                                            return Ok(Value::Tuple(res));
                                         }
-                                        return Ok(Value::Tuple(res));
                                     }
+                                    return Ok(Value::Tuple(vec.to_vec()));
                                 }
-                                return Ok(Value::Tuple(vec.clone()));
+                                _ => {}
                             }
-                            _ => {}
-                        },
+                        }
                         Value::Bytes(ref bytes) => match member.as_str() {
                             "len" => return Ok(Value::Int(bytes.len() as i64)),
                             "isEmpty" | "is_empty" => return Ok(Value::Bool(bytes.is_empty())),
@@ -2327,7 +2621,8 @@ impl Runner {
                                 return Ok(Value::Nil);
                             }
                         }
-                        Value::Formula(ref map) => {
+                        ref val if val.as_map().is_some() => {
+                            let map = val.as_map().unwrap();
                             if !map.contains_key("__module__") && !map.contains_key("__crate__") {
                                 match member.as_str() {
                                     "len" => return Ok(Value::Int(map.len() as i64)),
@@ -2987,10 +3282,10 @@ impl Runner {
                         } else if let Value::String(s1) = receiver_val {
                             let s2 = other.to_string();
                             return Ok(Value::String(format!("{}{}", s1, s2)));
-                        } else if let Value::Tuple(t1) = receiver_val {
-                            if let Value::Tuple(t2) = other {
-                                let mut res = t1.clone();
-                                res.extend(t2);
+                        } else if let Some(t1) = receiver_val.as_tuple() {
+                            if let Some(t2) = other.as_tuple() {
+                                let mut res = t1.to_vec();
+                                res.extend_from_slice(t2);
                                 return Ok(Value::Tuple(res));
                             }
                             return Err(format!(
@@ -3007,38 +3302,34 @@ impl Runner {
                             return Err("index requires at least 1 argument (key)".to_string());
                         }
                         let key_val = self.eval_expr(&args[0].1, env.clone())?;
-                        match receiver_val {
-                            Value::Tuple(items) => {
-                                if let Value::Int(i) = key_val {
-                                    if i >= 0 && (i as usize) < items.len() {
-                                        return Ok(items[i as usize].clone());
-                                    }
+                        if let Some(items) = receiver_val.as_tuple() {
+                            if let Value::Int(i) = key_val {
+                                if i >= 0 && (i as usize) < items.len() {
+                                    return Ok(items[i as usize].clone());
                                 }
-                                return Ok(Value::Nil);
                             }
-                            Value::Bytes(items) => {
-                                if let Value::Int(i) = key_val {
-                                    if i >= 0 && (i as usize) < items.len() {
-                                        return Ok(Value::Byte(items[i as usize]));
-                                    }
+                            return Ok(Value::Nil);
+                        } else if let Value::Bytes(items) = &receiver_val {
+                            if let Value::Int(i) = key_val {
+                                if i >= 0 && (i as usize) < items.len() {
+                                    return Ok(Value::Byte(items[i as usize]));
                                 }
-                                return Ok(Value::Nil);
                             }
-                            Value::Object(map)
-                            | Value::Formula(map)
-                            | Value::StructInstance { fields: map, .. } => {
-                                let key_str = key_val.to_string();
-                                if let Some(v) = map.get(&key_str) {
-                                    return Ok(v.clone());
-                                }
-                                return Ok(Value::Nil);
+                            return Ok(Value::Nil);
+                        } else if let Some(map) = receiver_val.as_map().or_else(|| match &receiver_val {
+                            Value::StructInstance { fields: map, .. } => Some(map),
+                            _ => None,
+                        }) {
+                            let key_str = key_val.to_string();
+                            if let Some(v) = map.get(&key_str) {
+                                return Ok(v.clone());
                             }
-                            _ => {
-                                return Err(format!(
-                                    "cannot index on {}",
-                                    receiver_val.type_name()
-                                ));
-                            }
+                            return Ok(Value::Nil);
+                        } else {
+                            return Err(format!(
+                                "cannot index on {}",
+                                receiver_val.type_name()
+                            ));
                         }
                     } else if member == "abs" {
                         if let Value::Int(i) = receiver_val {
@@ -3394,7 +3685,7 @@ impl Runner {
                     }
 
                     let mut custom_method = None;
-                    if let Value::Formula(ref map) | Value::Object(ref map) = receiver_val {
+                    if let Some(map) = receiver_val.as_map() {
                         if let Some(m) = map.get(member) {
                             custom_method = Some(m.clone());
                         }
@@ -3455,6 +3746,9 @@ impl Runner {
 
                                 let child_env =
                                     Arc::new(Mutex::new(Env::new_child(closure_env.clone())));
+                                if is_self_method && !evaled_args.is_empty() {
+                                    child_env.lock().unwrap().define("self".to_string(), evaled_args[0].clone(), true);
+                                }
                                 for (i, p) in params.iter().enumerate() {
                                     if i < evaled_args.len() {
                                         self.bind_param(
@@ -3482,7 +3776,7 @@ impl Runner {
                             Value::NativeCallback(cb) => {
                                 let mut evaled_args = Vec::new();
                                 let mut is_module = false;
-                                if let Value::Object(map) | Value::Formula(map) = &receiver_val {
+                                if let Some(map) = receiver_val.as_map() {
                                     if map.contains_key("__module__") {
                                         is_module = true;
                                     }
@@ -3498,7 +3792,7 @@ impl Runner {
                             Value::NativeClosure(crate::vm::NativeClosureType(cb)) => {
                                 let mut evaled_args = Vec::new();
                                 let mut is_module = false;
-                                if let Value::Object(map) | Value::Formula(map) = &receiver_val {
+                                if let Some(map) = receiver_val.as_map() {
                                     if map.contains_key("__module__") {
                                         is_module = true;
                                     }

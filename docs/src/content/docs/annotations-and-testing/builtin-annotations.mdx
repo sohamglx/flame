@@ -23,6 +23,7 @@ Flame features a comprehensive suite of **built-in PascalCase annotations** that
 | **`@Suggestions`**| **IDE** | `@Suggestions([{name: "TypeName", kind: "object"}])` | Provides advanced IDE auto-completion suggestions for package variables. Type kind can be `object`, `array`, `function`, or `formula`. |
 | **`@Permission`**| **Security** | `@Permission("permission", ...)` | Requests runtime permissions exactly once at program startup. If denied, the program exits. Duplicate permissions across functions are prompted only once. |
 | **`@Test`** | **Testing** | `@Test(timeout: Int = 5000, skip: Bool = false, only: Bool = false, tags: Vector = [])` | Marks a function as an automated test case executed via `flame test`. Stripped in release builds. |
+| **`@Benchmark`**| **Testing / Bench** | `@Benchmark(warmup: Int = 10, iterations: Int = 100, group: String = "", name: String = "")` | Marks a function as a performance benchmark executed via `flame bench`. Automatically profiles iterations, min/max/avg, p50/p95/p99 percentiles, throughput ops/sec, memory allocations per op, and comparative group tables. Stripped in release builds. |
 | **`@Setup`** | **Testing** | `@Setup` | Runs before every test case in the current file. Stripped in release builds. |
 | **`@Cleanup`** | **Testing** | `@Cleanup` | Runs after every test case in the current file. Stripped in release builds. |
 | **`@BeforeAll`**| **Testing** | `@BeforeAll` | Runs once before the entire module test suite initiates. |

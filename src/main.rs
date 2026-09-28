@@ -218,6 +218,9 @@ fn real_main() {
         "test" => {
             run_tests(&args);
         }
+        "bench" | "benchmark" => {
+            run_benchmarks(&args);
+        }
         "gen" => {
             if args.len() < 3 || args[2] != "fmi" {
                 println!("\x1b[1;31merror:\x1b[0m unknown subcommand");

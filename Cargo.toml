@@ -1,6 +1,6 @@
 [package]
 name = "flamelang"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2024"
 description = "A statically typed, fast, and modern programming language built in Rust."
 license = "ISC"
@@ -75,7 +75,7 @@ dbus = "0.9"
 libc = "0.2"
 
 [profile.dev]
-opt-level = 0
+opt-level = 1
 split-debuginfo = "unpacked"
 incremental = true
 codegen-units = 256

@@ -54,6 +54,8 @@ pub enum Value {
         ptr: usize,
     },
     Object(HashMap<String, Value>),
+    SharedObject(Arc<HashMap<String, Value>>),
+    SharedTuple(Arc<Vec<Value>>),
     NativeFunction(fn(*const CValue, usize) -> CValue),
     NativeCallback(fn(Vec<Value>) -> Result<Value, String>),
     NativeClosure(NativeClosureType),
@@ -267,6 +269,10 @@ impl fmt::Display for Value {
                 let s: Vec<String> = items.iter().map(|it| it.to_string()).collect();
                 write!(f, "({})", s.join(", "))
             }
+            Value::SharedTuple(items) => {
+                let s: Vec<String> = items.iter().map(|it| it.to_string()).collect();
+                write!(f, "({})", s.join(", "))
+            }
             Value::Formula(map) => {
                 let mut keys: Vec<&String> = map.keys().collect();
                 keys.sort();
@@ -304,6 +310,15 @@ impl fmt::Display for Value {
                 }
             }
             Value::Object(map) => {
+                let mut keys: Vec<String> = map.keys().cloned().collect();
+                keys.sort();
+                let items: Vec<String> = keys
+                    .iter()
+                    .map(|k| format!("{}: {}", k, map[k]))
+                    .collect();
+                write!(f, "{{ {} }}", items.join(", "))
+            }
+            Value::SharedObject(map) => {
                 let mut keys: Vec<String> = map.keys().cloned().collect();
                 keys.sort();
                 let items: Vec<String> = keys
@@ -398,11 +413,30 @@ impl Value {
             (Value::Tuple(a), Value::Tuple(b)) => {
                 if a.len() != b.len() { return false; }
                 a.iter().zip(b.iter()).all(|(x, y)| x.is_equal(y))
-            },
-            (Value::Formula(a), Value::Formula(b)) => {
+            }
+            (Value::SharedTuple(a), Value::SharedTuple(b)) => {
+                if Arc::ptr_eq(a, b) { return true; }
+                if a.len() != b.len() { return false; }
+                a.iter().zip(b.iter()).all(|(x, y)| x.is_equal(y))
+            }
+            (Value::Tuple(a), Value::SharedTuple(b)) | (Value::SharedTuple(b), Value::Tuple(a)) => {
+                if a.len() != b.len() { return false; }
+                a.iter().zip(b.iter()).all(|(x, y)| x.is_equal(y))
+            }
+            (Value::Formula(a) | Value::Object(a), Value::Formula(b) | Value::Object(b)) => {
                 if a.len() != b.len() { return false; }
                 a.iter().all(|(k, v)| b.get(k).map_or(false, |bv| v.is_equal(bv)))
-            },
+            }
+            (Value::SharedObject(a), Value::SharedObject(b)) => {
+                if Arc::ptr_eq(a, b) { return true; }
+                if a.len() != b.len() { return false; }
+                a.iter().all(|(k, v)| b.get(k).map_or(false, |bv| v.is_equal(bv)))
+            }
+            (Value::SharedObject(a), Value::Formula(b) | Value::Object(b))
+            | (Value::Formula(b) | Value::Object(b), Value::SharedObject(a)) => {
+                if a.len() != b.len() { return false; }
+                a.iter().all(|(k, v)| b.get(k).map_or(false, |bv| v.is_equal(bv)))
+            }
             (Value::Unit(a), Value::Unit(b)) => a == b,
             (Value::Quantity(av, au), Value::Quantity(bv, bu)) => {
                 (av == bv || (av - bv).abs() < 0.001) && au == bu
@@ -429,10 +463,10 @@ impl Value {
             Value::Float(_) => "Float",
             Value::Bool(_) => "Bool",
             Value::String(_) => "String",
-            Value::Tuple(_) => "Tuple",
+            Value::Tuple(_) | Value::SharedTuple(_) => "Tuple",
             Value::Byte(_) => "Byte",
             Value::Bytes(_) => "Byte",
-            Value::Object(_) => "Object",
+            Value::Object(_) | Value::SharedObject(_) => "Object",
             Value::Formula(_) => "Formula",
             Value::Unit(_) => "Unit",
             Value::Quantity(_, _) => "Quantity",
@@ -552,7 +586,23 @@ impl Value {
                     obj_ptr: ptr as *mut std::ffi::c_void,
                 }
             }
-            Value::Formula(_) | Value::Object(_) | Value::StructInstance { .. } => {
+            Value::SharedTuple(arr) => {
+                let mut cvals: Vec<CValue> = arr.iter().map(|v| v.pack()).collect();
+                cvals.shrink_to_fit();
+                let len = cvals.len();
+                let ptr = cvals.as_mut_ptr();
+                std::mem::forget(cvals);
+                CValue {
+                    tag: CValueTag::Array,
+                    int_val: len as i64,
+                    int_val2: 0,
+                    float_val: 0.0,
+                    bool_val: false,
+                    string_ptr: std::ptr::null_mut(),
+                    obj_ptr: ptr as *mut std::ffi::c_void,
+                }
+            }
+            Value::Formula(_) | Value::Object(_) | Value::SharedObject(_) | Value::StructInstance { .. } => {
                 let json_val = crate::native_std::json::value_to_json(self);
                 let json_str = json_val.to_string();
                 let c_str = std::ffi::CString::new(json_str).unwrap_or_default();
@@ -645,6 +695,24 @@ impl Value {
         }
     }
 
+    #[inline]
+    pub fn as_tuple(&self) -> Option<&[Value]> {
+        match self {
+            Value::Tuple(v) => Some(v.as_slice()),
+            Value::SharedTuple(v) => Some(v.as_slice()),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_map(&self) -> Option<&HashMap<String, Value>> {
+        match self {
+            Value::Formula(m) | Value::Object(m) => Some(m),
+            Value::SharedObject(m) => Some(m.as_ref()),
+            _ => None,
+        }
+    }
+
     pub fn as_int(&self) -> Result<i64, String> {
         match self {
             Value::Int(i) => Ok(*i),
@@ -667,6 +735,22 @@ impl Value {
                 let mut out = Vec::new();
 
                 for value in values {
+                    match value {
+                        Value::Int(i) if *i >= 0 && *i <= 255 => {
+                            out.push(*i as u8);
+                        }
+                        _ => {
+                            return Err("expected tuple of integers between 0 and 255".into());
+                        }
+                    }
+                }
+
+                Ok(out)
+            }
+            Value::SharedTuple(values) => {
+                let mut out = Vec::new();
+
+                for value in values.iter() {
                     match value {
                         Value::Int(i) if *i >= 0 && *i <= 255 => {
                             out.push(*i as u8);
@@ -812,8 +896,30 @@ impl Env {
         }
     }
 
+    pub fn with_ref<F, R>(&self, name: &str, f: F) -> Option<R>
+    where
+        F: FnOnce(&Value) -> R,
+    {
+        if let Some(entry) = self.variables.get(name) {
+            Some(f(&entry.value))
+        } else if let Some(parent) = &self.parent {
+            parent.lock().unwrap().with_ref(name, f)
+        } else {
+            None
+        }
+    }
+
     pub fn define(&mut self, name: String, val: Value, is_mut: bool) {
         self.variables.insert(name, VarEntry { value: val, is_mut });
+    }
+
+    pub fn set_local(&mut self, name: String, val: Value, is_mut: bool) {
+        if let Some(entry) = self.variables.get_mut(&name) {
+            entry.value = val;
+            entry.is_mut = is_mut;
+        } else {
+            self.variables.insert(name, VarEntry { value: val, is_mut });
+        }
     }
 
     pub fn assign(&mut self, name: String, val: Value) -> Result<(), String> {

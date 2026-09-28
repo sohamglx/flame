@@ -45,17 +45,61 @@ println($"String: {now.toString()}")
 
 ---
 
+## High-Resolution Benchmarking (`time.perfCounter`)
+
+For microbenchmarks and profiling, Flame provides `time.perfCounter()` (and alias `time.counter()`). Equivalent to Python's `time.perf_counter()`, it queries the system's high-resolution monotonic clock with zero allocations and returns elapsed fractional seconds as a `Float`.
+
+```flame
+import std.time
+
+let start = time.perfCounter()
+
+// Run benchmark workload...
+let mut sum = 0
+for i in 0..1000000 {
+    sum = sum + i
+}
+
+let elapsed = time.perfCounter() - start
+println($"Workload finished in {elapsed} seconds")
+```
+
+---
+
+## Monotonic Elapsed Timers (`time.instant`)
+
+Use `time.instant()` to capture an immutable starting point in monotonic time, and query `.elapsed()` to receive a `Duration` object:
+
+```flame
+import std.time
+
+let timer = time.instant()
+
+// Execute code...
+time.sleep(50)
+
+let duration = timer.elapsed()
+println($"Elapsed Millis:  {duration.toMillis()} ms")
+println($"Elapsed Seconds: {duration.toSeconds()} s")
+println($"Formatted:       {duration.toString()}")
+```
+
+---
+
 ## API Summary Tables
 
 ### Time (`std.time`)
 
 | Method | Arguments | Returns | Description |
 | :--- | :--- | :--- | :--- |
+| `time.perfCounter` | *None* | `Float` | Returns high-resolution performance counter in fractional seconds (monotonic, zero-alloc). |
+| `time.counter` | *None* | `Float` | Alias for `time.perfCounter()`. |
+| `time.instant` | *None* | `Instant` | Returns a monotonic instant suitable for measuring elapsed durations. |
 | `time.now` | *None* | `Timestamp` | Returns the current UTC time as a Timestamp object. |
 | `time.parse` | `date_string: String` | `Timestamp` | Parses an ISO-8601 or RFC-3339 string into a Timestamp. |
 | `time.fromMillis` | `milliseconds: Int` | `Timestamp` | Creates a Timestamp from Unix epoch milliseconds. |
 | `time.fromSeconds` | `seconds: Int` | `Timestamp` | Creates a Timestamp from Unix epoch seconds. |
-| `time.instant` | *None* | `Instant` | Returns a monotonic point in time suitable for measuring elapsed durations. |
+| `time.sleep` | `ms: Int` | `Nil` | Suspends execution for the specified milliseconds. |
 
 ### Timestamp Methods (`Timestamp`)
 
@@ -66,3 +110,18 @@ The `Timestamp` object provides the following native methods:
 | `.toMillis()` | *None* | `Int` | Returns the UNIX epoch milliseconds. |
 | `.toSeconds()` | *None* | `Int` | Returns the UNIX epoch seconds. |
 | `.toString()` | *None* | `String` | Returns the human readable UTC date time string. |
+
+### Duration Methods (`Duration`)
+
+Returned by `Instant.elapsed()`, the `Duration` object provides:
+
+| Method / Property | Returns | Description |
+| :--- | :--- | :--- |
+| `.toMillis()` | `Float` | Total elapsed milliseconds as a Float. |
+| `.toMilliseconds()` | `Float` | Alias for `.toMillis()`. |
+| `.toSeconds()` | `Float` | Total elapsed seconds as a Float (e.g. `0.2850`). |
+| `.toString()` | `String` | Formatted duration string (e.g. `0.2850s`). |
+| `.millis` | `Int` | Whole elapsed milliseconds integer. |
+| `.nanos` | `Int` | Whole elapsed nanoseconds integer. |
+| `.seconds` | `Float` | Direct Float seconds value. |
+

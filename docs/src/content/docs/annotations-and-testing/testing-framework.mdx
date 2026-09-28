@@ -112,8 +112,50 @@ When a `panic(message)` occurs inside a `@Test`-annotated routine, Flame's test 
 
 ---
 
+## Benchmarking Framework (`@Benchmark`)
+
+Flame provides a built-in, first-class performance benchmarking framework. Simply decorate functions with `@Benchmark` and execute them via `flame bench`.
+
+```flame
+@Benchmark(warmup: 10, iterations: 100, group: "crypto", name: "SHA-256 Hashing")
+fn benchmark_sha256() {
+    let hash = crypto.sha256("benchmark-payload")
+}
+```
+
+### Configuration Parameters
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `warmup` | `Int` | `10` | Unmeasured iterations to warm CPU caches and JIT paths. |
+| `iterations` | `Int` | `100` | Timed iterations measured for statistical profiling. |
+| `group` | `String` | `""` | Tag for generating comparative performance ranking tables. |
+| `name` | `String` | Function Name | Display name in benchmark reports. |
+
+### Running Benchmarks
+
+```bash
+# Run all benchmarks across tests/, benchmarks/, and src/
+flame bench
+
+# Run a specific benchmark file
+flame bench tests/crypto_bench.fm
+```
+
+### Statistical Metrics & Comparative Reports
+
+Each benchmark generates:
+- **Total Time & Average Time / Op** (with microsecond / nanosecond precision)
+- **Min & Max Latency**
+- **Percentiles**: `p50` (median), `p95`, `p99`
+- **Throughput**: Calculated `ops/sec`
+- **Memory Allocation**: Total bytes and bytes per op (using OS page RSS tracking)
+- **Group Comparison Tables**: Automatically ranks benchmarks sharing a `group` and computes the relative percentage improvement!
+
+---
+
 ## Zero-Cost Production Stripping
 
 <Aside type="tip" title="Zero Overhead">
-All test-annotated functions (`@Test`, `@Setup`, `@Cleanup`, `@BeforeAll`, `@AfterAll`, `@Parameterized`) are **automatically stripped** during `flame build --release`. Test code adds zero bytes and zero overhead to production binaries.
+All test- and benchmark-annotated functions (`@Test`, `@Benchmark`, `@Setup`, `@Cleanup`, `@BeforeAll`, `@AfterAll`, `@Parameterized`) are **automatically stripped** during `flame build --release`. Test and benchmark code adds zero bytes and zero overhead to production binaries.
 </Aside>

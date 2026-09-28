@@ -1,7 +1,19 @@
 package json
 
-@Docs("Parses a JSON string into a Flame value (formula, array, string, number, boolean, or nil).\n\n**Example:**\n```flame\nlet obj = json.parse(\"{\\\"name\\\": \\\"Flame\\\"}\")\nprintln(obj.name)\n```")
+@Docs("Parses a JSON string into a Flame value (formula/object, tuple/array, string, number, boolean, or nil).\n\n**Example:**\n```flame\nimport std.json\n\nlet obj = json.parse(\"{\\\"name\\\": \\\"Flame\\\", \\\"version\\\": \\\"0.6.0\\\"}\")\nprintln(obj.name)\n```")
 export fn parse(string: String) -> Object {}
 
-@Docs("Serializes a Flame value into a JSON formatted string.\n\n**Example:**\n```flame\nlet str = json.stringify(formula { key: \"value\" })\n```")
-export fn stringify(value: Unknown) -> String {}
+@Docs("Parses JSON from either a String or a raw byte buffer (Bytes).\n\n**Example:**\n```flame\nimport std.json\n\nlet raw_bytes = [0x7b, 0x22, 0x61, 0x22, 0x3a, 0x31, 0x7d]\nlet data = json.fromJson(raw_bytes)\nprintln(data.a)\n```")
+export fn fromJson(data: Unknown) -> Object {}
+
+@Docs("High-performance streaming JSON file reader that deserializes directly from a disk file path without loading the raw string into memory.\n\n**Example:**\n```flame\nimport std.json\n\nlet dataset = json.read(\"benchmark.json\")\nprintln(dataset.users.len())\n```")
+export fn read(filepath: String) -> Object {}
+
+@Docs("Serializes a Flame value into a JSON formatted string. Optionally pass `pretty: true` for 2-space indented output.\n\n**Example:**\n```flame\nimport std.json\n\nlet compact = json.stringify(data)\nlet pretty = json.stringify(data, true)\n```")
+export fn stringify(value: Unknown, pretty: Bool = false) -> String {}
+
+@Docs("Serializes a Flame value directly into a destination file on disk. Optionally formats with indentation if `pretty: true`.\n\n**Example:**\n```flame\nimport std.json\n\nlet success = json.write(\"output.json\", data, true)\n```")
+export fn write(filepath: String, value: Unknown, pretty: Bool = false) -> Bool {}
+
+@Docs("Quickly validates whether a string contains valid JSON syntax without allocating memory or building an in-memory object tree.\n\n**Example:**\n```flame\nimport std.json\n\nif json.valid(raw_str) {\n    let val = json.parse(raw_str)\n}\n```")
+export fn valid(string: String) -> Bool {}

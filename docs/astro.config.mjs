@@ -136,6 +136,7 @@ export default defineConfig({
                 items: [
                     { label: 'Overview', slug: 'std/overview' },
                     { label: "Formatting (std.fmt)", slug: 'std/fmt' },
+                    { label: 'JSON (std.json)', slug: 'std/json' },
                     { label: 'Environment Variables (std.env)', slug: 'std/env' },
                     { label: 'File System (std.fs)', slug: 'std/filesystem' },
                     { label: 'Networking (std.net)', slug: 'std/net' },

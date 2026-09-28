@@ -209,6 +209,10 @@ const KEYWORDS: &[(&str, &str)] = &[
         "```flame\nannotation @Test(timeout: Int = 1000, skip: Bool = false)\n```\n**Unit Test**\n\nMarks this function as a test case. The compiler will aggregate all `@Test` functions and execute them in a secure test harness when you run `flame test`.\n\n**Parameters:**\n- `timeout: Int`: Timeout in milliseconds. Test fails if execution exceeds this.\n- `skip: Bool`: If true, skips executing this test.",
     ),
     (
+        "@Benchmark",
+        "```flame\nannotation @Benchmark(warmup: Int = 10, iterations: Int = 100, group: String = \"\", name: String = \"\")\n```\n**Performance Benchmark**\n\nMarks this function as a performance benchmark executed by `flame bench`. Automatically handles warmup iterations, monotonic measurement sampling, percentiles (p50, p95, p99), throughput ops/sec, memory per op, and group comparisons.\n\n**Parameters:**\n- `warmup: Int`: Number of unmeasured warmup iterations (default: 10).\n- `iterations: Int`: Number of measured sample iterations (default: 100).\n- `group: String`: Grouping label for comparative benchmark tables.\n- `name: String`: Custom display label for reports.",
+    ),
+    (
         "@Embedded",
         "```flame\nannotation @Embedded(target: String)\n```\n**Embedded Target Definition**\n\nDirects the compiler to emit machine code tailored for a specific microcontroller architecture, such as `arduino-uno` or `rp2040`.\n\n**Parameters:**\n- `target: String`: The hardware architecture target name.",
     ),
@@ -345,6 +349,10 @@ const KEYWORDS: &[(&str, &str)] = &[
     (
         "Test",
         "```flame\nannotation @Test(timeout: Int = 1000, skip: Bool = false)\n```\n**Unit Test**\n\nMarks this function as a test case. The compiler will aggregate all `@Test` functions and execute them in a secure test harness when you run `flame test`.\n\n**Parameters:**\n- `timeout: Int`: Timeout in milliseconds. Test fails if execution exceeds this.\n- `skip: Bool`: If true, skips executing this test.",
+    ),
+    (
+        "Benchmark",
+        "```flame\nannotation @Benchmark(warmup: Int = 10, iterations: Int = 100, group: String = \"\", name: String = \"\")\n```\n**Performance Benchmark**\n\nMarks this function as a performance benchmark executed by `flame bench`. Automatically handles warmup iterations, monotonic measurement sampling, percentiles (p50, p95, p99), throughput ops/sec, memory per op, and group comparisons.\n\n**Parameters:**\n- `warmup: Int`: Number of unmeasured warmup iterations (default: 10).\n- `iterations: Int`: Number of measured sample iterations (default: 100).\n- `group: String`: Grouping label for comparative benchmark tables.\n- `name: String`: Custom display label for reports.",
     ),
     (
         "Setup",
@@ -616,6 +624,7 @@ pub fn get_keyword_completions(
         let annotations = [
             "@Application",
             "@Test",
+            "@Benchmark",
             "@Embedded",
             "@Cli",
             "@Command",

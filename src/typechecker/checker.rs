@@ -149,6 +149,12 @@ impl TypeChecker {
                     "```flame\n@Test\n```\n\nMarks a function as a unit test. It will be executed by the test runner.".to_string()
                 );
                 docs.push("**@Test Function**\nThis function is a unit test case.".to_string());
+            } else if ann.name == "Benchmark" {
+                self.insert_hover_info(
+                    ann.name_span.clone(),
+                    "```flame\n@Benchmark(warmup: Int = 10, iterations: Int = 100, group: String = \"\", name: String = \"\")\n```\n\nMarks a function as a performance benchmark executed by `flame bench`.".to_string()
+                );
+                docs.push("**@Benchmark Function**\nThis function is a performance benchmark.".to_string());
             } else if ann.name == "Requires" {
                 self.insert_hover_info(
                     ann.name_span.clone(),

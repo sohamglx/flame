@@ -39,6 +39,18 @@ pub fn def() -> NativeModuleDef {
                 params: vec![],
                 return_type: "Instant".to_string(),
             },
+            NativeFunctionDef {
+                name: "perfCounter".to_string(),
+                description: "Returns the current performance counter in fractional seconds (high-resolution monotonic clock) suitable for benchmarking.".to_string(),
+                params: vec![],
+                return_type: "Float".to_string(),
+            },
+            NativeFunctionDef {
+                name: "counter".to_string(),
+                description: "Alias for perfCounter(). Returns current monotonic counter in fractional seconds.".to_string(),
+                params: vec![],
+                return_type: "Float".to_string(),
+            },
         ],
         types: vec![
             NativeTypeDef {
@@ -69,19 +81,35 @@ pub fn def() -> NativeModuleDef {
             NativeTypeDef {
                 name: "Duration".to_string(),
                 description: "A span of time.".to_string(),
-                fields: vec![("millis".to_string(), "Int".to_string())],
+                fields: vec![
+                    ("millis".to_string(), "Int".to_string()),
+                    ("nanos".to_string(), "Int".to_string()),
+                    ("seconds".to_string(), "Float".to_string()),
+                ],
                 methods: vec![
                     NativeFunctionDef {
-                        name: "toMilliseconds".to_string(),
-                        description: "Returns the total milliseconds of this duration.".to_string(),
+                        name: "toMillis".to_string(),
+                        description: "Returns the total milliseconds of this duration as a Float.".to_string(),
                         params: vec![],
-                        return_type: "Int".to_string(),
+                        return_type: "Float".to_string(),
+                    },
+                    NativeFunctionDef {
+                        name: "toMilliseconds".to_string(),
+                        description: "Alias for toMillis(). Returns the total milliseconds of this duration as a Float.".to_string(),
+                        params: vec![],
+                        return_type: "Float".to_string(),
                     },
                     NativeFunctionDef {
                         name: "toSeconds".to_string(),
-                        description: "Returns the total seconds of this duration.".to_string(),
+                        description: "Returns the total seconds of this duration as a Float.".to_string(),
                         params: vec![],
-                        return_type: "Int".to_string(),
+                        return_type: "Float".to_string(),
+                    },
+                    NativeFunctionDef {
+                        name: "toString".to_string(),
+                        description: "Returns a human readable duration string.".to_string(),
+                        params: vec![],
+                        return_type: "String".to_string(),
                     },
                 ],
             },
@@ -212,10 +240,12 @@ pub fn init() -> HashMap<String, Value> {
             match SystemTime::now().duration_since(UNIX_EPOCH) {
                 Ok(n) => {
                     let m = n.as_millis() as i64;
+                    let nanos = n.as_nanos() as i64;
                     let mut fields = HashMap::new();
                     fields.insert("millis".to_string(), Value::Int(m));
+                    fields.insert("nanos".to_string(), Value::Int(nanos));
                     fields.insert("toMillis".to_string(), Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(move |_| Ok(Value::Int(m))))));
-                    fields.insert("toSeconds".to_string(), Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(move |_| Ok(Value::Int(m / 1000))))));
+                    fields.insert("toSeconds".to_string(), Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(move |_| Ok(Value::Float((nanos as f64) / 1_000_000_000.0))))));
                     fields.insert("toString".to_string(), Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(move |_| {
                         if let chrono::LocalResult::Single(dt) = chrono::Utc.timestamp_millis_opt(m) {
                             Ok(Value::String(dt.to_rfc3339()))
@@ -321,17 +351,43 @@ pub fn init() -> HashMap<String, Value> {
         }),
     );
 
+    static PROCESS_EPOCH: std::sync::OnceLock<StdInstant> = std::sync::OnceLock::new();
+    let _ = PROCESS_EPOCH.get_or_init(StdInstant::now);
+
+    let perf_counter_fn = Value::NativeCallback(|_args| {
+        let elapsed = PROCESS_EPOCH.get().unwrap().elapsed().as_secs_f64();
+        Ok(Value::Float(elapsed))
+    });
+
+    m.insert("perfCounter".to_string(), perf_counter_fn.clone());
+    m.insert("counter".to_string(), perf_counter_fn);
+
     m.insert(
         "instant".to_string(),
         Value::NativeCallback(|_args| {
             let start = StdInstant::now();
             let mut fields = HashMap::new();
             fields.insert("elapsed".to_string(), Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(move |_| {
-                let m = start.elapsed().as_millis() as i64;
+                let elapsed = start.elapsed();
+                let secs_f64 = elapsed.as_secs_f64();
+                let millis_f64 = (elapsed.as_nanos() as f64) / 1_000_000.0;
+                let millis_i64 = elapsed.as_millis() as i64;
+                let nanos_i64 = elapsed.as_nanos() as i64;
+
                 let mut d_fields = HashMap::new();
-                d_fields.insert("millis".to_string(), Value::Int(m));
-                d_fields.insert("toMilliseconds".to_string(), Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(move |_| Ok(Value::Int(m))))));
-                d_fields.insert("toSeconds".to_string(), Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(move |_| Ok(Value::Int(m / 1000))))));
+                d_fields.insert("millis".to_string(), Value::Int(millis_i64));
+                d_fields.insert("nanos".to_string(), Value::Int(nanos_i64));
+                d_fields.insert("seconds".to_string(), Value::Float(secs_f64));
+
+                let to_millis = Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(move |_| Ok(Value::Float(millis_f64)))));
+                d_fields.insert("toMillis".to_string(), to_millis.clone());
+                d_fields.insert("toMilliseconds".to_string(), to_millis);
+
+                d_fields.insert("toSeconds".to_string(), Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(move |_| Ok(Value::Float(secs_f64))))));
+
+                let to_string = format!("{:.4}s", secs_f64);
+                d_fields.insert("toString".to_string(), Value::NativeClosure(crate::vm::NativeClosureType(std::sync::Arc::new(move |_| Ok(Value::String(to_string.clone()))))));
+
                 Ok(Value::Object(d_fields))
             }))));
             Ok(Value::Object(fields))

@@ -1,0 +1,183 @@
+---
+title: JSON (std.json)
+description: Ultra-fast streaming JSON parsing, serialization, and file I/O in Flame.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Flame includes a high-performance, native JSON module (`std.json`) built on top of streaming deserializers. It handles everything from quick string serialization to multi-gigabyte data files with zero intermediate Serde AST overhead.
+
+---
+
+## Overview
+
+In Flame, JSON can be handled in two convenient ways:
+1. **Direct Resource Import**: `import "config.json" as config` parses the JSON file at load time directly into a Flame data structure.
+2. **Standard Library Module**: `import std.json` provides programmatic control to parse, validate, stream from disk, stringify, and write JSON files.
+
+```flame
+import std.json
+
+// 1. Parsing a JSON string
+let raw = "{\"name\": \"Flame\", \"version\": \"0.6.0\", \"tags\": [\"fast\", \"safe\"]}"
+let pkg = json.parse(raw)
+
+println($"Package: {pkg.name}")
+println($"First tag: {pkg.tags[0]}")
+
+// 2. Serializing back to JSON string
+let compact = json.stringify(pkg)
+let pretty = json.stringify(pkg, true)
+println(pretty)
+```
+
+---
+
+## Direct Resource Import vs `std.json`
+
+Flame allows importing `.json` and `.fmi` files directly as modules:
+
+<Tabs>
+  <TabItem label="Direct Resource Import">
+```flame
+// Directly bind the contents of "users.json"
+import "users.json" as data
+
+println($"Total users: {data.users.len()}")
+let first_user = data.users[0]
+println($"User: {first_user.name} ({first_user.email})")
+```
+  </TabItem>
+  <TabItem label="Programmatic std.json">
+```flame
+import std.json
+
+// Stream directly from a file path with a 256 KB buffer
+let data = json.read("users.json")
+
+println($"Total users: {data.users.len()}")
+```
+  </TabItem>
+</Tabs>
+
+<Aside type="tip">
+Both **direct resource import** and **`json.read(...)`** utilize Flame's single-pass streaming deserializer. They read directly into native Flame values (`Value::Object`, `Value::Tuple`, `Value::Int`, `Value::Float`, `Value::String`, `Value::Bool`) without allocating intermediate AST representations.
+</Aside>
+
+---
+
+## Binary and Byte Deserialization (`json.fromJson`)
+
+When working with network requests, WebSockets, or binary payloads (`Bytes`), use `json.fromJson(data)`. It accepts either a `String` or raw `Bytes` and deserializes directly from the slice without intermediate string conversion:
+
+```flame
+import std.json
+
+// Parse directly from raw binary byte buffer
+let raw_bytes: Bytes = [0x7b, 0x22, 0x61, 0x75, 0x74, 0x68, 0x22, 0x3a, 0x20, 0x74, 0x72, 0x75, 0x65, 0x7d]
+let data = json.fromJson(raw_bytes)
+
+println($"Authenticated: {data.auth}")
+```
+
+---
+
+## Reading & Writing JSON Files
+
+### Fast Streaming File Reader (`json.read`)
+
+For large files (e.g. hundreds of megabytes), `json.read(filepath)` streams the file in chunks from disk, keeping memory consumption minimal:
+
+```flame
+import std.json
+import std.time
+
+let start = time.now()
+let dataset = json.read("large_dataset.json")
+let elapsed = time.now() - start
+
+println($"Read {dataset.records.len()} records in {elapsed}")
+```
+
+### Writing JSON Files (`json.write`)
+
+`json.write(filepath, value, [pretty])` serializes a Flame data structure directly to disk:
+
+```flame
+import std.json
+
+let report = {
+    title: "Performance Benchmark",
+    records: 100000,
+    passed: true,
+    score: 99.8
+}
+
+// Write compact JSON
+json.write("report.min.json", report)
+
+// Write formatted, human-readable JSON (with 2-space indentation)
+json.write("report.json", report, true)
+```
+
+---
+
+## Fast Syntax Validation (`json.valid`)
+
+If you only need to verify that incoming input is valid JSON before processing or storing it, use `json.valid(str)`. This checks the JSON grammar without constructing objects or allocating memory in the VM:
+
+```flame
+import std.json
+
+let payload = "{\"status\": 200, \"ok\": true}"
+
+if json.valid(payload) {
+    println("Payload is valid JSON")
+} else {
+    println("Invalid JSON received")
+}
+```
+
+---
+
+## Working with Collections and Indexed Access
+
+JSON objects in Flame become native `Object`s, and JSON arrays become native `Tuple`s. You can access properties using dot syntax (`.`) or dynamic brackets (`[...]`):
+
+```flame
+import std.json
+
+let payload = json.parse("[
+    {\"id\": 1, \"active\": true, \"scores\": [10.5, 20.0]},
+    {\"id\": 2, \"active\": false, \"scores\": [30.0, 45.5]}
+]")
+
+// Iterate by index
+for i in 0..payload.len() {
+    let item = payload[i]
+    if item.active {
+        println($"Active Item #{item.id} with high score: {item.scores[1]}")
+    }
+}
+```
+
+### High-Performance Loop Optimizations
+Flame includes engine-level zero-copy optimizations for JSON data structures:
+- **Zero-Copy Length**: `items.len()` on variables and nested fields (`data.users.len()`) retrieves lengths in $O(1)$ without cloning the container.
+- **Zero-Copy Element Access**: `users[i]` clones only the indexed element, preventing $O(N^2)$ array cloning.
+- **Direct Nested Member Indexing**: `user.tags[1]` accesses nested items directly without cloning the intermediate array.
+
+---
+
+## API Summary Table
+
+### `std.json`
+
+| Function | Parameters | Return Type | Description |
+| :--- | :--- | :--- | :--- |
+| `json.parse` | `text: String` | `Object \| Tuple \| Value` | Parses a JSON string into native Flame values. |
+| `json.fromJson` | `data: String \| Bytes` | `Object \| Tuple \| Value` | Parses JSON from a string or binary byte buffer. |
+| `json.read` | `filepath: String` | `Object \| Tuple \| Value` | Streams and parses a JSON file directly from disk with a 256 KB buffer. |
+| `json.stringify` | `value: Any, [pretty: Bool]` | `String` | Serializes any Flame value to a JSON string. Set `pretty` to `true` for formatted output. |
+| `json.write` | `filepath: String, value: Any, [pretty: Bool]` | `Bool` | Serializes and streams a Flame value directly into a file on disk. |
+| `json.valid` | `text: String` | `Bool` | Returns `true` if the string is valid JSON syntax without building data structures. |

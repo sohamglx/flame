@@ -1,17 +1,15 @@
 package os
-@Docs("Returns the operating system name (e.g. `\"windows\"`, `\"linux\"`, `\"macos\"`).\n\n**Example:**\n```flame\nlet platform = os.name()\n```")
-export fn name() -> String {
-}
 
-@Docs("Returns the system CPU architecture (e.g. `\"x86_64\"`, `\"aarch64\"`).")
-export fn arch() -> String {
-}
+@Docs("Returns the operating system name identifier (e.g. `\"windows\"`, `\"linux\"`, `\"macos\"`).\n\n**Example:**\n```flame\nlet platform = os.name()\n```")
+export fn name() -> String {}
 
-@Docs("Returns the system a string describing the family of the operating system. An example value may be: `\"unix\"`, or `\"windows\"`. This value may be an empty string if the family is unknown.")
-export fn family() -> String {
-}
+@Docs("Returns the system CPU processor architecture (e.g. `\"x86_64\"`, `\"aarch64\"`).\n\n**Example:**\n```flame\nlet arch = os.arch()\n```")
+export fn arch() -> String {}
 
-@Docs("System physical memory states in bytes")
+@Docs("Returns a string describing the general operating platform family (e.g. `\"unix\"`, `\"windows\"`). Returns an empty string if unknown.")
+export fn family() -> String {}
+
+@Docs("System physical RAM states in bytes.")
 export struct memStates {
     totalMemory: Int,
     freeMemory: Int,
@@ -19,21 +17,26 @@ export struct memStates {
     usedMemory: Int,
 }
 
-@Docs("Returns the system memory states
-
-    import std.os
-
-    let memory = os.mem()
-
-
-    memory.totalMemory // Returns total system physical memory in byte.
-    memory.freeMemory // Returns system free physical memory in byte.
-    memory.availableMemory // Returns system available physical memory in byte.
-    memory.usedMemory // Returns system used physical memory in byte.
-")
-export fn mem() -> memStates {
+@Docs("Detailed process memory and CPU consumption metrics.")
+export struct ProcessMemoryInfo {
+    rss: Int,
+    rssMb: Float,
+    virtualMb: Float,
+    cpu: Float,
+    cpuTime: Float,
 }
 
-@Docs("Returns the host machine hostname.")
-export fn hostname() -> String {
-}
+@Docs("Returns the overall system physical memory states in bytes.\n\n**Example:**\n```flame\nimport std.os\n\nlet memory = os.mem()\nprintln($\"Total: {memory.totalMemory / 1024 / 1024} MB\")\nprintln($\"Available: {memory.availableMemory / 1024 / 1024} MB\")\nprintln($\"Used: {memory.usedMemory / 1024 / 1024} MB\")\n```")
+export fn mem() -> memStates {}
+
+@Docs("Returns detailed memory and CPU utilization for the currently running process.\n- `rss`: Resident Set Size in bytes\n- `rssMb`: Resident Set Size in Megabytes\n- `virtualMb`: Virtual memory size in Megabytes\n- `cpu`: Instantaneous process CPU usage percentage\n- `cpuTime`: Cumulative CPU time spent in seconds (user + system)\n\n**Example:**\n```flame\nimport std.os\n\nlet p = os.processMemory()\nprintln($\"Resident Memory: {p.rssMb} MB\")\nprintln($\"Virtual Memory: {p.virtualMb} MB\")\nprintln($\"CPU Usage: {p.cpu}%\")\nprintln($\"CPU Time: {p.cpuTime}s\")\n```")
+export fn processMemory() -> ProcessMemoryInfo {}
+
+@Docs("Returns the current process resident memory consumption (RSS) directly in Megabytes (MB).\n\n**Example:**\n```flame\nimport std.os\n\nlet mb = os.memoryUsage()\nprintln($\"Current process memory: {mb} MB\")\n```")
+export fn memoryUsage() -> Float {}
+
+@Docs("Returns the current process CPU usage percentage.\n\n**Example:**\n```flame\nimport std.os\n\nlet cpu = os.cpuUsage()\nprintln($\"Current process CPU: {cpu}%\")\n```")
+export fn cpuUsage() -> Float {}
+
+@Docs("Returns the host machine hostname.\n\n**Example:**\n```flame\nlet host = os.hostname()\n```")
+export fn hostname() -> String {}

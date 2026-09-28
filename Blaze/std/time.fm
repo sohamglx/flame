@@ -1,20 +1,54 @@
 package time
-@Docs("Returns the current system Unix timestamp in milliseconds.\n\n**Example:**\n```flame\nlet t = time.now()\n```")
-export fn now() -> Int {
+
+@Docs("A duration representing elapsed time.")
+export struct Duration {
+    millis: Int,
+    nanos: Int,
+    seconds: Float,
 }
+
+impl Duration {
+    @Docs("Returns the total milliseconds of this duration as Float.")
+    fn toMillis(self) -> Float {}
+
+    @Docs("Alias for `toMillis()`. Returns the total milliseconds of this duration as Float.")
+    fn toMilliseconds(self) -> Float {}
+
+    @Docs("Returns the total seconds of this duration as Float.")
+    fn toSeconds(self) -> Float {}
+
+    @Docs("Returns a human-readable duration string (e.g. '0.2850s').")
+    fn toString(self) -> String {}
+}
+
+@Docs("A high-resolution monotonic instant in time.")
+export struct Instant {}
+
+impl Instant {
+    @Docs("Returns the Duration elapsed since this instant was captured.")
+    fn elapsed(self) -> Duration {}
+}
+
+@Docs("Returns the high-resolution performance counter in fractional seconds (monotonic clock) for precise benchmarking, equivalent to Python's `time.perf_counter()`.\n\n**Example:**\n```flame\nlet start = time.perfCounter()\n// execute workload\nlet elapsed = time.perfCounter() - start\nprintln($\"Elapsed: {elapsed}s\")\n```")
+export fn perfCounter() -> Float {}
+
+@Docs("Alias for `perfCounter()`. Returns high-resolution monotonic counter in fractional seconds.")
+export fn counter() -> Float {}
+
+@Docs("Captures a high-resolution monotonic clock instant suitable for measuring elapsed durations.\n\n**Example:**\n```flame\nlet t = time.instant()\n// work...\nprintln($\"Elapsed: {t.elapsed().toMillis()} ms\")\n```")
+export fn instant() -> Instant {}
+
+@Docs("Returns the current system Unix timestamp in milliseconds.\n\n**Example:**\n```flame\nlet t = time.now()\n```")
+export fn now() -> Int {}
 
 @Docs("Suspends execution for the specified milliseconds.")
-export fn sleep(ms: Int) {
-}
+export fn sleep(ms: Int) {}
 
 @Docs("Formats an epoch timestamp with a given strftime date format string.")
-export fn format(timestamp: Int, fmt: String) -> String {
-}
+export fn format(timestamp: Int, fmt: String) -> String {}
 
 @Docs("Parses a datetime string into a timestamp using a format string.")
-export fn parse(date_str: String, fmt: String) -> Int {
-}
+export fn parse(date_str: String, fmt: String) -> Int {}
 
 @Docs("Returns elapsed time in milliseconds since the given starting timestamp.")
-export fn since(start_ms: Int) -> Int {
-}
+export fn since(start_ms: Int) -> Int {}
