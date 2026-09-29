@@ -117,6 +117,12 @@ pub enum Expr {
         children: Vec<JsxChild>,
         span: Span,
     },
+    If {
+        cond: Box<Expr>,
+        then_branch: Box<Expr>,
+        else_branch: Option<Box<Expr>>,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -169,6 +175,7 @@ impl Expr {
             Expr::Index(_, _, s) => s.clone(),
             Expr::Cast(_, _, s) => s.clone(),
             Expr::JsxElement { span, .. } => span.clone(),
+            Expr::If { span, .. } => span.clone(),
         }
     }
 }

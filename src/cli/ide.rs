@@ -3562,6 +3562,11 @@ pub fn analyze_file_for_json(
                         }
                         false
                     }
+                    crate::parser::ast::Expr::If { cond, then_branch, else_branch, .. } => {
+                        check_expr(cond, target_line, target_col)
+                            || check_expr(then_branch, target_line, target_col)
+                            || else_branch.as_ref().map_or(false, |e| check_expr(e, target_line, target_col))
+                    }
                     _ => false,
                 }
             }
@@ -3583,6 +3588,11 @@ pub fn analyze_file_for_json(
                         false
                     }
                     crate::parser::ast::Stmt::ExprStmt(e) => check_expr(e, target_line, target_col),
+                    crate::parser::ast::Stmt::IfStmt { cond, then_branch, else_branch, .. } => {
+                        check_expr(cond, target_line, target_col)
+                            || then_branch.iter().any(|s| check_stmt(s, target_line, target_col))
+                            || else_branch.as_ref().map_or(false, |b| b.iter().any(|s| check_stmt(s, target_line, target_col)))
+                    }
                     _ => false,
                 }
             }

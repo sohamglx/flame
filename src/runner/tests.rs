@@ -273,5 +273,95 @@ main()
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
+    #[test]
+    fn test_string_interpolation_escapes() {
+        let code = r#"
+fn main() {
+    let name = "Soham"
+    let s1 = $"Hello {name}"
+    let s2 = $"JSON: \{{ \"name\": \"Soham\" \}}"
+    let s3 = $"JSON: \{ \"name\": \"Soham\" \}"
+    let s4 = $"literal {{"
+    let s5 = $"literal }}"
+    let x = 10
+    let s6 = $"value = {x}"
+    return $"{s1}|{s2}|{s3}|{s4}|{s5}|{s6}"
+}
+main()
+"#;
+        let result = run_flame(code).unwrap();
+        assert_eq!(
+            result.to_string(),
+            r#"Hello Soham|JSON: { "name": "Soham" }|JSON: { "name": "Soham" }|literal {|literal }|value = 10"#
+        );
+    }
+
+    #[test]
+    fn test_multiline_string_interpolation_escapes() {
+        let code = r#"
+fn main() {
+    let x = 42
+    let s = $"""
+        \{{ "value": {x} \}}
+        literal {{ and }}
+    """
+    return s
+}
+main()
+"#;
+        let result = run_flame(code).unwrap();
+        assert!(result.to_string().contains(r#"{ "value": 42 }"#));
+        assert!(result.to_string().contains("literal { and }"));
+    }
+
+    #[test]
+    fn test_interpolation_nested_if_expr() {
+        let code = r#"
+fn main() {
+    let x = 5
+    let msg = $"result = { if x > 0 { 100 } else { 200 } }"
+    return msg
+}
+main()
+"#;
+        let result = run_flame(code).unwrap();
+        assert_eq!(result.to_string(), "result = 100");
+    }
+
+    #[test]
+    fn test_if_expression_execution() {
+        let code = r#"
+fn main() {
+    let b = 0
+    let a = if b == 0 { 10 } else { 20 }
+    let multi = if b == 0 {
+        let x = 5
+        let y = 15
+        x + y
+    } else {
+        0
+    }
+    let chained = if b == 1 {
+        100
+    } else if b == 0 {
+        200
+    } else {
+        300
+    }
+    let connected = true
+    let status = if connected {
+        "connected"
+    } else {
+        "offline"
+    }
+    return $"{a}|{multi}|{chained}|{status}"
+}
+main()
+"#;
+        let result = run_flame(code).unwrap();
+        assert_eq!(result.to_string(), "10|20|200|connected");
+    }
+
+
 
     

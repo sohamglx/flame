@@ -345,11 +345,18 @@ impl TypeChecker {
             Expr::ThreadSpawn(_, _) => Type::Named("ThreadHandler".to_string()),
             Expr::Block(stmts, _) => {
                 self.push_scope();
-                for stmt in stmts {
+                let mut block_ty = Type::Nil;
+                let count = stmts.len();
+                for (i, stmt) in stmts.iter().enumerate() {
                     self.check_stmt(stmt);
+                    if i + 1 == count {
+                        if let Stmt::ExprStmt(expr) = stmt {
+                            block_ty = self.infer_expr_type(expr);
+                        }
+                    }
                 }
                 self.pop_scope();
-                Type::Nil
+                block_ty
             }
             Expr::Unary(op, inner, span) => match op {
                 UnaryOp::Neg => {
@@ -548,6 +555,46 @@ impl TypeChecker {
                     format!("JSX Element: <{}>\nRepresents an HTML DOM element in std.web.", tag),
                 );
                 Type::Named("HtmlNode".to_string())
+            }
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+                span,
+            } => {
+                let cond_ty = self.infer_expr_type(cond);
+                self.expect_assignable(&Type::Bool, &cond_ty, &cond.span(), "if condition");
+
+                let then_ty = self.infer_expr_type(then_branch);
+
+                if let Some(else_branch) = else_branch {
+                    let else_ty = self.infer_expr_type(else_branch);
+                    if self.is_compatible(&then_ty, &else_ty) {
+                        then_ty
+                    } else if self.is_compatible(&else_ty, &then_ty) {
+                        else_ty
+                    } else {
+                        self.error(
+                            format!(
+                                "incompatible branch types in if expression: expected '{}', found '{}'",
+                                self.format_type(&then_ty),
+                                self.format_type(&else_ty)
+                            ),
+                            else_branch.span(),
+                            None,
+                            None,
+                        );
+                        Type::Unknown
+                    }
+                } else {
+                    self.error(
+                        "if expression missing 'else' branch".to_string(),
+                        span.clone(),
+                        None,
+                        None,
+                    );
+                    Type::Unknown
+                }
             }
         }
     }

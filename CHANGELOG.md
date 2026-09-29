@@ -2,6 +2,67 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.6.3] - 2026-09-29 (Codename: *Sixth Spark*)
+
+### ⚡ First-Class `if` as an Expression (`Expr::If`)
+
+- **Expression-Oriented Control Flow**:
+  - `if` can now be used directly as an expression yielding a value across variables, return statements, function arguments, string interpolations, and nested blocks:
+    - **Multiline Block Syntax**:
+      ```flame
+      let a = if b == 0 {
+          let x = 5
+          x * 2
+      } else {
+          20
+      }
+      ```
+    - **Compact Single-Line Syntax**:
+      ```flame
+      let a = if b == 0 { 10 } else { 20 }
+      let status = if connected { "connected" } else { "offline" }
+      ```
+    - **Chained `else if` Expressions**:
+      ```flame
+      let score = if grade == "A" { 90 } else if grade == "B" { 80 } else { 70 }
+      ```
+- **Block Expression Type Inference**:
+  - Upgraded `Expr::Block` in the Flame typechecker to infer the type of the trailing expression statement, enabling blocks and `if` branches to yield typed values seamlessly.
+- **Strict Static Type Checking & Diagnostics**:
+  - **Branch Type Compatibility**: All branches must evaluate to compatible types (`is_compatible`), emitting compile-time diagnostic:
+    ```
+    incompatible branch types in if expression: expected 'T1', found 'T2'
+    ```
+    with precise source spans highlighting the offending branch.
+  - **Exhaustiveness & Missing Else Enforcement**: When an `if` expression is evaluated to produce a value, an `else` branch is strictly required to prevent undefined states, emitting:
+    ```
+    if expression missing 'else' branch
+    ```
+- **Runtime Execution & Web Compilation**:
+  - Updated AST Runner (`src/runner/exprs.rs`) to evaluate truthiness and return the evaluated branch value.
+  - Updated `Stmt::IfStmt` in `src/runner/stmts.rs` to yield the last executed branch value.
+  - Added code generation support in `src/web/compiler.rs` transforming `Expr::If` expressions into idiomatic JavaScript ternary expressions `((cond) ? (then) : (else))`.
+  - Added IDE definition, hover, and syntax tree traversal in `src/cli/ide.rs`.
+
+### ✨ String Interpolation Escapes & Arbitrary Expression Nesting (`$""`, `$"""..."""`)
+
+- **Flexible Literal Curly Brace Escapes**:
+  - Full support for escaping curly braces in string interpolation (`$""` and `$"""..."""`):
+    - `\{` and `\}` emit literal `{` and `}` without opening or closing interpolation.
+    - `{{` and `}}` emit literal `{` and `}` (Rust / C# / Python format style).
+    - `\{{` and `\}}` handled gracefully as literal `{` and `}`.
+    - Single unescaped `{expr}` continues to trigger expression interpolation.
+- **Nested Braces in Interpolation Expressions**:
+  - Upgraded lexer state machine to track expression nesting depth in `interpolation_stack`: `(inside_expression, is_multiline, brace_depth)`.
+  - Nested `{ ... }` within expressions (such as inner `if` expressions, blocks, or closures: `$"{ if x > 0 { 100 } else { 200 } }"`) properly increment and decrement brace depth without prematurely closing the interpolation.
+  - Unified escape and nesting rules across both single-line (`$""`) and multiline (`$"""..."""`) strings.
+
+### 🛠️ Runtime Execution & Top-Level Script Stability
+
+- **Top-Level Expression Statement Execution**:
+  - Fixed statement execution filter in `src/runner/core.rs` so top-level expressions and explicit entry calls (such as `main()`) run reliably when no `@Application`, `@Cli`, or `@Web` annotation is present.
+  - Ensured `Stmt::IfStmt` execution propagates the value of the last statement executed within the active branch.
+
 ## [0.6.2] - 2026-09-28 (Codename: *Sixth Spark*)
 
 ### 💾 First-Class Binary Computing & Raw Bytes Subsystem (`std.byte`)

@@ -33,8 +33,30 @@ let message = $"Player {user} scored {score} points!"
 print(message)
 ```
 
+#### Escaping Literal Braces
+When you need to output literal curly braces `{` or `}` inside an interpolated string without triggering expression evaluation, Flame provides two intuitive escaping mechanisms:
+
+- **Backslash Escape (`\{` and `\}`)**:
+  ```flame
+  let json = $"JSON: \{{ \"user\": \"{user}\" \}}"
+  // Evaluates to: JSON: { "user": "Alice" }
+  ```
+- **Double Brace Escape (`{{` and `}}`)** *(familiar to developers coming from Rust, C#, and Python)*:
+  ```flame
+  let template = $"Formatting {{literal_braces}} with variable {score}"
+  // Evaluates to: Formatting {literal_braces} with variable 98
+  ```
+
+#### Nested Expressions & Braces
+String interpolation expressions inside `{ ... }` are fully aware of brace nesting depth. You can freely embed nested blocks, closures, and `if` expressions directly inside an interpolated string without prematurely terminating interpolation:
+
+```flame
+let count = 5
+let status = $"Status: { if count > 0 { "Active" } else { "Idle" } }"
+```
+
 ### Multiline Strings
-Flame natively supports multiline strings using triple quotes (`"""`). They automatically strip common leading indentation, so you can keep your code neatly indented without breaking string formatting!
+Flame natively supports multiline strings using triple quotes (`"""`). They automatically strip common leading indentation, so you can keep your code neatly indented without breaking string formatting:
 
 ```flame
 let str = """
@@ -44,14 +66,17 @@ let str = """
 ```
 
 ### Multiline Interpolation
-You can also combine interpolation with multiline strings using `$"""`:
+You can also combine interpolation with multiline strings using `$"""..."""`. It supports the exact same escaping and nested expression rules:
 
 ```flame
 let user = "Alice"
+let score = 100
 let str = $"""
-    Welcome to the game, {user}!
-    Your score is {score}.
-    If you need a literal brace, escape it like \{ or \}.
+    \{{
+      "user": "{user}",
+      "score": {score},
+      "status": "{ if score >= 80 { "Pass" } else { "Fail" } }"
+    \}}
     """
 ```
 

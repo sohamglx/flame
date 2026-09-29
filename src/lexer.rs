@@ -133,9 +133,7 @@ pub struct Lexer<'a> {
     index: usize,
     line: usize,
     col: usize,
-    // Stack to keep track of string interpolation state
-    // (inside_expression: bool, is_multiline: bool)
-    pub interpolation_stack: Vec<(bool, bool)>,
+    pub interpolation_stack: Vec<(bool, bool, usize)>,
     pub keep_comments: bool,
 }
 
@@ -199,7 +197,7 @@ impl<'a> Lexer<'a> {
         let start_line_before_skip = self.line;
         let start_col_before_skip = self.col;
 
-        let in_string_text = matches!(self.interpolation_stack.last(), Some(&(false, _)));
+        let in_string_text = matches!(self.interpolation_stack.last(), Some(&(false, _, _)));
         
         if !in_string_text {
             if let Some(kind) = self.skip_whitespace_and_comments() {
@@ -239,7 +237,7 @@ impl<'a> Lexer<'a> {
         };
 
         // If we are currently scanning inside an interpolated string, we have to look for %{ or "
-        if let Some(&(false, is_multi)) = self.interpolation_stack.last() {
+        if let Some(&(false, is_multi, _)) = self.interpolation_stack.last() {
             // We are scanning the text part of a string
             if is_multi {
                 if ch == '"' && self.peek() == Some('"') && self.peek_next() == Some('"') {
@@ -273,9 +271,11 @@ impl<'a> Lexer<'a> {
                 }
             }
             
-            if ch == '{' {
+            if ch == '{' && self.peek() != Some('{') {
                 // Toggle the top of the stack to true (we are inside an expression now)
-                self.interpolation_stack.last_mut().unwrap().0 = true;
+                let top = self.interpolation_stack.last_mut().unwrap();
+                top.0 = true;
+                top.2 = 0;
                 return Token {
                     kind: TokenKind::InterpolationStart,
                     lexeme: "{".to_string(),
@@ -287,7 +287,7 @@ impl<'a> Lexer<'a> {
                     },
                 };
             } else {
-                // Read text until " or {
+                // Read text until " or unescaped single {
                 let mut content = String::new();
                 let mut current = ch;
                 
@@ -301,8 +301,18 @@ impl<'a> Lexer<'a> {
                                 't' => content.push('\t'),
                                 '\\' => content.push('\\'),
                                 '"' => content.push('"'),
-                                '{' => content.push('{'),
-                                '}' => content.push('}'),
+                                '{' => {
+                                    content.push('{');
+                                    if self.peek() == Some('{') {
+                                        self.advance();
+                                    }
+                                }
+                                '}' => {
+                                    content.push('}');
+                                    if self.peek() == Some('}') {
+                                        self.advance();
+                                    }
+                                }
                                 _ => {
                                     content.push('\\');
                                     content.push(escaped);
@@ -311,12 +321,18 @@ impl<'a> Lexer<'a> {
                         } else {
                             content.push('\\');
                         }
+                    } else if current == '{' && self.peek() == Some('{') {
+                        self.advance(); // consume 2nd {
+                        content.push('{');
+                    } else if current == '}' && self.peek() == Some('}') {
+                        self.advance(); // consume 2nd }
+                        content.push('}');
                     } else {
                         content.push(current);
                     }
                     
                     if let Some(next) = self.peek() {
-                        if next == '{' {
+                        if next == '{' && self.peek_next() != Some('{') {
                             break;
                         }
                         if is_multi {
@@ -356,13 +372,24 @@ impl<'a> Lexer<'a> {
             }
             '[' => TokenKind::OpenBracket,
             ']' => TokenKind::CloseBracket,
-            '{' => TokenKind::OpenBrace,
+            '{' => {
+                if let Some((true, _, depth)) = self.interpolation_stack.last_mut() {
+                    *depth += 1;
+                }
+                TokenKind::OpenBrace
+            }
             '}' => {
                 // Check if we are inside an interpolation expression block.
-                // If the top of the stack is true, this '}' finishes the interpolation expression!
-                if let Some(&(true, _)) = self.interpolation_stack.last() {
-                    self.interpolation_stack.last_mut().unwrap().0 = false; // toggle back to scanning string text
-                    TokenKind::InterpolationEnd
+                // If depth is 0, this '}' finishes the interpolation expression!
+                if let Some((true, _, depth)) = self.interpolation_stack.last_mut() {
+                    if *depth > 0 {
+                        *depth -= 1;
+                        TokenKind::CloseBrace
+                    } else {
+                        *depth = 0;
+                        self.interpolation_stack.last_mut().unwrap().0 = false; // toggle back to scanning string text
+                        TokenKind::InterpolationEnd
+                    }
                 } else {
                     TokenKind::CloseBrace
                 }
@@ -528,7 +555,7 @@ impl<'a> Lexer<'a> {
                         TokenKind::InterpolatedStringStart
                     };
                     
-                    self.interpolation_stack.push((false, is_multi)); // start scanning string text
+                    self.interpolation_stack.push((false, is_multi, 0)); // start scanning string text
                     kind
                 } else {
                     TokenKind::Dollar

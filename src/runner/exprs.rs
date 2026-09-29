@@ -4390,6 +4390,21 @@ impl Runner {
 
                 Ok(Value::Object(node_obj))
             }
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                let cond_val = self.eval_expr(cond, env.clone())?;
+                if cond_val.is_truthy() {
+                    self.eval_expr(then_branch, env)
+                } else if let Some(else_expr) = else_branch {
+                    self.eval_expr(else_expr, env)
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
         }
     }
 

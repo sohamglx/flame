@@ -410,7 +410,7 @@ impl Runner {
 
         let mut last_val = Value::Nil;
         for stmt in stmts {
-            let should_execute = if app_entry.is_some() {
+            let should_execute = if app_count > 0 {
                 matches!(
                     stmt,
                     Stmt::FuncDecl { .. }

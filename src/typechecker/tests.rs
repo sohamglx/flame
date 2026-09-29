@@ -186,3 +186,46 @@ fn check_source(src: &str) -> Result<(), Vec<crate::diagnostics::Diagnostic>> {
         assert!(res.is_ok(), "AnnotationContext inside annotation declaration should be valid: {:?}", res.err());
     }
 
+    #[test]
+    fn test_if_expr_compatible_types_ok() {
+        let src = r#"
+        fn main() {
+            let b = 0
+            let a = if b == 0 { 10 } else { 20 }
+            let status = if b == 0 { "connected" } else { "offline" }
+            let chained = if b == 0 { 10 } else if b == 1 { 20 } else { 30 }
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_ok(), "Compatible if expression branches should pass typechecking: {:?}", res.err());
+    }
+
+    #[test]
+    fn test_if_expr_incompatible_branch_types_fails() {
+        let src = r#"
+        fn main() {
+            let b = 0
+            let a = if b == 0 { 10 } else { "hello" }
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_err(), "Incompatible branch types should fail typechecking");
+        let diags = res.unwrap_err();
+        assert!(diags.iter().any(|d| d.message.contains("incompatible branch types in if expression: expected 'Int', found 'String'")));
+    }
+
+    #[test]
+    fn test_if_expr_missing_else_branch_fails() {
+        let src = r#"
+        fn main() {
+            let b = 0
+            let a = if b == 0 { 10 }
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_err(), "If expression missing else branch should fail typechecking");
+        let diags = res.unwrap_err();
+        assert!(diags.iter().any(|d| d.message.contains("if expression missing 'else' branch")));
+    }
+
+

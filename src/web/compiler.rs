@@ -1381,6 +1381,11 @@ if (document.readyState === "loading") {
             }
             Expr::Block(stmts, _) => stmts.iter().any(Self::stmt_has_await),
             Expr::Closure { body, .. } => body.iter().any(Self::stmt_has_await),
+            Expr::If { cond, then_branch, else_branch, .. } => {
+                Self::expr_has_await(cond)
+                    || Self::expr_has_await(then_branch)
+                    || else_branch.as_ref().map_or(false, |e| Self::expr_has_await(e))
+            }
             _ => false,
         }
     }
@@ -2096,6 +2101,16 @@ if (document.readyState === "loading") {
             Expr::Borrow(inner, _, _) => self.expr_to_js(inner),
             Expr::Cast(inner, _, _) => self.expr_to_js(inner),
             Expr::ThreadSpawn(inner, _) => self.expr_to_js(inner),
+            Expr::If { cond, then_branch, else_branch, .. } => {
+                let cond_js = self.expr_to_js(cond);
+                let then_js = self.expr_to_js(then_branch);
+                let else_js = if let Some(el) = else_branch {
+                    self.expr_to_js(el)
+                } else {
+                    "null".to_string()
+                };
+                format!("(({}) ? ({}) : ({}))", cond_js, then_js, else_js)
+            }
             _ => "null".to_string(),
         }
     }

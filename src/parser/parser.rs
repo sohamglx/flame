@@ -998,6 +998,64 @@ impl Parser {
         })
     }
 
+    fn parse_if_expr(&mut self) -> Result<Expr, Diagnostic> {
+        let start_tok = self.consume(TokenKind::If, "expected 'if'")?;
+        let cond = self.parse_expr()?;
+        let start_span = self.peek().span.clone();
+        let then_stmts = self.parse_block()?;
+        let end_span = self.tokens[self.index - 1].span.clone();
+        let then_branch = Expr::Block(
+            then_stmts,
+            Span {
+                start: start_span.start,
+                end: end_span.end,
+                line: start_span.line,
+                col: start_span.col,
+            },
+        );
+        let mut else_branch = None;
+
+        if self.match_token(TokenKind::Else) {
+            if self.check(TokenKind::If) {
+                let else_if = self.parse_if_expr()?;
+                else_branch = Some(Box::new(else_if));
+            } else {
+                let start_span = self.peek().span.clone();
+                let else_stmts = self.parse_block()?;
+                let end_span = self.tokens[self.index - 1].span.clone();
+                let else_block = Expr::Block(
+                    else_stmts,
+                    Span {
+                        start: start_span.start,
+                        end: end_span.end,
+                        line: start_span.line,
+                        col: start_span.col,
+                    },
+                );
+                else_branch = Some(Box::new(else_block));
+            }
+        }
+
+        let end_pos = if let Some(ref eb) = else_branch {
+            eb.span().end
+        } else {
+            then_branch.span().end
+        };
+
+        let if_expr = Expr::If {
+            cond: Box::new(cond),
+            then_branch: Box::new(then_branch),
+            else_branch,
+            span: Span {
+                start: start_tok.span.start,
+                end: end_pos,
+                line: start_tok.span.line,
+                col: start_tok.span.col,
+            },
+        };
+        self.parse_accessors(if_expr)
+    }
+
     fn parse_for_statement(&mut self) -> Result<Stmt, Diagnostic> {
         let start_tok = self.consume(TokenKind::For, "expected 'for'")?;
         let var_tok = self.consume(TokenKind::Identifier, "expected loop variable identifier")?;
@@ -2055,6 +2113,7 @@ impl Parser {
     fn parse_primary(&mut self) -> Result<Expr, Diagnostic> {
         let token = self.peek();
         match token.kind {
+            TokenKind::If => self.parse_if_expr(),
             TokenKind::Lt if self.check_next(TokenKind::Identifier) => {
                 let expr = self.parse_jsx_element()?;
                 self.parse_accessors(expr)

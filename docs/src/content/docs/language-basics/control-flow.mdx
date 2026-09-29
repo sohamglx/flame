@@ -28,6 +28,70 @@ if score >= 90 {
 }
 ```
 
+### `if` as an Expression
+
+In Flame, `if` is not only a statement—it is also a first-class **expression** that produces a value! This allows you to directly assign the outcome of conditionals to variables, pass them to functions, return them, or interpolate them without needing mutable temporary variables:
+
+#### Compact Single-Line Form
+
+```flame
+let b = 0
+let a = if b == 0 { 10 } else { 20 }
+
+let connected = true
+let status = if connected { "connected" } else { "offline" }
+```
+
+#### Multiline Block Form
+
+Blocks in Flame evaluate each statement sequentially, and the trailing expression yields the value of that branch:
+
+```flame
+let score = 85
+let grade = if score >= 90 {
+    "A"
+} else if score >= 80 {
+    "B"
+} else {
+    "C"
+}
+
+// Blocks can contain local statements before returning the final expression
+let config_timeout = if is_production {
+    let base_seconds = 30
+    let buffer = 10
+    base_seconds + buffer
+} else {
+    5
+}
+```
+
+#### In Expressions, Calls, & Interpolations
+
+Because `if` is an expression, it can be passed anywhere expressions are valid:
+
+```flame
+println(if is_admin { "Welcome Admin" } else { "Access Denied" })
+
+let message = $"Status: { if ready { 100 } else { 0 } }%"
+```
+
+#### Compile-Time Type Checking & Safety
+
+The Flame typechecker statically enforces two critical safety guarantees:
+
+1. **Branch Type Compatibility**: Every branch must produce compatible types. If branches yield conflicting types (for example, `Int` in the `if` branch and `String` in the `else` branch), Flame raises a compile error:
+   ```flame
+   // ❌ Compile Error: incompatible branch types in if expression: expected 'Int', found 'String'
+   let x = if ready { 10 } else { "not ready" }
+   ```
+
+2. **Exhaustive Branches**: When `if` is used as an expression to produce a value, an `else` branch is strictly required so that every execution path yields a valid typed value:
+   ```flame
+   // ❌ Compile Error: if expression missing 'else' branch
+   let x = if ready { 10 }
+   ```
+
 ### Stored Boolean Conditions & One-Line Checks
 
 In Flame, conditional expressions are first-class and evaluate directly to `Bool` (`true` or `false`). You can capture one-line boolean checks directly into variables and store them for reuse across branching logic.

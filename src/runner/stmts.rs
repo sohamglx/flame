@@ -885,7 +885,8 @@ impl Runner {
                 ..
             } => {
                 let cond_val = self.eval_expr(cond, env.clone())?;
-                if let Value::Bool(true) = cond_val {
+                let mut last_val = Value::Nil;
+                if cond_val.is_truthy() {
                     let child = Arc::new(Mutex::new(Env::new_child(env)));
                     for s in then_branch {
                         let res = self.execute_statement(s, child.clone())?;
@@ -895,6 +896,7 @@ impl Runner {
                         if matches!(res, Value::Return(_)) {
                             return Ok(res);
                         }
+                        last_val = res;
                     }
                 } else if let Some(el) = else_branch {
                     let child = Arc::new(Mutex::new(Env::new_child(env)));
@@ -906,9 +908,10 @@ impl Runner {
                         if matches!(res, Value::Return(_)) {
                             return Ok(res);
                         }
+                        last_val = res;
                     }
                 }
-                Ok(Value::Nil)
+                Ok(last_val)
             }
             Stmt::WhileStmt { cond, body, .. } => {
                 loop {
