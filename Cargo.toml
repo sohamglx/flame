@@ -14,7 +14,6 @@ exclude = [
     "/bin/",
     "/scripts/",
     "/ide/",
-    "/Blaze/",
     "/macro/",
     "/binder/",
 ]

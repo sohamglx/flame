@@ -22,7 +22,7 @@ Add `flamebinder` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-flamebinder = "0.1.2"
+flamebinder = "0.1.3"
 ```
 
 ### Enabling Flame Features
@@ -32,16 +32,16 @@ You can customize the capabilities compiled into your embedded Flame runtime:
 ```toml
 [dependencies]
 # Default includes the standard library (networking, utilities, async timers)
-flamebinder = { version = "0.1.2", features = ["std"] }
+flamebinder = { version = "0.1.3", features = ["std"] }
 
-# Or enable full OS automation, platform hardware, BLE, and camera capabilities
-# flamebinder = { version = "0.1.2", features = ["full"] }
+# Or enable full OS automation, platform hardware, and camera capabilities
+# flamebinder = { version = "0.1.3", features = ["full"] }
 ```
 
 | Feature Flag | Included Modules & Capabilities |
 |---|---|
-| `std` *(default)* | Standard library utilities, collections, HTTP/WebSocket networking, and regex |
-| `full` | Includes `std` plus OS automation, system hardware, BLE, and camera APIs |
+| `std` *(default)* | Standard library utilities, collections, HTTP/WebSocket networking, and json |
+| `full` | Includes `std` plus OS automation, system hardware, and camera APIs |
 
 ---
 
