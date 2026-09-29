@@ -399,4 +399,80 @@ mod tests {
         let res = binder.call("get_version", vec![]).unwrap();
         assert_eq!(res.to_str(), Some("1.0.0"));
     }
+
+    #[test]
+    fn test_doc_examples() {
+        // Example 1: In-process script execution
+        let mut binder = Binder::new();
+        binder
+            .load_source(
+                r#"
+            export fn start_quest(hero: String, level: Int) -> Int {
+                return level * 100;
+            }
+        "#,
+                "quest.fm",
+            )
+            .unwrap();
+
+        let args = vec![Value::from("Hero"), Value::from(50)];
+        let result = binder.call("start_quest", args).unwrap();
+
+        // Option A: ValueExt (.to_int())
+        assert_eq!(result.to_int(), Some(5000));
+        // Option B: Value (.as_int())
+        assert_eq!(result.as_int().unwrap(), 5000);
+
+        // Example 2: Exposing host Rust functions
+        binder.register_fn("spawn_monster", |args| {
+            let monster_type = args.get(0).and_then(|v| v.to_str()).unwrap_or("Goblin");
+            let level = args.get(1).and_then(|v| v.to_int()).unwrap_or(1);
+            assert_eq!(monster_type, "Dragon");
+            assert_eq!(level, 50);
+            Ok(Value::from(1001))
+        });
+
+        binder
+            .load_source(
+                r#"
+            export fn trigger_ambush() -> Int {
+                let entity_id = spawn_monster("Dragon", 50);
+                return entity_id;
+            }
+        "#,
+                "mod.fm",
+            )
+            .unwrap();
+
+        let entity_id = binder.call("trigger_ambush", vec![]).unwrap();
+        assert_eq!(entity_id.to_int(), Some(1001));
+
+        // Example 3: Value conversions
+        let v_int: Value = 42i64.into();
+        let v_str: Value = "Flame".into();
+        let v_bool: Value = true.into();
+        let v_float: Value = 3.14f64.into();
+
+        assert_eq!(v_int.to_int(), Some(42));
+        assert_eq!(v_str.to_str(), Some("Flame"));
+        assert_eq!(v_bool.to_bool(), Some(true));
+        assert_eq!(v_float.to_float(), Some(3.14));
+
+        assert_eq!(v_int.as_int().unwrap(), 42);
+        assert_eq!(v_str.as_str().unwrap(), "Flame");
+        assert_eq!(v_bool.as_bool().unwrap(), true);
+        assert_eq!(v_float.as_float().unwrap(), 3.14);
+
+        // Example 4: Complex data structures
+        let list_val: Value = vec![Value::from(10), Value::from(20)].into();
+        assert_eq!(list_val.as_list().unwrap().len(), 2);
+
+        let mut map = HashMap::new();
+        map.insert("name".to_string(), Value::from("Excalibur"));
+        let formula_val: Value = map.into();
+        assert_eq!(formula_val.as_formula().unwrap().get("name").unwrap().to_str(), Some("Excalibur"));
+
+        let bytes_val = Value::Bytes(vec![0xAA, 0xBB]);
+        assert_eq!(bytes_val.as_bytes().unwrap(), vec![0xAA, 0xBB]);
+    }
 }

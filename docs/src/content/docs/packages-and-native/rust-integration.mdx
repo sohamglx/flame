@@ -3,14 +3,16 @@ title: "Flame Binder (Rust Integration)"
 description: "Learn how to embed and execute Flame scripts directly inside your Rust projects using the flamebinder crate."
 ---
 
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
 Flame is designed from the ground up to be the ultimate **embedding and metaprogramming language for Rust**.
 
-When Rust developers need a scripting layer for a game, a plugin system for a tool, or dynamic business rules, they frequently consider languages like Lua. However, Lua lacks static typing, compile-time checks, and a modern memory model. Flame gives you:
+When Rust developers need a scripting layer for a game engine, a plugin system for a tool, or dynamic business rules, they frequently consider dynamic languages like Lua. However, Lua lacks static typing, compile-time safety, and a modern memory model. Flame gives you:
 
 - **Static Type Safety**: Catch script bugs at compile-time before they crash your host engine.
-- **Metaprogramming & Annotations**: First-class `@Annotation` support to inspect metadata, decorate functions, and structure plugin systems.
-- **Zero-Friction Rust Interop**: Seamless type translation via `flamebinder::Value` and native closure registration.
-- **Full Project Embedding**: Embed single `.fm` scripts or entire multi-file projects built with `fmp build`.
+- **Metaprogramming & Annotations**: First-class `@Annotation` support to inspect metadata, decorate functions, and structure extensible plugin architectures.
+- **Zero-Friction Rust Interop**: Seamless type translation via `flamebinder::Value` and native Rust closure registration.
+- **Full Project Embedding**: Embed single `.fm` scripts or entire multi-file packages and projects built with `fmp build`.
 
 ---
 
@@ -20,20 +22,20 @@ Add `flamebinder` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-flamebinder = "0.1.0"
+flamebinder = "0.1.2"
 ```
 
 ### Enabling Flame Features
 
-You can customize the features compiled into your embedded Flame runtime:
+You can customize the capabilities compiled into your embedded Flame runtime:
 
 ```toml
 [dependencies]
 # Default includes the standard library (networking, utilities, async timers)
-flamebinder = { version = "0.1.0", features = ["std"] }
+flamebinder = { version = "0.1.2", features = ["std"] }
 
-# Or enable full OS automation, platform hardware, and camera capabilities
-# flamebinder = { version = "0.1.0", features = ["full"] }
+# Or enable full OS automation, platform hardware, BLE, and camera capabilities
+# flamebinder = { version = "0.1.2", features = ["full"] }
 ```
 
 | Feature Flag | Included Modules & Capabilities |
@@ -60,28 +62,75 @@ Formulas and rules that change frequently (pricing models, access control polici
 
 ### 1. In-Process VM Script Execution (`Binder`)
 
-The `Binder` struct manages an in-process Flame VM execution engine (`Runner`):
+The `Binder` struct manages an in-process Flame VM execution engine (`Runner`).
 
+You can load scripts directly from strings using `.load_source()` (ideal for embedded code, modding, and automated tests) or from external files using `Binder::load()`:
+
+<Tabs>
+  <TabItem label="In-Memory Script (Directly Runnable)">
 ```rust
 use flamebinder::{Binder, Value, ValueExt};
 
 fn main() -> Result<(), String> {
-    // 1. Load and execute a Flame script
-    let mut binder = Binder::load("scripts/quest.fm")?;
+    let mut binder = Binder::new();
 
-    // 2. Prepare arguments using Value::from(...)
+    // 1. Load Flame script code directly in-process
+    binder.load_source(r#"
+        export fn start_quest(hero: String, level: Int) -> Int {
+            println($"[Quest] Embarking {hero} on a Level {level} quest!");
+            return level * 100;
+        }
+    "#, "quest.fm")?;
+
+    // 2. Prepare typed arguments
     let args = vec![Value::from("Hero"), Value::from(50)];
 
-    // 3. Call an exported Flame function
+    // 3. Call the exported Flame function
     let result = binder.call("start_quest", args)?;
 
-    if let Some(reward) = result.as_int() {
+    // 4. Safely extract the return value:
+    // Option A: Using ValueExt (.to_int() -> Option<i64>)
+    if let Some(reward) = result.to_int() {
         println!("Quest reward: {} XP", reward);
     }
+
+    // Option B: Using Value (.as_int() -> Result<i64, String>)
+    let reward = result.as_int()?;
+    println!("Total XP: {}", reward);
 
     Ok(())
 }
 ```
+  </TabItem>
+
+  <TabItem label="From Script File (`Binder::load`)">
+```rust
+use flamebinder::{Binder, Value, ValueExt};
+
+fn main() -> Result<(), String> {
+    // 1. Loads and compiles scripts/quest.fm
+    let mut binder = Binder::load("scripts/quest.fm")?;
+
+    // 2. Pass arguments and execute
+    let args = vec![Value::from("Hero"), Value::from(50)];
+    let result = binder.call("start_quest", args)?;
+
+    let reward = result.to_int().unwrap_or(0);
+    println!("Quest reward: {} XP", reward);
+
+    Ok(())
+}
+```
+
+```flame
+// scripts/quest.fm
+export fn start_quest(hero: String, level: Int) -> Int {
+    println($"[Quest] Embarking {hero} on a Level {level} quest!");
+    return level * 100;
+}
+```
+  </TabItem>
+</Tabs>
 
 ---
 
@@ -97,16 +146,17 @@ fn main() -> Result<(), String> {
 
     // Register a native Rust function into the Flame environment
     binder.register_fn("spawn_monster", |args| {
-        let monster_type = args.get(0).and_then(|v| v.as_str()).unwrap_or("Goblin");
-        let level = args.get(1).and_then(|v| v.as_int()).unwrap_or(1);
+        // Ergonomic Option-based extraction via ValueExt:
+        let monster_type = args.get(0).and_then(|v| v.to_str()).unwrap_or("Goblin");
+        let level = args.get(1).and_then(|v| v.to_int()).unwrap_or(1);
 
         println!("⚡ Rust Engine: Spawning {} at level {}", monster_type, level);
 
-        // Return a result back to Flame
-        Ok(Value::from(1001)) // Return entity ID
+        // Return a result value back to Flame
+        Ok(Value::from(1001)) // e.g. entity ID
     });
 
-    // Execute Flame code calling the native function
+    // Execute Flame code calling the native host function
     binder.load_source(r#"
         export fn trigger_ambush() -> Int {
             let entity_id = spawn_monster("Dragon", 50);
@@ -115,17 +165,33 @@ fn main() -> Result<(), String> {
     "#, "mod.fm")?;
 
     let entity_id = binder.call("trigger_ambush", vec![])?;
-    println!("Spawned entity: {:?}", entity_id.as_int());
+    println!("Spawned entity ID: {:?}", entity_id.to_int());
 
     Ok(())
 }
 ```
 
+#### Strict Type-Safe Argument Extraction
+
+For high-assurance systems where invalid types must fail immediately with clear diagnostic errors, use the `Result`-based accessors (`.as_str()`, `.as_int()`, `.as_float()`, `.as_bool()`):
+
+```rust
+binder.register_fn("calculate_damage", |args| {
+    // Returns Err immediately if the argument is missing or has the wrong type
+    let base_dmg = args.get(0).ok_or("missing base_damage (arg 0)")?.as_int()?;
+    let multiplier = args.get(1).ok_or("missing multiplier (arg 1)")?.as_float()?;
+    let is_critical = args.get(2).map_or(Ok(false), |v| v.as_bool())?;
+
+    let total = (base_dmg as f64) * multiplier * if is_critical { 2.0 } else { 1.0 };
+    Ok(Value::from(total))
+});
+```
+
 ---
 
-### 3. Evaluating Dynamic Expressions (`eval`) and Global Variables
+### 3. Evaluating Dynamic Expressions (`eval`) & Globals
 
-You can set and read global variables and dynamically evaluate expressions in-process:
+You can inject global state from host Rust code and dynamically evaluate Flame expressions:
 
 ```rust
 use flamebinder::{Binder, Value, ValueExt};
@@ -137,9 +203,16 @@ fn main() -> Result<(), String> {
     binder.set_global("player_level", Value::from(12));
     binder.set_global("multiplier", Value::from(2.5));
 
-    // Evaluate dynamic Flame expressions
+    // Evaluate dynamic Flame expressions in-process
     let xp = binder.eval("player_level * 100 * multiplier")?;
-    println!("Total XP: {:?}", xp.as_float()); // 3000.0
+    
+    // Extract with ValueExt (.to_float()) or Value (.as_float()?)
+    println!("Total XP: {}", xp.to_float().unwrap_or(0.0)); // 3000.0
+
+    // Read global variables back out of the environment
+    if let Some(level) = binder.get_global("player_level") {
+        println!("Player level: {:?}", level.to_int());
+    }
 
     Ok(())
 }
@@ -191,20 +264,102 @@ fn main() -> Result<(), String> {
 
 ## Interacting with Flame Values
 
-`flamebinder` re-exports `Value` and implements standard `From` conversions as well as the `ValueExt` helper trait:
+`flamebinder` re-exports `Value` and provides two complementary type-safe extraction patterns:
+
+1. **Option-Based Pattern via `ValueExt`**: Ideal for `.unwrap_or()`, fallback defaults, and `if let Some(...)` pattern matching.
+2. **Result-Based Pattern via `Value`**: Ideal for idiomatic Rust error propagation with `?`.
+
+### 1. Converting Rust Types -> Flame `Value`
+
+`Value` implements standard `From` conversions for common Rust types:
+
+```rust
+use flamebinder::Value;
+use std::collections::HashMap;
+
+// Primitive scalar conversions:
+let v_int: Value = 42i64.into();          // or Value::from(42)
+let v_float: Value = 3.14f64.into();      // or Value::from(3.14)
+let v_bool: Value = true.into();          // or Value::from(true)
+let v_str: Value = "Flame".into();        // or Value::from("Flame")
+
+// Complex data structures:
+let v_list: Value = vec![Value::from(1), Value::from(2)].into();
+
+let mut map = HashMap::new();
+map.insert("name".to_string(), Value::from("Excalibur"));
+map.insert("attack".to_string(), Value::from(85));
+let v_formula: Value = map.into();
+
+// Raw binary byte buffer:
+let v_bytes: Value = Value::Bytes(vec![0xDE, 0xAD, 0xBE, 0xEF]);
+```
+
+### 2. Extracting Flame `Value` -> Rust Types
 
 ```rust
 use flamebinder::{Value, ValueExt};
 
-// From Rust types -> Flame Value:
-let v_int: Value = 42.into();
-let v_str: Value = "Flame".into();
-let v_bool: Value = true.into();
-let v_float: Value = 3.14.into();
+// --- Pattern A: Option-Based (via ValueExt) ---
+let opt_int: Option<i64> = v_int.to_int();        // Some(42)
+let opt_str: Option<&str> = v_str.to_str();      // Some("Flame")
+let opt_bool: Option<bool> = v_bool.to_bool();   // Some(true)
+let opt_float: Option<f64> = v_float.to_float(); // Some(3.14)
+let opt_list: Option<&[Value]> = v_list.as_list();
+let opt_map: Option<&HashMap<String, Value>> = v_formula.as_formula();
 
-// From Flame Value -> Rust types:
-let num = v_int.as_int();       // Some(42)
-let text = v_str.as_str();      // Some("Flame")
-let flag = v_bool.as_bool();    // Some(true)
-let pi = v_float.as_float();    // Some(3.14)
+// --- Pattern B: Result-Based (via Value, with `?`) ---
+let num: i64 = v_int.as_int()?;            // 42
+let text: &str = v_str.as_str()?;          // "Flame"
+let flag: bool = v_bool.as_bool()?;        // true
+let pi: f64 = v_float.as_float()?;         // 3.14
+let bytes: Vec<u8> = v_bytes.as_bytes()?;  // vec![0xDE, 0xAD, 0xBE, 0xEF]
+```
+
+### 3. Complete Working Reference
+
+Here is a full, self-contained example you can paste into your `src/main.rs`:
+
+```rust
+use flamebinder::{Binder, Value, ValueExt};
+use std::collections::HashMap;
+
+fn main() -> Result<(), String> {
+    let mut binder = Binder::new();
+
+    // 1. Expose host game engine API
+    binder.register_fn("log_event", |args| {
+        let msg = args.get(0).and_then(|v| v.to_str()).unwrap_or("");
+        println!("[HOST] {}", msg);
+        Ok(Value::Nil)
+    });
+
+    // 2. Load script
+    binder.load_source(r#"
+        export fn generate_loot(player_level: Int) -> formula {
+            log_event($"Generating loot for level {player_level}");
+            return formula {
+                item: "Shadow Blade",
+                power: player_level * 15,
+                sockets: [1, 2, 3]
+            };
+        }
+    "#, "loot.fm")?;
+
+    // 3. Execute function
+    let loot = binder.call("generate_loot", vec![Value::from(10)])?;
+
+    // 4. Inspect formula fields
+    if let Some(fields) = loot.as_formula() {
+        let item_name = fields.get("item").and_then(|v| v.to_str()).unwrap_or("Unknown");
+        let power = fields.get("power").and_then(|v| v.to_int()).unwrap_or(0);
+        println!("Acquired: {} (Power: {})", item_name, power);
+
+        if let Some(sockets) = fields.get("sockets").and_then(|v| v.as_list()) {
+            println!("Sockets available: {}", sockets.len());
+        }
+    }
+
+    Ok(())
+}
 ```
