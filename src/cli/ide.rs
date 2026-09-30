@@ -9,38 +9,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-#[derive(Serialize)]
-pub struct JsonDiagnostic {
-    severity: String,
-    message: String,
-    file: String,
-    line: usize,
-    column: usize,
-}
-
-#[derive(Serialize)]
-pub struct JsonCompletion {
-    pub label: String,
-    pub kind: String,
-    pub detail: String,
-    pub documentation: Option<String>,
-    #[serde(rename = "sortText", skip_serializing_if = "Option::is_none")]
-    pub sort_text: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct JsonHover {
-    pub label: String,
-    pub documentation: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct JsonSignatureHelp {
-    pub label: String,
-    pub parameters: Vec<String>,
-    pub active_parameter: u32,
-}
+pub use crate::ide::{JsonCompletion, JsonHover, JsonSignatureHelp, JsonDiagnostic};
 
 #[derive(Serialize)]
 pub struct JsonCheckOutput {

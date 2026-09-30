@@ -57,19 +57,26 @@ pub fn get_std_module_symbols(module: &str) -> Option<Vec<(String, String)>> {
         "process" => Some(crate::native_std::process::init()),
         "fs" => Some(crate::native_std::fs::init()),
         "byte" => Some(crate::native_std::byte::init()),
+        #[cfg(feature = "net")]
         "net" => {
             let sub = parts.next().unwrap_or("ws");
             Some(crate::native_std::net::init(sub))
         }
+        #[cfg(all(feature = "net", feature = "ws"))]
         "ws" => Some(crate::native_std::net::ws::init()),
         "json" => Some(crate::native_std::json::init()),
         "math" => Some(crate::native_std::math::init()),
+        #[cfg(feature = "utils")]
         "time" => Some(crate::native_std::time::init()),
         "fmt" => Some(crate::native_std::fmt::init()),
+        #[cfg(feature = "os")]
         "os" => Some(crate::native_std::os::init()),
+        #[cfg(any(feature = "os", feature = "automation"))]
         "desktop" => Some(crate::native_std::desktop::init()),
+        #[cfg(any(feature = "os", feature = "automation"))]
         "window" => Some(crate::native_std::window::init()),
         "env" => Some(crate::native_std::env::init()),
+        #[cfg(feature = "camera")]
         "camera" => Some(crate::native_std::camera::init()),
         "unit" => Some(crate::native_std::unit::init()),
         "web" => Some(crate::native_std::web::init()),

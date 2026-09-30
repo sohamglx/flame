@@ -37,6 +37,8 @@ case "$(uname -s)" in
     Linux*)
         if [[ "$IS_WSL" == true ]]; then
             OS_TYPE="wsl"
+        elif [[ -d "/data/data/com.termux" || -n "$TERMUX_VERSION" ]]; then
+            OS_TYPE="termux"
         else
             OS_TYPE="linux"
         fi
@@ -146,7 +148,7 @@ mkdir -p "$CARGO_BIN" 2>/dev/null || true
 
 # Helper: Ensure Linux development libraries are present for native crates (dbus, udev, pkg-config)
 ensure_linux_dependencies() {
-    if [[ "$TARGET_IS_WINDOWS" == true || "$OS_TYPE" == "macos" ]]; then
+    if [[ "$TARGET_IS_WINDOWS" == true || "$OS_TYPE" == "macos" || "$OS_TYPE" == "termux" ]]; then
         return 0
     fi
 
@@ -282,6 +284,7 @@ fi
 CANDIDATE_SEARCH_DIRS=(
     "$CARGO_BIN"
     "$HOME/.cargo/bin"
+    "$PREFIX/bin"
     "$REAL_HOME/.cargo/bin"
     "/usr/local/bin"
     "$(dirname "$(command -v "$CARGO_CMD" 2>/dev/null || echo "")")"
@@ -380,8 +383,8 @@ EOF
     fi
 
     # Distribute fmp to all system and user PATH directories
-    for DEST in "/usr/local/bin" "$HOME/.local/bin" "$REAL_HOME/.local/bin" "$HOME/.cargo/bin" "$REAL_HOME/.cargo/bin"; do
-        if [[ -d "$DEST" && "$DEST" != "$CARGO_BIN" ]]; then
+    for DEST in "$PREFIX/bin" "/usr/local/bin" "$HOME/.local/bin" "$REAL_HOME/.local/bin" "$HOME/.cargo/bin" "$REAL_HOME/.cargo/bin"; do
+        if [[ -n "$DEST" && -d "$DEST" && "$DEST" != "$CARGO_BIN" ]]; then
             rm -f "$DEST/fmp" 2>/dev/null || true
             cp -f "$CARGO_BIN/fmp" "$DEST/fmp" 2>/dev/null || true
             chmod +x "$DEST/fmp" 2>/dev/null || true

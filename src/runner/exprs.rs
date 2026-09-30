@@ -1637,7 +1637,22 @@ impl Runner {
                             };
                             parts.push(val_str);
                         }
-                        if name == "print" || name == "println" {
+                        if let Some(ref capture) = self.output_capture {
+                            if let Ok(mut guard) = capture.lock() {
+                                let text = parts.join(" ");
+                                if name == "println" {
+                                    guard.push(text);
+                                } else if name == "print" {
+                                    if let Some(last) = guard.last_mut() {
+                                        last.push_str(&text);
+                                    } else {
+                                        guard.push(text);
+                                    }
+                                } else {
+                                    guard.push(format!("[error] {}", text));
+                                }
+                            }
+                        } else if name == "print" || name == "println" {
                             if name == "println" {
                                 println!("{}", parts.join(" "));
                             } else {

@@ -1,4 +1,4 @@
-use crate::{JsonCompletion, JsonHover};
+use super::{JsonCompletion, JsonHover};
 
 const KEYWORDS: &[(&str, &str)] = &[
     ("let", "Declares a local variable. Example: `let x = 5`"),

@@ -2,6 +2,73 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.6.4] - 2026-09-30 (Codename: *Sixth Spark*)
+
+### 🎮 Interactive WebAssembly Playground & Documentation (`/playground/`)
+
+- **Zero-Dependency In-Browser WebAssembly Engine (`flame_runtime.wasm`)**:
+  - Implemented a standalone WebAssembly runtime compilation target in `wasm/`, emitting a zero-external-import `.wasm` binary (`docs/public/flame_runtime.wasm`).
+  - Executes the Blaze VM directly within modern browser engines without server communication, providing instant script evaluation, memory isolation, and high performance.
+- **Customized Monaco Editor & GitHub Dark Aesthetics**:
+  - Embedded a customized Monaco Editor configured with an authentic GitHub Dark theme, pure `#000000` background matching documentation code blocks, and keyword red (`#ff7b72`) annotations.
+  - Multi-state Monarch syntax tokenizer featuring full support for single-line (`$""`) and multiline (`$"""..."""`) string interpolations with embedded `{}` Flame code blocks highlighted with core syntax rules.
+  - Custom CSS enhancements in `docs/src/styles/custom.css` eliminating suggest dropdown clipping (`z-index: 999999`) and aligning cursor-to-line vertical positioning.
+- **Interactive Documentation Integration**:
+  - Added dedicated interactive playground route at `/playground/` in `docs/src/content/docs/playground.mdx` and featured primary CTA on the documentation homepage.
+  - Added curated presets including `@Application Entry`, `Hello Flame`, `Fibonacci & Recursion`, `Structs & Impl`, `JSON & Data Processing`, and `Math & Trigonometry`.
+
+### 💡 Comprehensive Standard Library Autocomplete, Snippets & Hover Docs
+
+- **Standard Library Extraction & Typed Definitions (`stdData.ts`)**:
+  - Extracted 264 documented functions and 642 hover tooltips across 17 standard modules (`annotation`, `builtins`, `byte`, `camera`, `desktop`, `env`, `fs`, `json`, `math`, `net`, `os`, `process`, `thread`, `time`, `unit`, `web`, `window`) directly from `Blaze/std/*.fm`.
+  - Standardized function return types to Flame's canonical `nil` for void/unit operations.
+- **Context-Aware Dot-Trigger Autocomplete & Parameter Snippets**:
+  - Typing `.` after a module (e.g. `math.`, `json.`, `fs.`, `desktop.`, `window.`, etc.) dynamically filters suggestions for that module and inserts parameter snippet placeholders (e.g. `math.sqrt(${1:x})`, `json.parse(${1:string})`, `desktop.open(${1:target}, ${2:args})`).
+  - Typing `std.` offers all standard library modules with clear descriptive summaries.
+  - Typing `@` triggers suggestions for built-in annotations (`@Application`, `@Test`, `@Benchmark`, `@Cli`, `@Command`, `@Requires`, `@Permission`, `@Platform`, `@Docs`, `@Setup`, `@Cleanup`, `@ExpectPanic`).
+  - Standard built-in functions (`println`, `print`, `eprint`, `assert`, `assertEq`, `assertNe`, `assertTrue`, `assertFalse`, `panic`, `range`, `input`, `mockData`, `mockApi`, `mockFunction`) are directly accessible in root completion scope.
+- **Rich Markdown Hover Tooltips**:
+  - Registered comprehensive hover documentation covering qualified (`math.sqrt`), unqualified (`sqrt`), and `@Annotation` symbols.
+  - Tooltips render formatted Flame function signatures, parameter descriptions, return value documentation, and copyable example code blocks.
+
+### 🚀 Strict Application Entry Semantics (`@Application`)
+
+- **Eliminated Implicit `main` Auto-Invocation Fallback**:
+  - Refactored runner execution logic in `src/runner/core.rs` to remove the implicit fallback that previously invoked `fn main()` automatically without `@Application`.
+  - Aligned behavior strictly with the language specification (`docs/src/content/docs/language-basics/application.mdx`):
+    - Top-level statements execute sequentially from top to bottom. Unannotated `fn main()` declarations are treated as standard declarations and run only when explicitly called (e.g. `main()`).
+    - Functions decorated with `@Application` (or `@Cli` / `@Web`) act as the application entry point and are automatically invoked at startup, while top-level statements outside are skipped.
+
+### 🧵 Runner Output Capture & Embedder API (`flamebinder`)
+
+- **Thread-Safe Runtime Output Capture**:
+  - Added `output_capture: Option<Arc<Mutex<Vec<String>>>>` to `Runner` in `src/runner/core.rs` and `src/runner/exprs.rs`.
+  - When enabled, `print`, `println`, and `eprint` calls write directly into a captured thread-safe buffer instead of polluting process stdout/stderr.
+- **Binder Output Interception (`flamebinder`)**:
+  - Added `Binder::capture_output(&mut self) -> Arc<Mutex<Vec<String>>>` in `binder/src/lib.rs`, enabling host Rust applications, embedding runtimes, and unit test harnesses to capture script execution outputs directly.
+
+### 📱 Android (Termux) & Cross-Platform Toolchain Portability
+
+- **Automated Termux Installation (`install.sh`)**:
+  - Added automatic Termux environment detection (`/data/data/com.termux` or `$TERMUX_VERSION`) in `install.sh`.
+  - Automatically bypasses Linux desktop system library installations (APT/DNF dbus/udev packages) on Android.
+  - Distributes binaries (`flame` and `fmp`) to `$PREFIX/bin` alongside user Cargo bin directories.
+- **Conditional Dependency Gating (`Cargo.toml`)**:
+  - Gated Linux desktop Bluetooth crate `btleplug` behind `cfg(not(any(target_os = "android", target_arch = "wasm32")))`, eliminating compilation failures on Android and WebAssembly targets.
+  - Gated `ctrlc` signal handlers behind `cfg(not(target_arch = "wasm32"))`.
+  - Configured `chrono` with `default-features = false, features = ["clock", "std"]` to avoid pulling native platform dependencies not supported on Termux or WebAssembly.
+  - Targeted `libc` for `any(target_os = "linux", target_os = "android")`.
+
+### 🧩 IDE Architecture Decoupling & Modular Compiler Features
+
+- **Decoupled IDE Protocol Models (`src/ide/mod.rs`)**:
+  - Moved shared language server response structs (`JsonCompletion`, `JsonHover`, `JsonSignatureHelp`, `JsonDiagnostic`) into `src/ide/mod.rs`.
+  - Decoupled `src/cli/ide.rs` so the core compiler and runtime can be compiled independently without requiring the `cli` feature.
+- **Feature-Gated Standard Module Symbol Exports (`src/ide/modules.rs`)**:
+  - Gated module symbol providers in `src/ide/modules.rs` behind respective Cargo features (`net`, `ws`, `utils`, `os`, `automation`, `camera`), allowing lightweight custom runtime builds without missing symbol errors.
+
+---
+
 ## [0.6.3] - 2026-09-29 (Codename: *Sixth Spark*)
 
 ### ⚡ First-Class `if` as an Expression (`Expr::If`)

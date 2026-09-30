@@ -40,7 +40,7 @@ export default defineConfig({
         },
         expressiveCode: {
             themes: ['github-dark', 'github-light'],
-            
+
         },
         logo: {
             src: './src/assets/flame.png',
@@ -68,6 +68,7 @@ export default defineConfig({
                     { label: 'Architecture & Analysis', slug: 'getting-started/architecture' },
                     { label: 'Production & Docker', slug: 'getting-started/deployment-and-docker' },
                     { label: 'Tutorial: Telegram Bot', slug: 'getting-started/telegram-bot' },
+                    { label: 'Interactive Playground', slug: 'playground' },
                 ],
             },
             {
@@ -149,7 +150,7 @@ export default defineConfig({
                     { label: 'Threading (std.thread)', slug: 'std/thread' },
                     { label: 'Time (std.time)', slug: 'std/time' },
                     { label: 'Math (std.math)', slug: 'std/math' },
-                    {label: 'Unit System (std.unit)', slug: 'std/unit'},
+                    { label: 'Unit System (std.unit)', slug: 'std/unit' },
                     { label: 'Annotations & Metaprogramming (std.annotation)', slug: 'std/annotation' },
                     { label: 'Camera (std.camera)', slug: 'std/camera' },
                     { label: 'Web Applications (std.web)', slug: 'std/web' },

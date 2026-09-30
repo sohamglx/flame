@@ -431,3 +431,54 @@ starlight-theme-select {
 .sl-link-button.minimal:hover {
 	color: #FF0068 !important;
 }
+
+/* Flame Playground & Monaco Editor Theme Styles */
+.flame-playground {
+	border-radius: 10px !important;
+	border: 0.5px solid rgba(255, 255, 255, 0.1) !important;
+	background-color: #000000 !important;
+	overflow: hidden !important;
+}
+
+.flame-playground .monaco-editor,
+.flame-playground .monaco-editor-background,
+.flame-playground .monaco-editor .inputarea.ime-input {
+	background-color: #000000 !important;
+}
+
+.flame-playground .monaco-editor .margin {
+	background-color: #000000 !important;
+}
+
+/* Fix vertical cursor-to-line alignment mismatch */
+.flame-playground .monaco-editor .view-lines {
+	line-height: inherit !important;
+}
+
+.flame-playground .monaco-editor .view-line {
+	line-height: 22px !important;
+	letter-spacing: 0 !important;
+}
+
+/* Fix suggest dropdown widget (ensure it is never clipped) */
+.monaco-editor .suggest-widget {
+	z-index: 999999 !important;
+	border-radius: 8px !important;
+	border: 0.5px solid rgba(255, 255, 255, 0.18) !important;
+	background-color: #0d1117 !important;
+	box-shadow: 0 12px 36px rgba(0, 0, 0, 0.85) !important;
+	overflow: hidden !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list {
+	background-color: #0d1117 !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list-row.focused {
+	background-color: rgba(255, 0, 104, 0.25) !important;
+	color: #ffffff !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list-row:hover:not(.focused) {
+	background-color: rgba(255, 255, 255, 0.08) !important;
+}

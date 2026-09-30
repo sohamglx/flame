@@ -214,6 +214,13 @@ impl Binder {
             .granted_permissions
             .insert(permission.to_string());
     }
+
+    /// Captures all standard output (`print`, `println`) into a thread-safe string buffer.
+    pub fn capture_output(&mut self) -> Arc<std::sync::Mutex<Vec<String>>> {
+        let buf = Arc::new(std::sync::Mutex::new(Vec::new()));
+        self.runner.output_capture = Some(buf.clone());
+        buf
+    }
 }
 
 /// Handle to a standalone compiled Flame runtime executable created with `fmp build`.

@@ -1,6 +1,6 @@
-#![cfg(feature = "cli")]
-pub mod blaze;
+#[cfg(feature = "cli")]
 pub mod cli;
+pub mod blaze;
 pub mod compiler;
 mod diagnostics;
 mod formatter;
@@ -17,14 +17,22 @@ pub mod utils;
 pub mod vm;
 pub mod web;
 
-pub use cli::ide::{JsonCompletion, JsonHover};
+pub use ide::{JsonCompletion, JsonHover};
 
+#[cfg(feature = "cli")]
 use cli::commands::*;
+#[cfg(feature = "cli")]
 use cli::ide::*;
 use std::env;
 use std::fs;
 use std::path::Path;
 
+#[cfg(not(feature = "cli"))]
+fn main() {
+    eprintln!("Flame was compiled without CLI support.");
+}
+
+#[cfg(feature = "cli")]
 fn main() {
     let builder = std::thread::Builder::new()
         .name("flame-main".into())
@@ -39,7 +47,9 @@ fn main() {
     }
 }
 
+#[cfg(feature = "cli")]
 fn real_main() {
+    #[cfg(not(target_arch = "wasm32"))]
     ctrlc::set_handler(move || {
         #[cfg(all(feature = "net", feature = "ws"))]
         crate::native_std::net::ws::shutdown_all_ws();

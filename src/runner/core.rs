@@ -21,6 +21,7 @@ pub struct Runner {
     pub interactive: bool,
     pub granted_permissions: std::collections::HashSet<String>,
     pub vfs: Option<HashMap<String, String>>,
+    pub output_capture: Option<Arc<Mutex<Vec<String>>>>,
 }
 
 use std::cell::RefCell;
@@ -361,6 +362,7 @@ impl Runner {
             interactive: true,
             granted_permissions: get_global_granted_permissions(),
             vfs: get_global_vfs(),
+            output_capture: None,
         };
         crate::stdlib::register_global_builtins(runner.env.clone());
         runner
@@ -393,16 +395,6 @@ impl Runner {
             }
         }
 
-        if app_entry.is_none() {
-            for stmt in stmts {
-                if let Stmt::FuncDecl { name, .. } = stmt {
-                    if name == "main" {
-                        app_entry = Some("main".to_string());
-                        break;
-                    }
-                }
-            }
-        }
 
         if app_count > 1 {
             return Err("Only one @Application / @Cli / @Web entry point is allowed.".to_string());
@@ -522,6 +514,7 @@ impl Runner {
             interactive: self.interactive,
             granted_permissions: self.granted_permissions.clone(),
             vfs: self.vfs.clone(),
+            output_capture: self.output_capture.clone(),
         }
     }
 }
