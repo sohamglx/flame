@@ -5,13 +5,13 @@ description: Complete reference for flame.toml manifest, project options, packag
 
 import { Aside, Tabs, TabItem, Steps } from '@astrojs/starlight/components';
 
-Every Flame project is configured using a **`flame.toml`** manifest file in the project root. It defines project metadata, compiler options, package dependencies, Rust plugins, and native crate bindings.
+Every Flame application is configured using a **`flame.toml`** manifest file in the package root. It defines application or package metadata, compiler options, package dependencies, Rust plugins, and native crate bindings.
 
 ```toml
-[project]
+[package]
 name = "my_app"
 version = "0.1.0"
-type = "app"
+type = "executable"
 
 [options]
 closure-types = "default"
@@ -30,15 +30,15 @@ serde = "1.0"
 
 ---
 
-## 1. Project Metadata (`[project]`)
+## 1. Package Metadata (`[package]`)
 
-Defines the core identity of the project or package.
+Defines the core identity of the package.
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
 | `name` | `String` | The unique name of your package or application. |
 | `version` | `String` | Semantic version string (e.g. `"0.1.0"`). |
-| `type` | `String` | `"app"` for standalone executables, or `"pkg"` for distributable packages. |
+| `type` | `String` | `"executable"` for standalone executables, or `"pkg"` for distributable packages. |
 | `authors` | `Array<String>` | Optional list of package authors. |
 | `target` | `String` | Optional compilation target override. |
 
@@ -113,7 +113,7 @@ The `[dependencies]` table lists pure Flame packages consumed by your applicatio
 ```toml
 [dependencies]
 # GitHub repo URL
-router = "https://github.com/sohamglx/flamer"
+flamer = "https://github.com/sohamglx/flamer"
 
 # Relative local directory
 utils = "./lib/utils"
