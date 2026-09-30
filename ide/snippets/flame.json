@@ -1,0 +1,74 @@
+{
+  "Match with Option": {
+    "prefix": ["match-opt", "matchopt", "match-option"],
+    "body": [
+      "match ${1:opt} {",
+      "\tOption.Some(${2:val}) => ${3:val},",
+      "\tOption.None => ${4:None},",
+      "}"
+    ],
+    "description": "Pattern match on an Option (Some / None)"
+  },
+  "Match with Result": {
+    "prefix": ["match-res", "matchres", "match-result"],
+    "body": [
+      "match ${1:res} {",
+      "\tResult.Ok(${2:val}) => ${3:val},",
+      "\tResult.Err(${4:err}) => ${5:eprint(err)},",
+      "}"
+    ],
+    "description": "Pattern match on a Result (Ok / Err)"
+  },
+  "Match Expression": {
+    "prefix": ["match"],
+    "body": [
+      "match ${1:expr} {",
+      "\t${2:pattern} => ${3:expr},",
+      "\t_ => ${4:default},",
+      "}"
+    ],
+    "description": "Basic pattern matching expression"
+  },
+  "Function Declaration": {
+    "prefix": ["fn", "function"],
+    "body": [
+      "fn ${1:name}(${2:params}) -> ${3:Nil} {",
+      "\t${0}",
+      "}"
+    ],
+    "description": "Declare a typed function"
+  },
+  "Struct Declaration": {
+    "prefix": ["struct"],
+    "body": [
+      "struct ${1:Name} {",
+      "\t${2:field}: ${3:Type},",
+      "}"
+    ],
+    "description": "Declare a data struct"
+  },
+  "Enum Declaration": {
+    "prefix": ["enum", "enum-maker"],
+    "body": [
+      "enum ${1:Name} {",
+      "\t${2:Variant},",
+      "\t${3:PayloadVariant}(${4:Type}),",
+      "}"
+    ],
+    "description": "Declare an algebraic enum"
+  },
+  "Variable Declaration": {
+    "prefix": ["let"],
+    "body": [
+      "let ${1:name}: ${2:Type} = ${3:value}"
+    ],
+    "description": "Declare an immutable variable"
+  },
+  "Mutable Variable Declaration": {
+    "prefix": ["letmut", "mut"],
+    "body": [
+      "let mut ${1:name}: ${2:Type} = ${3:value}"
+    ],
+    "description": "Declare a mutable variable"
+  }
+}

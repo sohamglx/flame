@@ -59,6 +59,34 @@ print(doubled) // [2, 4, 6, 8, 10]
 print(evens)   // [2, 4]
 ```
 
+### Higher-Order Functions & Closure Signatures
+
+Functions can accept closures with explicit parameter and return types:
+
+```flame
+// 1. Higher-order function with closure parameter (implicit Nil return)
+fn for_each(items: [String], action: (item: String)) {
+    for item in items {
+        action(item)
+    }
+}
+
+// 2. Closure with parameters and explicit return type
+fn process_text(text: String, transform: (input: String) -> String) -> String {
+    return transform(text)
+}
+
+let languages = ["Flame", "Rust", "TypeScript"]
+for_each(languages, (lang: String) {
+    println($"• {lang}")
+})
+
+let formatted = process_text("hello flame", (input: String) -> String {
+    return $"[PROCESSED]: {input}"
+})
+println(formatted)
+```
+
 ---
 
 ## Asynchronous Functions (`async fn`)

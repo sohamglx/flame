@@ -26,7 +26,7 @@ const KEYWORDS: &[(&str, &str)] = &[
     ),
     (
         "impl",
-        "Implements methods for a struct or enum. Example: `impl Point { fn new() -> Point {} }`",
+        "Implements methods for a struct. Example: `impl Point { fn new() -> Point {} }`",
     ),
     (
         "if",

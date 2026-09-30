@@ -114,6 +114,7 @@ export default defineConfig({
                 label: 'Packages & Native Rust',
                 collapsed: true,
                 items: [
+                    { label: 'flame.toml Reference', slug: 'packages-and-native/flame-toml' },
                     { label: 'Modules & Imports', slug: 'packages-and-native/modules-and-imports' },
                     { label: 'Creating Packages', slug: 'packages-and-native/creating-packages' },
                     { label: 'Using Native Rust Crates', slug: 'packages-and-native/native-rust-crates' },

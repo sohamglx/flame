@@ -2,7 +2,7 @@
   "name": "flame-language-support",
   "displayName": "Flame",
   "description": "Rich IDE syntax highlighting and configuration for the Flame programming language.",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "icon": "flame.png",
   "publisher": "ezet-galaxy",
   "license": "ISC",
@@ -63,6 +63,12 @@
         "path": "./syntaxes/fmi.tmLanguage.json"
       }
     ],
+    "snippets": [
+      {
+        "language": "flame",
+        "path": "./snippets/flame.json"
+      }
+    ],
     "iconThemes": [
       {
         "id": "flame-icons",
@@ -70,11 +76,25 @@
         "path": "./icons/fileicons.json"
       }
     ],
+    "semanticTokenScopes": [
+      {
+        "language": "flame",
+        "scopes": {
+          "enum": ["constant.language.flame", "variable.other.enummember.flame", "entity.name.type.enum.flame"],
+          "enumMember": ["constant.language.flame", "variable.other.enummember.flame"]
+        }
+      }
+    ],
     "semanticTokenTypes": [
       {
-        "id": "annotation",
-        "superType": "function",
-        "description": "Style for Flame annotations (@Test, @Setup, etc.)"
+        "id": "enum",
+        "superType": "type",
+        "description": "Style for Flame enums"
+      },
+      {
+        "id": "enumMember",
+        "superType": "variable",
+        "description": "Style for Flame enum variants"
       }
     ],
     "configuration": {

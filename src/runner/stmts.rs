@@ -334,6 +334,26 @@ impl Runner {
             Stmt::ImportDecl { path, alias, is_quoted, .. } => {
                 if *is_quoted {
                     if let Some(file_str) = path.first() {
+                        let is_native = file_str.starts_with("native")
+                            || file_str.starts_with("./native")
+                            || file_str.ends_with(".rs")
+                            || crate::utils::manifest::get_declared_plugins(Some(&self.filepath))
+                                .contains(file_str);
+                        if is_native {
+                            if crate::utils::manifest::is_rust_plugins_denied(Some(&self.filepath)) {
+                                return Err(format!(
+                                    "cannot import native file '{}': rust-plugins is set to \"deny\" in flame.toml [options]",
+                                    file_str
+                                ));
+                            }
+                            if crate::utils::manifest::is_rust_plugins_warn(Some(&self.filepath)) {
+                                println!(
+                                    "\x1b[1;33mwarning:\x1b[0m importing native file '{}': rust-plugins is set to \"warn\" in flame.toml [options]",
+                                    file_str
+                                );
+                            }
+                        }
+
                         let bind_name = alias.clone().unwrap_or_else(|| {
                             let p = std::path::Path::new(file_str);
                             p.file_stem().and_then(|s| s.to_str()).unwrap_or("resource").to_string()
@@ -479,7 +499,22 @@ impl Runner {
                     || (Path::new(&format!(".flame/pkg/{}", path.last().unwrap())).exists()
                         && !Path::new(&format!(".flame/pkg/{}/src/main.fm", path.last().unwrap()))
                             .exists())
+                    || crate::utils::manifest::get_declared_plugins(Some(&self.filepath))
+                        .contains(path.last().unwrap().as_str())
                 {
+                    if crate::utils::manifest::is_rust_plugins_denied(Some(&self.filepath)) {
+                        return Err(format!(
+                            "cannot import native plugin '{}': rust-plugins is set to \"deny\" in flame.toml [options]",
+                            mod_name
+                        ));
+                    }
+                    if crate::utils::manifest::is_rust_plugins_warn(Some(&self.filepath)) {
+                        println!(
+                            "\x1b[1;33mwarning:\x1b[0m importing native plugin '{}': rust-plugins is set to \"warn\" in flame.toml [options]",
+                            mod_name
+                        );
+                    }
+
                     let mod_env = Arc::new(Mutex::new(Env::new()));
                     let raw_mod_name = path.last().unwrap();
                     let rel_meta = format!(".flame/pkg/{}/{}.fmi", raw_mod_name, raw_mod_name);

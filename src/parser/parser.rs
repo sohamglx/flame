@@ -1152,16 +1152,33 @@ impl Parser {
             }
 
             let mut destructure = Vec::new();
-            let mut is_tuple_destructure = false;
-            if self.match_token(TokenKind::OpenBrace) {
-                while !self.check(TokenKind::CloseBrace) && !self.check(TokenKind::EOF) {
-                    let field = self.consume_field_name("expected identifier in pattern destructuring")?;
-                    destructure.push(field.lexeme.clone());
-                    self.match_token(TokenKind::Comma);
+            let is_tuple_destructure = true;
+            if self.check(TokenKind::OpenBrace) {
+                let mut lookahead = self.index + 1;
+                let mut brace_depth = 1;
+                while lookahead < self.tokens.len() && brace_depth > 0 {
+                    if self.tokens[lookahead].kind == TokenKind::OpenBrace {
+                        brace_depth += 1;
+                    } else if self.tokens[lookahead].kind == TokenKind::CloseBrace {
+                        brace_depth -= 1;
+                    }
+                    lookahead += 1;
                 }
-                self.consume(TokenKind::CloseBrace, "expected '}' closing pattern destructuring")?;
+                if lookahead < self.tokens.len()
+                    && (self.tokens[lookahead].kind == TokenKind::FatArrow
+                        || self.tokens[lookahead].kind == TokenKind::Arrow
+                        || self.tokens[lookahead].kind == TokenKind::If
+                        || self.tokens[lookahead].kind == TokenKind::Ampersand2)
+                {
+                    return Err(Diagnostic::new_error(
+                        "match pattern destructuring with curly braces `{}` is not supported; use parentheses `(value)` instead".to_string(),
+                        self.filepath.clone(),
+                        self.peek().span.clone(),
+                        Some("use `(...)` instead of `{...}`".to_string()),
+                        Some("replace `{...}` with `(...)` for tuple pattern destructuring".to_string()),
+                    ));
+                }
             } else if self.match_token(TokenKind::OpenParen) {
-                is_tuple_destructure = true;
                 while !self.check(TokenKind::CloseParen) && !self.check(TokenKind::EOF) {
                     let field = self.consume_field_name("expected identifier in pattern destructuring")?;
                     destructure.push(field.lexeme.clone());

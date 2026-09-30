@@ -27,6 +27,9 @@ pub struct TypeChecker {
     pub defined_types_in_file: HashMap<String, Vec<(String, Option<String>)>>,
     pub in_annotation_decl: bool,
     pub in_expect_panic: bool,
+    pub strict_closures: bool,
+    pub rust_plugins_mode: crate::utils::manifest::RustPluginsMode,
+    pub declared_native_plugins: HashSet<String>,
 }
 
 
@@ -58,6 +61,50 @@ impl TypeChecker {
     }
 
     pub fn new(filepath: String) -> Self {
+        let mut strict_closures = false;
+        let check_manifest = |toml_path: &std::path::Path| -> bool {
+            if let Ok(content) = std::fs::read_to_string(toml_path) {
+                let mut in_options = false;
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                        in_options = trimmed == "[options]";
+                        continue;
+                    }
+                    if in_options && trimmed.starts_with("closure-types") {
+                        if let Some(val) = trimmed.split('=').nth(1) {
+                            let clean = val.trim().trim_matches('"').trim_matches('\'');
+                            if clean == "strict" {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            false
+        };
+
+        let p = std::path::Path::new(&filepath);
+        if let Some(root) = crate::utils::manifest::find_manifest_root(p) {
+            if check_manifest(&root.join("flame.toml")) || check_manifest(&root.join("Flame.toml")) {
+                strict_closures = true;
+            }
+        }
+        if !strict_closures {
+            if check_manifest(std::path::Path::new("flame.toml")) || check_manifest(std::path::Path::new("Flame.toml")) {
+                strict_closures = true;
+            }
+        }
+        if std::env::args().any(|a| a == "--strict-closures") {
+            strict_closures = true;
+        }
+
+        let mut rust_plugins_mode = crate::utils::manifest::get_rust_plugins_mode(Some(p));
+        if std::env::args().any(|a| a == "--deny-plugins" || a == "--deny-rust-plugins") {
+            rust_plugins_mode = crate::utils::manifest::RustPluginsMode::Deny;
+        }
+        let declared_native_plugins = crate::utils::manifest::get_declared_plugins(Some(p));
+
         let mut checker = Self {
             filepath,
             diagnostics: Vec::new(),
@@ -81,9 +128,22 @@ impl TypeChecker {
             defined_types_in_file: HashMap::new(),
             in_annotation_decl: false,
             in_expect_panic: false,
+            strict_closures,
+            rust_plugins_mode,
+            declared_native_plugins,
         };
         checker.register_builtins();
         checker
+    }
+
+    pub fn with_strict_closures(mut self, strict: bool) -> Self {
+        self.strict_closures = self.strict_closures || strict;
+        self
+    }
+
+    pub fn with_rust_plugins_mode(mut self, mode: crate::utils::manifest::RustPluginsMode) -> Self {
+        self.rust_plugins_mode = mode;
+        self
     }
 
     pub fn check_program(mut self, stmts: &[Stmt]) -> (Result<(), Vec<Diagnostic>>, Self) {

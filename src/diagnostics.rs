@@ -16,6 +16,7 @@ pub struct Diagnostic {
     pub span: Span,
     pub label: Option<String>,
     pub suggestion: Option<String>,
+    pub note: Option<String>,
 }
 
 impl Diagnostic {
@@ -33,22 +34,46 @@ impl Diagnostic {
             span,
             label,
             suggestion,
+            note: None,
         }
     }
 
+    pub fn new_warning(
+        message: String,
+        filepath: String,
+        span: Span,
+        label: Option<String>,
+        suggestion: Option<String>,
+    ) -> Self {
+        Self {
+            severity: DiagnosticSeverity::Warning,
+            message,
+            filepath,
+            span,
+            label,
+            suggestion,
+            note: None,
+        }
+    }
+
+    pub fn with_note(mut self, note: String) -> Self {
+        self.note = Some(note);
+        self
+    }
+
     pub fn print(&self, source: &str) {
-        let (color_code, severity_name) = match self.severity {
-            DiagnosticSeverity::Error => ("\x1b[1;31m", "error"), // Bold Red
-            DiagnosticSeverity::Warning => ("\x1b[1;33m", "warning"), // Bold Yellow
-            DiagnosticSeverity::Info => ("\x1b[1;34m", "info"),   // Bold Blue
+        let (icon, color_code, severity_name) = match self.severity {
+            DiagnosticSeverity::Error => ("✖", "\x1b[1;31m", "error"),     // Bold Red
+            DiagnosticSeverity::Warning => ("⚠", "\x1b[1;33m", "warning"), // Bold Yellow
+            DiagnosticSeverity::Info => ("ℹ", "\x1b[1;34m", "info"),       // Bold Blue
         };
         let bold = "\x1b[1m";
         let cyan = "\x1b[1;36m";
         let reset = "\x1b[0m";
 
         println!(
-            "{}{}{}: {}{}{}",
-            color_code, severity_name, reset, bold, self.message, reset
+            "{}{} {}{}: {}{}{}",
+            color_code, icon, severity_name, reset, bold, self.message, reset
         );
         println!(
             "  {}-->{} {}:{}:{}",
@@ -83,8 +108,11 @@ impl Diagnostic {
             println!("{}{}{}", cyan, spacer, reset);
         }
 
+        if let Some(note) = &self.note {
+            println!("  \x1b[1;36m=\x1b[0m \x1b[1mnote:\x1b[0m {}", note);
+        }
         if let Some(sug) = &self.suggestion {
-            println!("  \x1b[1;36m=\x1b[0m \x1b[1msuggestion:\x1b[0m {}", sug);
+            println!("  \x1b[1;36m=\x1b[0m \x1b[1mhelp:\x1b[0m {}", sug);
         }
         println!();
     }

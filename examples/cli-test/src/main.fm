@@ -60,15 +60,11 @@ fn get_dir_path(file_path: String) -> String {
 @Cli(name: "fmp", version: "1.0.0", description: "Flame Binary Archive Tool (.fmp)")
 fn main(cli: Cli) {
     match cli {
-        pack {
-            dir, out
-        } => pack(dir, out)
+        pack(dir, out) => pack(dir, out)
 
-        inspect {archive} => inspect(archive)
+        inspect(archive) => inspect(archive)
 
-        extract {
-            archive, dest
-        } => extract(archive, dest)
+        extract(archive, dest) => extract(archive, dest)
 
         help => {
             println("Flame Archive (.fmp) Tool")

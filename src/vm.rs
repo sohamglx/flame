@@ -401,6 +401,23 @@ impl fmt::Display for Value {
 }
 
 impl Value {
+    pub fn is_copy(&self) -> bool {
+        match self {
+            Value::Nil
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::Byte(_)
+            | Value::Function { .. }
+            | Value::NativeCallback(_)
+            | Value::NativeClosure(_)
+            | Value::StructConstructor { .. }
+            | Value::EnumMeta(..)
+            | Value::EnumValue(_, _, EnumData::Unit) => true,
+            _ => false,
+        }
+    }
+
     pub fn is_equal(&self, other: &Value) -> bool {
         match (self, other) {
             (Value::Int(a), Value::Int(b)) => a == b,
@@ -944,6 +961,9 @@ impl Env {
 
     pub fn move_var(&mut self, name: &str) {
         if let Some(entry) = self.variables.get_mut(name) {
+            if entry.value.is_copy() || name == "None" {
+                return;
+            }
             entry.value = Value::Moved(name.to_string());
         } else if let Some(parent) = &self.parent {
             parent.lock().unwrap().move_var(name);

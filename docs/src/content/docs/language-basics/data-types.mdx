@@ -259,20 +259,42 @@ You wrap an `Error` inside an `Err` (e.g., `return Err(Error { ... })`) so that 
 Flame supports first-class closure type annotations for function parameters and variable declarations:
 
 ```flame
-// Parameter closure types (with optional parameter names)
-fn onEach(callback: (msg: String)) {
-    callback("Hello from Flame!")
+// 1. Higher-order function with closure parameter (implicit Nil return)
+fn for_each(items: [String], action: (item: String)) {
+    for item in items {
+        action(item)
+    }
 }
 
-// Full closure signature with return type
-fn compute(op: (a: Int, b: Int) -> Int) -> Int {
-    return op(10, 20)
+// 2. Closure with parameters and explicit return type
+fn process_text(text: String, transform: (input: String) -> String) -> String {
+    return transform(text)
 }
 
-// Variable declaration with closure type
-let logger: (msg: String) = (msg) {
-    println($"[LOG]: {msg}")
+// 3. Mathematical closure operation
+fn compute(a: Int, b: Int, op: (x: Int, y: Int) -> Int) -> Int {
+    return op(a, b)
 }
+
+// Main execution
+let languages = ["Flame", "Rust", "TypeScript"]
+
+// Iterate using a closure
+for_each(languages, (lang: String) {
+    println($"• {lang}")
+})
+
+// Transform string using an inline closure
+let formatted = process_text("hello flame closures", (input: String) -> String {
+    return $"[PROCESSED]: {input}"
+})
+println(formatted)
+
+// Compute values using closure arithmetic
+let sum = compute(20, 22, (x: Int, y: Int) -> Int {
+    return x + y
+})
+println($"Sum: {sum}")
 ```
 
 ### Syntax Variations
@@ -290,15 +312,34 @@ Callbacks and event listeners that do not return a value do not need to specify 
 
 ### Type Safety & Dynamic Flexibility
 
-In the current version of Flame, closure types are designed primarily for **developer experience and IDE ergonomics**:
+In the current version of Flame, closure types are designed primarily for developer experience and IDE ergonomics:
 
 - **Flexible Type Safety**: At call sites, closure type checking is currently **non-strict** and behaves flexibly (essentially like `Unknown`). This ensures you can pass any closure `(c, b) { ... }` or existing function handler without running into rigid function-pointer type mismatch errors.
 - **Hover Docs & Intelligent Autocomplete**: The declared parameter types are utilized by the Flame Language Server and IDE type engine:
   - **Hover Cards**: Hovering over a callback or higher-order function displays the expected parameters and return value.
   - **Parameter Type Inference**: Inside the closure body, parameters automatically infer their declared types without manual annotations. For example, in `s.onBinary((client, bytes) { ... })`, typing `client.` suggests all `ServerClient` methods, and `bytes.` suggests `Byte` methods.
 
-<Aside type="note" title="Future Roadmap: Strict Closure Checking">
-Strict compile-time closure signature verification may be introduced in future Flame releases under an optional compiler flag (such as `--strict-types` or `--strict-closures`). The current dynamic model ensures seamless scripting flexibility while still giving you full IDE intelligence.
+### Strict Closure Checking (Optional)
+
+Strict compile-time closure signature verification can be enabled on-demand when you want rigorous type safety for closure parameters and return types:
+
+- **CLI Flag**: Run or build with `--strict-closures`:
+  ```bash
+  flame run src/main.fm --strict-closures
+  fmp run --strict-closures
+  ```
+- **Project Configuration (`flame.toml`)**: Set `closure-types = "strict"` under `[options]`:
+  ```toml
+  [options]
+  closure-types = "strict" # "strict" | "default" (default is flexible)
+  ```
+
+When strict closure checking is enabled, the compiler verifies parameter counts, parameter types, and return type compatibility, emitting compile-time type errors whenever signatures do not match.
+
+<Aside type="note" title="Scope of closure-types: Closures vs Regular Function Parameters">
+`closure-types = "default"` specifically applies to **closure signatures** passed to higher-order functions (e.g. passing `(x, y) { ... }` or `(a) { ... }` without rigid function-pointer type errors).
+
+**Standard function arguments** (such as passing a `String` where an `Int` parameter `a: Int` is expected in `compute(a: Int, b: Int, op: ...)`) are always strictly validated by the compiler, regardless of the `closure-types` setting.
 </Aside>
 
 ---

@@ -125,8 +125,8 @@ Inside your `@Cli` root function, use Flame's expressive `match` expressions on 
 
 ```flame
 match cli {
-    build { release, target } => build(release, target)
-    serve { port } => serve(port)
+    build(release, target) => build(release, target)
+    serve(port) => serve(port)
     help => print("Usage: app <command> [options]")
     _ => print("Unknown command. Run with --help for usage details.")
 }
@@ -147,8 +147,8 @@ import native.server
 fn main(cli: Cli) {
     // Dispatch subcommand execution with declarative pattern matching
     match cli {
-        build { release, target } => build(release, target)
-        serve { port } => serve(port)
+        build(release, target) => build(release, target)
+        serve(port) => serve(port)
         help => print("Help: Use 'build [--release] [--target name]' or 'serve [--port N]'")
         _ => print("Error: Unknown command provided.")
     }

@@ -430,6 +430,82 @@ impl TypeChecker {
                         }
                     });
 
+                if self.strict_closures {
+                    if let Some((e_params, e_ret)) = &expected_func {
+                        if params.len() != e_params.len() {
+                            self.error(
+                                format!(
+                                    "strict closures: expected {} parameter(s), got {}",
+                                    e_params.len(),
+                                    params.len()
+                                ),
+                                span.clone(),
+                                None,
+                                None,
+                            );
+                        }
+                        for (idx, p) in params.iter().enumerate() {
+                            if p.type_name.trim().is_empty() {
+                                let exp_str = e_params
+                                    .get(idx)
+                                    .map(|t| format!("{}: {}", p.name, self.format_type(t)))
+                                    .unwrap_or_else(|| p.name.clone());
+                                self.error(
+                                    format!(
+                                        "strict closures: parameter '{}' must have an explicit type annotation: expected '{}'",
+                                        p.name, exp_str
+                                    ),
+                                    span.clone(),
+                                    None,
+                                    None,
+                                );
+                            } else {
+                                let actual_p_ty = self.parse_type_name(&p.type_name);
+                                if let Some(exp_p) = e_params.get(idx) {
+                                    if !self.is_compatible(exp_p, &actual_p_ty) {
+                                        self.error(
+                                            format!(
+                                                "strict closures: mismatched type for parameter '{}': expected '{}', found '{}'",
+                                                p.name,
+                                                self.format_type(exp_p),
+                                                self.format_type(&actual_p_ty)
+                                            ),
+                                            span.clone(),
+                                            None,
+                                            None,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(user_ret_str) = &return_type {
+                            let user_ret = self.parse_type_name(user_ret_str);
+                            if !self.is_compatible(e_ret, &user_ret) {
+                                self.error(
+                                    format!(
+                                        "strict closures: mismatched closure return type: expected '{}', found '{}'",
+                                        self.format_type(e_ret),
+                                        self.format_type(&user_ret)
+                                    ),
+                                    span.clone(),
+                                    None,
+                                    None,
+                                );
+                            }
+                        } else if *e_ret != Type::Nil && *e_ret != Type::Unknown {
+                            self.error(
+                                format!(
+                                    "strict closures: closure must specify an explicit return type: expected '-> {}'",
+                                    self.format_type(e_ret)
+                                ),
+                                span.clone(),
+                                None,
+                                None,
+                            );
+                        }
+                    }
+                }
+
                 self.push_scope();
                 let mut param_types = Vec::new();
                 for (idx, param) in params.iter().enumerate() {
@@ -438,7 +514,7 @@ impl TypeChecker {
                     } else {
                         self.parse_type_name(&param.type_name)
                     };
-                    if matches!(p_ty, Type::Unknown) {
+                    if matches!(p_ty, Type::Unknown) && !self.strict_closures {
                         if let Some((e_params, _)) = &expected_func {
                             if let Some(expected_p) = e_params.get(idx) {
                                 p_ty = expected_p.clone();

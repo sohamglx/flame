@@ -1,0 +1,191 @@
+---
+title: flame.toml Configuration
+description: Complete reference for flame.toml manifest, project options, package dependencies, Rust plugins, and the fmp package manager.
+---
+
+import { Aside, Tabs, TabItem, Steps } from '@astrojs/starlight/components';
+
+Every Flame project is configured using a **`flame.toml`** manifest file in the project root. It defines project metadata, compiler options, package dependencies, Rust plugins, and native crate bindings.
+
+```toml
+[project]
+name = "my_app"
+version = "0.1.0"
+type = "app"
+
+[options]
+closure-types = "default"
+rust-plugins = "default"
+
+[dependencies]
+flamer = "https://github.com/sohamglx/flamer"
+local_helper = "./packages/helper"
+
+[plugins]
+fast_hash = "./native/hash"
+
+[native-dependencies]
+serde = "1.0"
+```
+
+---
+
+## 1. Project Metadata (`[project]`)
+
+Defines the core identity of the project or package.
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `name` | `String` | The unique name of your package or application. |
+| `version` | `String` | Semantic version string (e.g. `"0.1.0"`). |
+| `type` | `String` | `"app"` for standalone executables, or `"pkg"` for distributable packages. |
+| `authors` | `Array<String>` | Optional list of package authors. |
+| `target` | `String` | Optional compilation target override. |
+
+---
+
+## 2. Compiler & Toolchain Options (`[options]`)
+
+The `[options]` section configures compiler checks, type strictness, and security boundaries.
+
+### `closure-types`
+
+Controls the strictness of closure signature type checking:
+
+```toml
+[options]
+closure-types = "default" # "strict" | "default"
+```
+
+- **`"default"`**: Flexible type checking at call sites for closure signatures. Allows passing closures without rigid function-pointer type errors while still providing full IDE autocomplete and parameter type inference.
+- **`"strict"`**: Enables strict compile-time signature checks. Verifies parameter count, parameter types, and return types, raising compile-time errors on any mismatch.
+- **CLI Flag Equivalent**: Pass `--strict-closures` to `flame run`, `fmp run`, or `flame build`.
+
+<Aside type="note" title="Closures vs Standard Parameters">
+`closure-types` controls the signature matching of closure arguments passed to higher-order functions. Standard scalar parameters (such as `a: Int` or `b: String`) are always strictly validated by the compiler at compile time.
+</Aside>
+
+### `rust-plugins`
+
+Controls whether Rust plugins, native crates, and C-ABI dependencies can be installed, imported, or executed:
+
+```toml
+[options]
+rust-plugins = "default" # "default" | "warn" | "deny"
+```
+
+| Mode | Installation (`fmp add`) | Import (`import native...`) | Build & Execution |
+| :--- | :--- | :--- | :--- |
+| **`"default"`** | Allowed | Allowed without warnings | Full native compilation & linking |
+| **`"warn"`** | Allowed with warning | Emits compiler warning | Permitted with warnings |
+| **`"deny"`** | Blocked with error | Emits compile-time error | Completely blocked & skipped |
+
+- **`"default"`**: Standard mode. Allows adding, downloading, importing, and compiling native Rust plugins and dependencies from crates.io or local workspaces.
+- **`"warn"`**: Permissive audit mode. Allows native plugins to be imported and executed, but issues explicit compiler warnings whenever native code is imported or added:
+  ```text
+  ⚠ warning: importing native plugin 'native.bridge': rust-plugins is set to "warn" in flame.toml [options]
+  ```
+  Useful when migrating codebases, auditing third-party code for native dependencies, or transitioning to pure Flame scripts.
+- **`"deny"`**: Strict sandboxed mode. Fully disallows any native Rust dependencies, plugins, and imports:
+  - Attempting to import any native module (e.g. `import native.bridge` or `import <plugin>`) produces a compile error:
+    ```text
+    ✖ error: cannot import native plugin 'native.bridge': rust-plugins is set to "deny" in flame.toml [options]
+      --> src/main.fm:1:1
+       |
+     1 | import native.bridge
+       | ^^^^^^^^^^^^^^^^^^^^ native plugin import denied
+       |
+       = help: change `rust-plugins` in flame.toml [options] to "default" to allow Rust plugins
+    ```
+  - `fmp add --plugin` and `fmp add --native` are blocked with an immediate error.
+  - Native plugin compilation and linkage in `flame build` and `flame run` are skipped completely.
+
+<Aside type="tip" title="Security & Portability">
+Setting `rust-plugins = "deny"` guarantees that your project runs entirely on portable Flame bytecode without any external Rust compiler dependencies, shared library linkages, or native binaries.
+</Aside>
+
+---
+
+## 3. Flame Dependencies (`[dependencies]`)
+
+The `[dependencies]` table lists pure Flame packages consumed by your application.
+
+```toml
+[dependencies]
+# GitHub repo URL
+router = "https://github.com/sohamglx/flamer"
+
+# Relative local directory
+utils = "./lib/utils"
+
+# Pinned or wildcard version
+http = "*"
+```
+
+### Managing Dependencies with `fmp` / `flame`
+
+<Tabs>
+  <TabItem label="Add Dependency">
+    ```bash
+    fmp add https://github.com/sohamglx/flamer
+    ```
+  </TabItem>
+  <TabItem label="Remove Dependency">
+    ```bash
+    fmp remove flamer
+    ```
+  </TabItem>
+  <TabItem label="Install All">
+    ```bash
+    fmp install
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 4. Native Rust Plugins (`[plugins]`)
+
+Plugins provide high-performance, C-ABI native Rust extensions without linking collisions.
+
+```toml
+[plugins]
+server_native = "./native/server"
+```
+
+### Adding a Plugin
+
+```bash
+fmp add --plugin ./native/server
+# or
+fmp add -p ./native/server
+```
+
+When added:
+1. `fmp` writes the entry under `[plugins]`.
+2. Inspects `Cargo.toml` in the plugin directory.
+3. Automatically compiles the Rust shared library and generates `.fmi` interface files.
+
+---
+
+## 5. Native Cargo Crates (`[native-dependencies]`)
+
+You can also bind directly to crates from crates.io under `[native-dependencies]`:
+
+```toml
+[native-dependencies]
+serde = "1.0"
+sha2 = "0.10"
+```
+
+### Adding a Native Crate
+
+```bash
+fmp add --native serde
+# or
+fmp add -n serde
+```
+
+<Aside type="note" title="Plugins vs Native Dependencies">
+Native plugins (`[plugins]`) are generally preferred over `[native-dependencies]` because they provide isolated C ABI boundaries and precompiled `.fmi` metadata, avoiding cargo dependency graph conflicts in large workspaces.
+</Aside>

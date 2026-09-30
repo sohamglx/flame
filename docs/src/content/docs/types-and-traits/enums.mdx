@@ -47,25 +47,3 @@ fn handle_connection(state: ConnectionState) {
     }
 }
 ```
-
----
-
-## Implementing Methods on Enums
-
-Just like structs, enums can have `impl` blocks:
-
-```flame
-impl ConnectionState {
-    fn is_online(&self) -> Bool {
-        match self {
-            ConnectionState.Connected(_) => true,
-            _ => false
-        }
-    }
-}
-
-let current = ConnectionState.Connected(42)
-if current.is_online() {
-    print("Ready to send packets.")
-}
-```

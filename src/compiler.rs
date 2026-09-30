@@ -13,6 +13,13 @@ pub fn build_project(
     files_to_test: Option<Vec<PathBuf>>,
     use_vfs: bool,
 ) {
+    let empty_deps = Vec::new();
+    let native_deps = if crate::utils::manifest::is_rust_plugins_denied(None) {
+        &empty_deps[..]
+    } else {
+        native_deps
+    };
+
     let build_cache = Path::new(".flame").join("build-cache");
     let _ = fs::create_dir_all(&build_cache);
     let src_dir = build_cache.join("src");

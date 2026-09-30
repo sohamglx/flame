@@ -51,14 +51,6 @@ pub fn print_help() {
         cyan, reset
     );
     println!(
-        "  {}flash{} [--target <board>] [--port <COM>] Build & burn bare-metal firmware to microcontroller",
-        cyan, reset
-    );
-    println!(
-        "  {}monitor{} [--port <COM>] [--baud 115200] Connect to hardware serial UART telemetry stream",
-        cyan, reset
-    );
-    println!(
         "  {}test{}                Execute unit tests inside the current project",
         cyan, reset
     );

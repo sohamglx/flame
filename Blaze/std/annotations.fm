@@ -5,9 +5,6 @@ export annotation Application(features: [String]) {}
 @Docs("Marks this function as a test case executed by `flame test`.\n\n**Parameters:**\n- `timeout: Int`: Timeout in milliseconds.\n- `skip: Bool`: If true, skips executing this test.")
 export annotation Test(timeout: Int = 1000, skip: Bool = false) {}
 
-@Docs("Directs the compiler to emit machine code tailored for a specific microcontroller architecture (e.g. `arduino-uno`, `rp2040`, `esp32`).")
-export annotation Embedded(target: String) {}
-
 @Docs("Marks the application as a Command Line Interface tool, enabling automatic parsing of command line arguments into structures.")
 export annotation Cli() {}
 

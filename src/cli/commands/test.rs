@@ -113,6 +113,11 @@ pub fn run_tests(args: &[String]) {
         }
     }
 
+    if crate::utils::manifest::is_rust_plugins_denied(None) {
+        native_deps_raw.clear();
+        plugins_raw.clear();
+    }
+
     let mut files_to_test = Vec::new();
     if args.len() >= 3 && !args[2].starts_with('-') {
         let p = PathBuf::from(&args[2]);

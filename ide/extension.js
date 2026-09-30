@@ -341,7 +341,7 @@ function activate(context) {
         }
     }, '.', '@', ':'));
 
-    const tokenTypes = ['keyword', 'function', 'annotation', 'comment', 'string'];
+    const tokenTypes = ['keyword', 'function', 'annotation', 'comment', 'string', 'enum', 'enumMember', 'type', 'variable'];
     const tokenModifiers = ['declaration', 'readonly'];
     const legend = new vscode.SemanticTokensLegend(tokenTypes, tokenModifiers);
 

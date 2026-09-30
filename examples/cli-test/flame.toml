@@ -4,4 +4,11 @@ version = "0.1.0"
 edition = "2026"
 type = "executable"
 
+
+[options]
+# rust-plugins: "default" allows Rust plugins and native dependencies; "warn" allows them with compiler warnings; "deny" blocks all native code installation, import, and execution
+rust-plugins = "default"
+# closure-types: "default" provides flexible dynamic closure checking with full IDE autocomplete; "strict" enforces compile-time signature checks
+closure-types = "strict"
+
 [dependencies]

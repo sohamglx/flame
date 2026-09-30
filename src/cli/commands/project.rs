@@ -34,10 +34,28 @@ pub fn create_new_project(name: &str) {
         }
     }
 
+    let clean_name = root
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(name);
+
     // Write flame.toml
     let toml_content = format!(
-        "[package]\nname = \"{}\"\nversion = \"0.1.0\"\nedition = \"2026\"\ntype = \"executable\"\n\n[dependencies]\n",
-        name
+r#"[package]
+name = "{}"
+version = "0.1.0"
+edition = "2026"
+type = "executable"
+
+[options]
+# rust-plugins: "default" allows Rust plugins and native dependencies; "warn" allows them with compiler warnings; "deny" blocks all native code installation, import, and execution
+rust-plugins = "default"
+# closure-types: "default" provides flexible dynamic closure checking with full IDE autocomplete; "strict" enforces compile-time signature checks
+closure-types = "default"
+
+[dependencies]
+"#,
+        clean_name
     );
     fs::write(root.join("flame.toml"), toml_content).unwrap();
 

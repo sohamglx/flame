@@ -4,6 +4,14 @@ use super::downloader::*;
 use super::manifest::*;
 use super::native::*;
 
+pub fn is_rust_plugins_denied() -> bool {
+    crate::utils::manifest::is_rust_plugins_denied(None)
+}
+
+pub fn is_rust_plugins_warn() -> bool {
+    crate::utils::manifest::is_rust_plugins_warn(None)
+}
+
 #[cfg(feature = "cli")]
 pub fn add_package(args: &[String]) {
     if args.is_empty() {
@@ -19,6 +27,22 @@ pub fn add_package(args: &[String]) {
         || args.contains(&"@plugin".to_string());
     let is_native = args.contains(&"--native".to_string())
         || args.contains(&"-n".to_string());
+
+    if (is_plugin || is_native) && is_rust_plugins_denied() {
+        println!(
+            "\x1b[1;31merror:\x1b[0m installation blocked: rust-plugins is set to \"deny\" in flame.toml [options]."
+        );
+        println!(
+            "help: change `rust-plugins` in flame.toml [options] to \"default\" or remove it to allow Rust plugins."
+        );
+        return;
+    }
+
+    if (is_plugin || is_native) && is_rust_plugins_warn() {
+        println!(
+            "\x1b[1;33mwarning:\x1b[0m adding native dependency: rust-plugins is set to \"warn\" in flame.toml [options]."
+        );
+    }
 
     let (manifest_key, manifest_value, section) = if is_plugin {
         let plugin_idx = match args.iter().position(|r| r == "--plugin" || r == "-p" || r == "@plugin") {
@@ -270,7 +294,14 @@ pub fn add_package(args: &[String]) {
         };
 
         if pkg_location.exists() {
-            build_single_dependency_plugins(&pkg_location, false);
+            if is_rust_plugins_denied() && (pkg_location.join("Cargo.toml").exists() || pkg_location.join("native").exists()) {
+                println!(
+                    "   \x1b[1;33m⚠ Warning:\x1b[0m skipping Rust plugin compilation in '{}' (`rust-plugins = \"deny\"` in flame.toml [options]).",
+                    manifest_key
+                );
+            } else {
+                build_single_dependency_plugins(&pkg_location, false);
+            }
         }
     }
 
@@ -414,17 +445,19 @@ pub fn ensure_dependencies_installed(is_release: bool) {
         fetch_remote(&target, &source);
     }
 
-    for (target, source) in native_to_compile {
-        let plugin_path_str = fetch_remote(&target, &source);
-        let plugin_path = Path::new(&plugin_path_str);
+    if !is_rust_plugins_denied() {
+        for (target, source) in native_to_compile {
+            let plugin_path_str = fetch_remote(&target, &source);
+            let plugin_path = Path::new(&plugin_path_str);
 
-        if plugin_path.join("Cargo.toml").exists()
-            || plugin_path.join("native").join("Cargo.toml").exists()
-        {
-            generate_package_fmi(&target, plugin_path, is_release);
+            if plugin_path.join("Cargo.toml").exists()
+                || plugin_path.join("native").join("Cargo.toml").exists()
+            {
+                generate_package_fmi(&target, plugin_path, is_release);
+            }
         }
+        build_all_dependency_plugins(is_release);
     }
-    build_all_dependency_plugins(is_release);
 }
 
 
@@ -462,6 +495,7 @@ pub fn install_all_packages(args: &[String]) {
 
     let mut successful_installs = 0;
     let mut errors = 0;
+    let rust_denied = is_rust_plugins_denied();
 
     // 1. Process pure Flame dependencies & remote packages
     for (target, source) in deps {
@@ -495,12 +529,19 @@ pub fn install_all_packages(args: &[String]) {
                         if p_dir.join("Cargo.toml").exists()
                             || p_dir.join("native").join("Cargo.toml").exists()
                         {
-                            println!(
-                                "   \x1b[1;36m•\x1b[0m Compiling   dependency plugin '{}' from '{}'...",
-                                plugin_name, target
-                            );
-                            if generate_package_fmi(&plugin_name, &p_dir, is_release) {
-                                successful_installs += 1;
+                            if rust_denied {
+                                println!(
+                                    "   \x1b[1;33m⚠ Warning:\x1b[0m skipping Rust plugin '{}' from '{}' (`rust-plugins = \"deny\"` in flame.toml [options]).",
+                                    plugin_name, target
+                                );
+                            } else {
+                                println!(
+                                    "   \x1b[1;36m•\x1b[0m Compiling   dependency plugin '{}' from '{}'...",
+                                    plugin_name, target
+                                );
+                                if generate_package_fmi(&plugin_name, &p_dir, is_release) {
+                                    successful_installs += 1;
+                                }
                             }
                         }
                     }
@@ -551,53 +592,64 @@ pub fn install_all_packages(args: &[String]) {
     let mut native_to_process = native_deps;
     native_to_process.extend(plugins);
 
-    if !native_to_process.is_empty() {
+    if rust_denied && !native_to_process.is_empty() {
         println!();
-    }
+        println!(
+            "   \x1b[1;33m⚠ Warning:\x1b[0m skipping native dependencies and plugins: `rust-plugins = \"deny\"` in flame.toml [options]."
+        );
+    } else {
+        if !native_to_process.is_empty() {
+            println!();
+        }
 
-    for (target, source) in native_to_process {
-        let is_local = source.starts_with('.') || source.starts_with('/') || source == "*";
-        let target_dir = if is_local {
-            if source == "*" {
-                PathBuf::from(&target)
-            } else {
-                PathBuf::from(&source)
-            }
-        } else if source.starts_with("http") || source.contains("github.com") {
-            let dest = pkg_dir.join(&target);
-            if !dest.exists() || force {
-                if dest.exists() && force {
-                    let _ = fs::remove_dir_all(&dest);
+        for (target, source) in native_to_process {
+            let is_local = source.starts_with('.') || source.starts_with('/') || source == "*";
+            let target_dir = if is_local {
+                if source == "*" {
+                    PathBuf::from(&target)
+                } else {
+                    PathBuf::from(&source)
                 }
-                if let Err(e) = download_archive_with_loader(&target, &source, &dest) {
-                    eprintln!(
-                        "   \x1b[1;31m✗\x1b[0m Failed downloading plugin '{}': {}",
-                        target, e
-                    );
-                    errors += 1;
-                    continue;
+            } else if source.starts_with("http") || source.contains("github.com") {
+                let dest = pkg_dir.join(&target);
+                if !dest.exists() || force {
+                    if dest.exists() && force {
+                        let _ = fs::remove_dir_all(&dest);
+                    }
+                    if let Err(e) = download_archive_with_loader(&target, &source, &dest) {
+                        eprintln!(
+                            "   \x1b[1;31m✗\x1b[0m Failed downloading plugin '{}': {}",
+                            target, e
+                        );
+                        errors += 1;
+                        continue;
+                    }
+                } else {
+                    println!("   \x1b[1;34m•\x1b[0m Cached      plugin '{}'", target);
                 }
+                dest
             } else {
-                println!("   \x1b[1;34m•\x1b[0m Cached      plugin '{}'", target);
-            }
-            dest
-        } else {
-            pkg_dir.join(&target)
-        };
+                pkg_dir.join(&target)
+            };
 
-        if generate_package_fmi(&target, &target_dir, is_release) {
-            successful_installs += 1;
-        } else if is_local {
-            println!(
-                "   \x1b[1;33m⚠\x1b[0m Warning: local plugin '{}' at '{}' does not contain Cargo.toml",
-                target,
-                target_dir.display()
-            );
+            if generate_package_fmi(&target, &target_dir, is_release) {
+                successful_installs += 1;
+            } else if is_local {
+                println!(
+                    "   \x1b[1;33m⚠\x1b[0m Warning: local plugin '{}' at '{}' does not contain Cargo.toml",
+                    target,
+                    target_dir.display()
+                );
+            }
         }
     }
 
     // 3. Process and build local plugins / native dependencies declared inside all dependency packages
-    let dep_plugins_built = build_all_dependency_plugins(is_release);
+    let dep_plugins_built = if !rust_denied {
+        build_all_dependency_plugins(is_release)
+    } else {
+        0
+    };
     successful_installs += dep_plugins_built;
 
     if errors > 0 {

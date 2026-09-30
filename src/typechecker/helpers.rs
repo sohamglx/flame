@@ -301,8 +301,33 @@ impl TypeChecker {
             (Type::Named(name), Type::Byte) if name == "Bytes" => true,
             (Type::Byte, Type::Named(name)) if name == "Bytes" => true,
             (Type::Formula(_, _), Type::Formula(_, _)) => true,
-            (Type::Function(_, _), _) => true,
-            (_, Type::Function(_, _)) => true,
+            (Type::Function(e_params, e_ret), Type::Function(a_params, a_ret)) => {
+                if self.strict_closures {
+                    if e_params.len() != a_params.len() {
+                        false
+                    } else {
+                        e_params
+                            .iter()
+                            .zip(a_params.iter())
+                            .all(|(ep, ap)| {
+                                if matches!(ap, Type::Unknown) {
+                                    false
+                                } else {
+                                    self.is_compatible(ep, ap)
+                                }
+                            })
+                            && (if matches!(**a_ret, Type::Unknown) && **e_ret != Type::Nil {
+                                false
+                            } else {
+                                self.is_compatible(e_ret, a_ret)
+                            })
+                    }
+                } else {
+                    true
+                }
+            }
+            (Type::Function(_, _), _) => !self.strict_closures,
+            (_, Type::Function(_, _)) => !self.strict_closures,
             _ => false,
         }
     }
@@ -617,6 +642,25 @@ impl TypeChecker {
             label,
             suggestion,
         ));
+    }
+
+    pub(crate) fn warning(
+        &mut self,
+        message: String,
+        span: Span,
+        label: Option<String>,
+        suggestion: Option<String>,
+        note: Option<String>,
+    ) {
+        let mut diag = Diagnostic::new_warning(
+            message,
+            self.filepath.clone(),
+            span,
+            label,
+            suggestion,
+        );
+        diag.note = note;
+        self.diagnostics.push(diag);
     }
 
     pub(crate) fn parse_command_annotation(

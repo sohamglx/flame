@@ -493,9 +493,39 @@ impl TypeChecker {
                         }
                     }
                 }
-                Stmt::ImportDecl { path, alias, is_quoted, .. } => {
+                Stmt::ImportDecl { path, alias, is_quoted, span, .. } => {
                     if *is_quoted {
                         if let Some(file_str) = path.first() {
+                            let is_native = file_str.starts_with("native")
+                                || file_str.starts_with("./native")
+                                || file_str.ends_with(".rs")
+                                || self.declared_native_plugins.contains(file_str);
+                            if is_native {
+                                if self.rust_plugins_mode == crate::utils::manifest::RustPluginsMode::Deny {
+                                    self.error(
+                                        format!(
+                                            "cannot import native file '{}': rust-plugins is set to \"deny\" in flame.toml [options]",
+                                            file_str
+                                        ),
+                                        span.clone(),
+                                        Some("native import denied".to_string()),
+                                        Some("change `rust-plugins` in flame.toml [options] to \"default\" to allow Rust plugins".to_string()),
+                                    );
+                                    return;
+                                } else if self.rust_plugins_mode == crate::utils::manifest::RustPluginsMode::Warn {
+                                    self.warning(
+                                        format!(
+                                            "importing native file '{}': rust-plugins is set to \"warn\" in flame.toml [options]",
+                                            file_str
+                                        ),
+                                        span.clone(),
+                                        Some("native file imported".to_string()),
+                                        Some("change `rust-plugins` in flame.toml [options] to \"default\" or remove it to silence this warning".to_string()),
+                                        None,
+                                    );
+                                }
+                            }
+
                             let bind_name = alias.clone().unwrap_or_else(|| {
                                 let p = std::path::Path::new(file_str);
                                 p.file_stem().and_then(|s| s.to_str()).unwrap_or("resource").to_string()
@@ -574,6 +604,37 @@ impl TypeChecker {
                         }
                     } else if let Some(mod_name) = path.last() {
                         let registered_name = alias.as_ref().unwrap_or(mod_name);
+                        let is_native = path.first().map_or(false, |p| p == "native")
+                            || path.iter().any(|p| p == "native")
+                            || self.declared_native_plugins.contains(mod_name)
+                            || path.first().map_or(false, |p| self.declared_native_plugins.contains(p));
+
+                        if is_native {
+                            if self.rust_plugins_mode == crate::utils::manifest::RustPluginsMode::Deny {
+                                self.error(
+                                    format!(
+                                        "cannot import native plugin '{}': rust-plugins is set to \"deny\" in flame.toml [options]",
+                                        path.join(".")
+                                    ),
+                                    span.clone(),
+                                    Some("native plugin import denied".to_string()),
+                                    Some("change `rust-plugins` in flame.toml [options] to \"default\" to allow Rust plugins".to_string()),
+                                );
+                                return;
+                            } else if self.rust_plugins_mode == crate::utils::manifest::RustPluginsMode::Warn {
+                                self.warning(
+                                    format!(
+                                        "importing native plugin '{}': rust-plugins is set to \"warn\" in flame.toml [options]",
+                                        path.join(".")
+                                    ),
+                                    span.clone(),
+                                    Some("native plugin imported".to_string()),
+                                    Some("change `rust-plugins` in flame.toml [options] to \"default\" or remove it to silence this warning".to_string()),
+                                    None,
+                                );
+                            }
+                        }
+
                         if path.first().map_or(false, |p| p == "native" || p == "std") {
                             self.plugins.insert(registered_name.clone());
                             self.modules.insert(registered_name.clone());
@@ -1973,6 +2034,66 @@ impl TypeChecker {
                         }
                     }
                 } else {
+                    let has_wildcard = arms.iter().any(|arm| arm.patterns.iter().any(|p| p == "_"));
+                    if !has_wildcard {
+                        let (expected_variants, type_name_str) = match &target_ty {
+                            Type::Named(name) if name.starts_with("Option") || name == "Option" => {
+                                (vec!["Some", "None"], name.clone())
+                            }
+                            Type::Named(name) if name.starts_with("Result") || name == "Result" => {
+                                (vec!["Ok", "Err"], name.clone())
+                            }
+                            Type::Enum(name) => {
+                                if let Some(e_info) = self.enums.get(name) {
+                                    let v_names: Vec<&str> = e_info.variants.keys().map(|s| s.as_str()).collect();
+                                    (v_names, name.clone())
+                                } else if name == "Option" {
+                                    (vec!["Some", "None"], name.clone())
+                                } else if name == "Result" {
+                                    (vec!["Ok", "Err"], name.clone())
+                                } else {
+                                    (vec![], name.clone())
+                                }
+                            }
+                            Type::EnumVariant { enum_name, .. } => {
+                                if let Some(e_info) = self.enums.get(enum_name) {
+                                    let v_names: Vec<&str> = e_info.variants.keys().map(|s| s.as_str()).collect();
+                                    (v_names, enum_name.clone())
+                                } else if enum_name == "Option" {
+                                    (vec!["Some", "None"], enum_name.clone())
+                                } else if enum_name == "Result" {
+                                    (vec!["Ok", "Err"], enum_name.clone())
+                                } else {
+                                    (vec![], enum_name.clone())
+                                }
+                            }
+                            _ => (vec![], String::new()),
+                        };
+
+                        if !expected_variants.is_empty() {
+                            let mut covered = std::collections::HashSet::new();
+                            for arm in arms {
+                                for pat in &arm.patterns {
+                                    let base_pat = pat.rsplit('.').next().unwrap_or(pat);
+                                    let base_pat = base_pat.rsplit("::").next().unwrap_or(base_pat);
+                                    covered.insert(base_pat);
+                                }
+                            }
+                            for expected in expected_variants {
+                                if !covered.contains(expected) {
+                                    self.warning(
+                                        format!("non-exhaustive patterns: `{}` not covered", expected),
+                                        target.span(),
+                                        Some(format!("pattern `{}` not covered", expected)),
+                                        Some(format!("ensure that all possible cases are being handled by adding a match arm: `{} => ...` or a wildcard `_ => ...`", expected)),
+                                        Some(format!("the matched value is of type `{}`", type_name_str)),
+                                    );
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
                     for arm in arms {
                         self.push_scope();
                         for field in &arm.destructure {

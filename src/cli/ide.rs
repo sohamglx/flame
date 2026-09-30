@@ -541,8 +541,21 @@ pub fn analyze_file_for_json(
     let word_under_cursor_raw = extract_word_at_cursor(current_line, cursor_col);
     let word_under_cursor = word_under_cursor_raw.trim_start_matches('@').to_string();
 
-    // Scan for variables and structs
     let (mut scanned_vars, mut scanned_structs) = ide::scan_document(&content);
+    let scanned_enums = ide::scan_document_enums(&content);
+
+    let mut local_suggestions = Vec::new();
+    for stmt in &parsed_stmts {
+        match stmt {
+            crate::parser::Stmt::PackageDecl { annotations, .. }
+            | crate::parser::Stmt::StructDecl { annotations, .. }
+            | crate::parser::Stmt::EnumDecl { annotations, .. }
+            | crate::parser::Stmt::FuncDecl { annotations, .. } => {
+                local_suggestions.extend(parse_suggestion_annotations(annotations));
+            }
+            _ => {}
+        }
+    }
 
     let mut cursor_byte_idx = 0;
     if let Some(l) = line {
@@ -2463,52 +2476,15 @@ pub fn analyze_file_for_json(
                                         candidate.to_string_lossy().to_string(),
                                     );
                                     if let Ok(stmts) = parser.parse() {
-                                        eprintln!("DEBUG_STMTS_LEN: {}", stmts.len());
-                                        for stmt in stmts {
-                                            if let crate::parser::Stmt::PackageDecl {
-                                                annotations,
-                                                ..
-                                            } = stmt
-                                            {
-                                                for ann in annotations {
-                                                    eprintln!(
-                                                        "DEBUG_ANN: name={}, args={:?}",
-                                                        ann.name, ann.args
-                                                    );
-                                                    if ann.name == "Suggestions"
-                                                        && !ann.args.is_empty()
-                                                    {
-                                                        let s_args = ann.args.join(" ");
-                                                        let re = regex::Regex::new(r"\{\s*name\s*:\s*([^,]+),\s*kind\s*:\s*([^,}]+)(?:,\s*doc\s*:\s*([^}]+))?\}").unwrap();
-                                                        for cap in re.captures_iter(&s_args) {
-                                                            let struct_name = cap[1]
-                                                                .trim()
-                                                                .trim_matches(|c| {
-                                                                    c == '"' || c == '\''
-                                                                })
-                                                                .to_string();
-                                                            let kind = cap[2]
-                                                                .trim()
-                                                                .trim_matches(|c| {
-                                                                    c == '"' || c == '\''
-                                                                })
-                                                                .to_string();
-                                                            let doc = cap.get(3).map(|m| {
-                                                                m.as_str()
-                                                                    .trim()
-                                                                    .trim_matches(|c| {
-                                                                        c == '"' || c == '\''
-                                                                    })
-                                                                    .to_string()
-                                                            });
-                                                            pkg_suggestions.push((
-                                                                struct_name,
-                                                                kind,
-                                                                doc,
-                                                            ));
-                                                        }
-                                                    }
+                                        for stmt in &stmts {
+                                            match stmt {
+                                                crate::parser::Stmt::PackageDecl { annotations, .. }
+                                                | crate::parser::Stmt::StructDecl { annotations, .. }
+                                                | crate::parser::Stmt::EnumDecl { annotations, .. }
+                                                | crate::parser::Stmt::FuncDecl { annotations, .. } => {
+                                                    pkg_suggestions.extend(parse_suggestion_annotations(annotations));
                                                 }
+                                                _ => {}
                                             }
                                         }
                                     }
@@ -2524,7 +2500,54 @@ pub fn analyze_file_for_json(
 
                 let mut provided_completions = false;
 
-                if let Some(tc) = &tc_opt {
+                if namespace == "Option" {
+                    let opt_variants = [
+                        ("Some", "enumMember", "Option.Some(value)", Some("`Option.Some(T)` contains a value of type T.")),
+                        ("None", "enumMember", "Option.None", Some("`Option.None` represents the absence of a value.")),
+                    ];
+                    for (v, k, detail, doc) in opt_variants {
+                        if member_prefix.as_deref().map_or(true, |p| v.starts_with(p)) {
+                            completions.push(JsonCompletion {
+                                sort_text: Some("1_".to_string()),
+                                label: v.to_string(),
+                                kind: k.to_string(),
+                                detail: detail.to_string(),
+                                documentation: doc.map(|d| d.to_string()),
+                            });
+                            provided_completions = true;
+                        }
+                    }
+                } else if namespace == "Result" {
+                    let res_variants = [
+                        ("Ok", "enumMember", "Result.Ok(value)", Some("`Result.Ok(T)` represents success containing a value.")),
+                        ("Err", "enumMember", "Result.Err(error)", Some("`Result.Err(E)` represents failure containing an error.")),
+                    ];
+                    for (v, k, detail, doc) in res_variants {
+                        if member_prefix.as_deref().map_or(true, |p| v.starts_with(p)) {
+                            completions.push(JsonCompletion {
+                                sort_text: Some("1_".to_string()),
+                                label: v.to_string(),
+                                kind: k.to_string(),
+                                detail: detail.to_string(),
+                                documentation: doc.map(|d| d.to_string()),
+                            });
+                            provided_completions = true;
+                        }
+                    }
+                } else if let Some(e) = scanned_enums.iter().find(|e| e.name == namespace) {
+                    for v in &e.variants {
+                        if member_prefix.as_deref().map_or(true, |p| v.name.starts_with(p)) {
+                            completions.push(JsonCompletion {
+                                sort_text: Some("1_".to_string()),
+                                label: v.name.clone(),
+                                kind: "enumMember".to_string(),
+                                detail: format!("{}::{}", namespace, v.name),
+                                documentation: None,
+                            });
+                            provided_completions = true;
+                        }
+                    }
+                } else if let Some(tc) = &tc_opt {
                     if let Some(enum_info) = tc.enums.get(&namespace) {
                         for (variant_name, _) in &enum_info.variants {
                             if member_prefix
@@ -2629,8 +2652,13 @@ pub fn analyze_file_for_json(
                                 }
                             }
                         }
-                    } else if !pkg_suggestions.is_empty() {
-                        for (s_name, s_kind, s_doc) in &pkg_suggestions {
+                    } else if !pkg_suggestions.is_empty() || !local_suggestions.is_empty() {
+                        let combined_suggs = if !pkg_suggestions.is_empty() {
+                            &pkg_suggestions
+                        } else {
+                            &local_suggestions
+                        };
+                        for (s_name, s_kind, s_doc) in combined_suggs {
                             if member_prefix
                                 .as_deref()
                                 .map_or(true, |p| s_name.starts_with(p))
@@ -3199,7 +3227,90 @@ pub fn analyze_file_for_json(
             }
         }
 
-        // Provide structs as completion for bare words
+        // Provide match arm completions if inside a match block
+        let match_target = line.and_then(|l| detect_match_context(&content, l.saturating_sub(1)));
+        if let Some(target_expr) = &match_target {
+            let is_option = target_expr.contains("Option")
+                || scanned_vars.iter().any(|v| v.name == *target_expr && v.typ.as_deref().unwrap_or("").contains("Option"))
+                || target_expr == "x" || target_expr == "opt";
+            let is_result = target_expr.contains("Result")
+                || scanned_vars.iter().any(|v| v.name == *target_expr && v.typ.as_deref().unwrap_or("").contains("Result"))
+                || target_expr == "res";
+
+            if is_option {
+                let arms = [
+                    ("Some(val) => ", "match arm for Option.Some"),
+                    ("None => ", "match arm for Option.None"),
+                    ("Option.Some(val) => ", "match arm for Option.Some"),
+                    ("Option.None => ", "match arm for Option.None"),
+                ];
+                for (arm, detail) in arms {
+                    if arm.starts_with(&word_under_cursor) || word_under_cursor.is_empty() {
+                        completions.push(JsonCompletion {
+                            sort_text: Some("0_".to_string()),
+                            label: arm.to_string(),
+                            kind: "snippet".to_string(),
+                            detail: detail.to_string(),
+                            documentation: Some(format!("Match pattern arm for Option: `{}`", arm)),
+                        });
+                    }
+                }
+            }
+
+            if is_result {
+                let arms = [
+                    ("Ok(val) => ", "match arm for Result.Ok"),
+                    ("Err(err) => ", "match arm for Result.Err"),
+                    ("Result.Ok(val) => ", "match arm for Result.Ok"),
+                    ("Result.Err(err) => ", "match arm for Result.Err"),
+                ];
+                for (arm, detail) in arms {
+                    if arm.starts_with(&word_under_cursor) || word_under_cursor.is_empty() {
+                        completions.push(JsonCompletion {
+                            sort_text: Some("0_".to_string()),
+                            label: arm.to_string(),
+                            kind: "snippet".to_string(),
+                            detail: detail.to_string(),
+                            documentation: Some(format!("Match pattern arm for Result: `{}`", arm)),
+                        });
+                    }
+                }
+            }
+
+            for e in &scanned_enums {
+                let is_enum_target = target_expr == &e.name
+                    || scanned_vars.iter().any(|v| v.name == *target_expr && v.typ.as_deref() == Some(&e.name));
+                if is_enum_target {
+                    for v in &e.variants {
+                        let arm1 = format!("{} => ", v.name);
+                        let arm2 = format!("{}.{} => ", e.name, v.name);
+                        for arm in [arm1, arm2] {
+                            if arm.starts_with(&word_under_cursor) || word_under_cursor.is_empty() {
+                                completions.push(JsonCompletion {
+                                    sort_text: Some("0_".to_string()),
+                                    label: arm,
+                                    kind: "snippet".to_string(),
+                                    detail: format!("match arm for enum variant {}", v.name),
+                                    documentation: None,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            if "_ => ".starts_with(&word_under_cursor) || word_under_cursor.is_empty() {
+                completions.push(JsonCompletion {
+                    sort_text: Some("2_".to_string()),
+                    label: "_ => ".to_string(),
+                    kind: "snippet".to_string(),
+                    detail: "wildcard pattern match arm".to_string(),
+                    documentation: Some("Matches any remaining pattern in `match` block.".to_string()),
+                });
+            }
+        }
+
+        // Provide structs, enums, variants, and suggestions for bare words
         if !word_under_cursor_raw.starts_with('@') {
             for s in &scanned_structs {
                 if s.name.starts_with(&word_under_cursor) || word_under_cursor.is_empty() {
@@ -3209,6 +3320,62 @@ pub fn analyze_file_for_json(
                         kind: "class".to_string(),
                         detail: "struct".to_string(),
                         documentation: None,
+                    });
+                }
+            }
+
+            let builtin_items = [
+                ("Option", "enum", "enum Option<T>", Some("`Option` represents an optional value: either `Some(T)` or `None`.")),
+                ("Some", "enumMember", "Option.Some(value)", Some("Constructs a `Some` variant of `Option` containing a value.")),
+                ("None", "enumMember", "Option.None", Some("Constructs the `None` variant of `Option`.")),
+                ("Result", "enum", "enum Result<T, E>", Some("`Result` represents success (`Ok`) or failure (`Err`).")),
+                ("Ok", "enumMember", "Result.Ok(value)", Some("Constructs the `Ok` variant of `Result`.")),
+                ("Err", "enumMember", "Result.Err(error)", Some("Constructs the `Err` variant of `Result`.")),
+                ("Error", "struct", "struct Error", Some("Built-in standard `Error` struct with `message` and `code` fields.")),
+            ];
+            for (label, kind, detail, doc) in builtin_items {
+                if label.starts_with(&word_under_cursor) || word_under_cursor.is_empty() {
+                    completions.push(JsonCompletion {
+                        sort_text: Some("1_".to_string()),
+                        label: label.to_string(),
+                        kind: kind.to_string(),
+                        detail: detail.to_string(),
+                        documentation: doc.map(|d| d.to_string()),
+                    });
+                }
+            }
+
+            for e in &scanned_enums {
+                if e.name.starts_with(&word_under_cursor) || word_under_cursor.is_empty() {
+                    completions.push(JsonCompletion {
+                        sort_text: Some("1_".to_string()),
+                        label: e.name.clone(),
+                        kind: "enum".to_string(),
+                        detail: format!("enum {}", e.name),
+                        documentation: None,
+                    });
+                }
+                for v in &e.variants {
+                    if v.name.starts_with(&word_under_cursor) || word_under_cursor.is_empty() {
+                        completions.push(JsonCompletion {
+                            sort_text: Some("1_".to_string()),
+                            label: v.name.clone(),
+                            kind: "enumMember".to_string(),
+                            detail: format!("{}::{}", e.name, v.name),
+                            documentation: None,
+                        });
+                    }
+                }
+            }
+
+            for (s_name, s_kind, s_doc) in &local_suggestions {
+                if s_name.starts_with(&word_under_cursor) || word_under_cursor.is_empty() {
+                    completions.push(JsonCompletion {
+                        sort_text: Some("1_".to_string()),
+                        label: s_name.clone(),
+                        kind: s_kind.clone(),
+                        detail: format!("suggestion: {}", s_kind),
+                        documentation: s_doc.clone(),
                     });
                 }
             }
@@ -3589,6 +3756,19 @@ pub fn analyze_file_for_json(
     for s in &scanned_structs {
         workspace_types.insert(s.name.clone());
     }
+    for e in &scanned_enums {
+        workspace_types.insert(e.name.clone());
+        for v in &e.variants {
+            workspace_types.insert(v.name.clone());
+        }
+    }
+    workspace_types.insert("Option".to_string());
+    workspace_types.insert("Some".to_string());
+    workspace_types.insert("None".to_string());
+    workspace_types.insert("Result".to_string());
+    workspace_types.insert("Ok".to_string());
+    workspace_types.insert("Err".to_string());
+    workspace_types.insert("Error".to_string());
     if let Some(tc) = &tc_opt {
         for (enum_name, enum_info) in &tc.enums {
             workspace_types.insert(enum_name.clone());
@@ -3669,6 +3849,79 @@ fn list_std_modules(_manifest_dir: &Path) -> Vec<String> {
         "web".to_string(),
         "annotation".to_string(),
     ]
+}
+
+pub fn parse_suggestion_annotations(annotations: &[crate::parser::Annotation]) -> Vec<(String, String, Option<String>)> {
+    let mut results = Vec::new();
+    for ann in annotations {
+        if ann.name == "Suggestions" || ann.name == "Suggestion" {
+            let combined = ann.args.join(" ");
+            // Match objects: { ... name: ..., kind: ... }
+            if let Ok(obj_re) = Regex::new(r#"\{[^{}]*\}"#) {
+                let name_re = Regex::new(r#"(?:name|label)\s*:\s*["']?([^,"'}\s]+)["']?"#).unwrap();
+                let kind_re = Regex::new(r#"(?:kind|type)\s*:\s*["']?([^,"'}\s]+)["']?"#).unwrap();
+                let doc_re = Regex::new(r#"(?:doc|detail|description)\s*:\s*["']?([^,"'}]+)["']?"#).unwrap();
+
+                for m in obj_re.find_iter(&combined) {
+                    let obj_str = m.as_str();
+                    let name = name_re.captures(obj_str).map(|c| c[1].to_string());
+                    let kind = kind_re.captures(obj_str).map(|c| c[1].to_string()).unwrap_or_else(|| "property".to_string());
+                    let doc = doc_re.captures(obj_str).map(|c| c[1].to_string());
+
+                    if let Some(n) = name {
+                        results.push((n, kind, doc));
+                    }
+                }
+            }
+
+            // Match arrays: [ "name", "kind", "doc" ] or [ 'name', 'kind' ]
+            if let Ok(arr_re) = Regex::new(r#"\[\s*["']([^"']+)["']\s*,\s*["']([^"']+)["'](?:\s*,\s*["']([^"']+)["'])?\s*\]"#) {
+                for cap in arr_re.captures_iter(&combined) {
+                    let name = cap[1].to_string();
+                    let kind = cap[2].to_string();
+                    let doc = cap.get(3).map(|m| m.as_str().to_string());
+                    results.push((name, kind, doc));
+                }
+            }
+
+            // If args were passed as direct strings without brackets/braces: ("name", "kind", "doc")
+            if results.is_empty() && !ann.args.is_empty() {
+                let clean_args: Vec<String> = ann.args.iter().map(|a| a.trim().trim_matches(|c| c == '"' || c == '\'').to_string()).collect();
+                if !clean_args.is_empty() && !clean_args[0].starts_with('[') && !clean_args[0].starts_with('{') {
+                    let name = clean_args[0].clone();
+                    let kind = clean_args.get(1).cloned().unwrap_or_else(|| "property".to_string());
+                    let doc = clean_args.get(2).cloned();
+                    results.push((name, kind, doc));
+                }
+            }
+        }
+    }
+    results
+}
+
+fn detect_match_context(content: &str, line_idx: usize) -> Option<String> {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut brace_depth = 0;
+    for i in (0..=line_idx.min(lines.len().saturating_sub(1))).rev() {
+        let l = lines[i];
+        for ch in l.chars().rev() {
+            if ch == '}' {
+                brace_depth += 1;
+            } else if ch == '{' {
+                if brace_depth > 0 {
+                    brace_depth -= 1;
+                } else {
+                    let before_brace = l[..l.find('{').unwrap_or(l.len())].trim();
+                    if let Some(idx) = before_brace.find("match ") {
+                        let expr = before_brace[idx + 6..].trim().to_string();
+                        return Some(expr);
+                    }
+                    return None;
+                }
+            }
+        }
+    }
+    None
 }
 
 fn extract_member_context(line: &str, col: usize) -> (Option<String>, Option<String>) {

@@ -237,6 +237,17 @@ pub fn build_project(args: &[String]) -> Option<PathBuf> {
             }
         }
 
+        let plugins_mode = crate::utils::manifest::get_rust_plugins_mode(None);
+        if plugins_mode == crate::utils::manifest::RustPluginsMode::Deny {
+            if !native_deps_raw.is_empty() || !plugins_raw.is_empty() {
+                println!(
+                    "\x1b[1;33mwarning:\x1b[0m skipping compilation of native plugins: rust-plugins is set to \"deny\" in flame.toml [options]"
+                );
+            }
+            native_deps_raw.clear();
+            plugins_raw.clear();
+        }
+
         let mut processed_native_deps = Vec::new();
 
         for (plugin_name, plugin_path) in native_deps_raw {
@@ -393,6 +404,20 @@ pub fn check_runtime_needs_rebuild(exe_path: &Path, _profile: &str) -> bool {
             }
         }
         false
+    }
+
+    if Path::new("src").exists() && check_dir_newer(Path::new("src"), exe_time) {
+        return true;
+    }
+
+    if Path::new("main.fm").exists() {
+        if let Ok(m) = fs::metadata("main.fm") {
+            if let Ok(time) = m.modified() {
+                if time > exe_time {
+                    return true;
+                }
+            }
+        }
     }
 
     if Path::new("native").exists() && check_dir_newer(Path::new("native"), exe_time) {

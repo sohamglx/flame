@@ -51,6 +51,13 @@ impl Runner {
     }
 
     pub(crate) fn execute_plugin(&mut self, plugin_name: &str, env: Arc<Mutex<Env>>) -> Result<Value, String> {
+        if crate::utils::manifest::is_rust_plugins_denied(Some(&self.filepath)) {
+            return Err(format!(
+                "cannot execute native plugin '{}': rust-plugins is set to \"deny\" in flame.toml [options]",
+                plugin_name
+            ));
+        }
+
         let rel_meta = format!(".flame/pkg/{}/{}.fmi", plugin_name, plugin_name);
         let meta_candidates = vec![
             PathBuf::from(&rel_meta),

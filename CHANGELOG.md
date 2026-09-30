@@ -2,6 +2,66 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.6.5] - 2026-09-30 (Codename: *Sixth Spark*)
+
+### 🛡️ Configurable Security Policies & Manifest Options (`flame.toml`)
+
+- **Native Rust Plugin Policies (`rust-plugins = "default" | "warn" | "deny"`)**:
+  - Added project-level governance over native Rust `.so`/`.dylib`/`.dll` plugin execution via `[options]` in `flame.toml`:
+    - `"default"`: Normal execution with native plugins permitted.
+    - `"warn"`: Allows execution while emitting compiler warnings using `Diagnostic::new_warning` whenever native modules are imported or run.
+    - `"deny"`: Strictly forbids native plugins. Emits compile-time and runtime diagnostics (`Diagnostic::new_error`) on imports, package installation, and execution (`flame check`, `flame run`, `flame build`, `fmp add`), preventing unauthorized binary code execution.
+- **Configurable Closure Typing Modes (`closure-types = "default" | "strict"`)**:
+  - Added typing policy control for closure expressions:
+    - `"default"`: Allows dynamic parameter inference without requiring explicit type annotations (`|a, b| => a + b`).
+    - `"strict"`: Enforces static type annotations and parameter count validation on closures (`|a: Int, b: Int|: Int => a + b`), rejecting unannotated parameters at compile time.
+- **Centralized Manifest Engine (`src/utils/manifest.rs`)**:
+  - Implemented manifest utilities: `get_rust_plugins_mode`, `is_rust_plugins_denied`, `is_rust_plugins_warn`, `get_closure_types_mode`, `is_strict_closure_types`, and `get_declared_plugins`.
+- **Project Scaffolding & Configuration Templates (`src/cli/commands/project.rs`)**:
+  - Updated `flame new` and `flame package` scaffolds to generate clean, commented `[options]` sections explaining each configuration mode.
+  - Added complete documentation guide at `docs/src/content/docs/packages-and-native/flame-toml.mdx`.
+
+### 🎨 IDE Syntax Highlighting & Semantic Token Architecture
+
+- **Control-Red Annotations (`keyword.control.flame`)**:
+  - Corrected syntax highlighting for annotations (`@Annotation` and `annotation Name`) in `ide/syntaxes/flame.tmLanguage.json` to use control keyword red, matching language keywords.
+  - Stripped `@` tokens from `src/ide/semantic_tokens.rs` and removed the `annotation` superType `function` from `ide/package.json` to prevent semantic tokens from overriding TextMate red coloring with purple function styling.
+- **Blue Enums and Enum Variants**:
+  - Upgraded semantic token scanning in `src/ide/semantic_tokens.rs` to dynamically discover workspace-declared enums and variants.
+  - Mapped enum types to `constant.language.flame` (token type 3 `enum`) and `variable.other.enummember.flame` (token type 10 `enumMember`) in `ide/package.json`, rendering enums and variants in authentic editor blue.
+- **Smart Dot-Access Enum Suggestions**:
+  - Enhanced autocompletion to suggest variants when accessing enums via dot syntax (e.g. `Option.Some`, `Option.None`, `Result.Ok`, `Result.Err`).
+  - Added snippet completions for enum variant destructuring.
+
+### 🔍 Centralized Compiler Diagnostics Engine (`src/diagnostics.rs`)
+
+- **Rich Terminal Diagnostic Reporting**:
+  - Introduced unified `Diagnostic` structure supporting `DiagnosticSeverity::Error`, `Warning`, and `Info`.
+  - Added constructors `Diagnostic::new_error` and `Diagnostic::new_warning` with chained `.with_note()` support.
+  - Renders ANSI terminal formatting featuring cyan line numbers, visual border gutters, bold red `✖ error:` or bold yellow `⚠ warning:` headers, caret underline pointers (`^^^^`), and contextual help suggestions.
+
+### 🧩 Pattern Matching & Enum Semantics Standardization
+
+- **Enforced Parentheses Destructuring Syntax `()`**:
+  - Standardized pattern matching destructuring to strictly require parentheses `()` (e.g. `match res { 1(val) => ... }` or `Option.Some(val) => ...`).
+  - Disallowed curly-brace destructuring (`1 {value}`) across compiler parser, CLI examples, and documentation.
+- **Enums & Struct `impl` Separation**:
+  - Standardized that `impl` blocks only apply to structs. Enums represent algebraic data types and do not support `impl` blocks.
+  - Updated parser, typechecker, IDE keyword documentation, and documentation guides accordingly.
+- **Unit Variant Move Semantics**:
+  - Resolved erroneous "value moved" borrow errors when matching or passing unit variants such as `Option.None`.
+
+### 📖 Comprehensive Contributor Documentation (`CONTRIBUTING.md`)
+
+- **Codebase Tour & Component Breakdown**:
+  - Overhauled `CONTRIBUTING.md` with a complete repository directory tree and detailed subsystem breakdowns ("where what is implemented") across parser, typechecker, diagnostics, runner, VM, standard libraries, package manager, web compiler, and IDE.
+- **Core Architectural Rules**:
+  - Documented rules on pattern destructuring, struct-only `impl`, TextMate vs semantic tokens layering, and compiler diagnostics.
+- **9 Step-by-Step Contribution Guides**:
+  - Added comprehensive guides for adding syntax/keywords, standard library modules, `flame.toml` options, compiler diagnostics, annotations, IDE extensions, CLI subcommands, documentation articles, and shared utilities.
+
+---
+
 ## [0.6.4] - 2026-09-30 (Codename: *Sixth Spark*)
 
 ### 🎮 Interactive WebAssembly Playground & Documentation (`/playground/`)

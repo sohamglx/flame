@@ -7,7 +7,7 @@ use crate::lexer::Lexer;
 use crate::parser::{Parser, Stmt};
 use crate::runner::Runner;
 use crate::typechecker::TypeChecker;
-use super::build::{build_project, check_runtime_needs_rebuild, get_manifest_pkg_name, get_project_mtime_snapshot, parse_file_stmts};
+use super::build::{build_project, check_runtime_needs_rebuild, get_manifest_pkg_name, get_project_mtime_snapshot, parse_file_stmts, typecheck_file_stmts};
 use super::test::collect_fm_files;
 
 pub fn run_file(path_str: &str, force_local: bool, script_args: &[String]) {
@@ -19,6 +19,19 @@ pub fn run_file(path_str: &str, force_local: bool, script_args: &[String]) {
             path_str
         );
         return;
+    }
+
+    // Validate entry file types before execution
+    if let Ok(content) = fs::read_to_string(path) {
+        if let Ok(stmts) = parse_file_stmts(path, &content) {
+            if let Err(diags) = typecheck_file_stmts(path, &stmts) {
+                for diag in diags {
+                    diag.print(&content);
+                }
+                println!("\x1b[1;31merror:\x1b[0m execution aborted due to type errors");
+                return;
+            }
+        }
     }
 
     let pkg_name = get_manifest_pkg_name();

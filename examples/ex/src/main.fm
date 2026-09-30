@@ -7,14 +7,8 @@ import native.server
 @Cli(name: "flame_cli", version: "1.0.0", description: "Flame toolchain & server")
 fn main(cli: Cli) {
     match cli {
-        build {
-            release, target
-        } => build(release, target)
-
-        serve {
-            port
-        } => serve(port)
-
+        build(release, target) => build(release, target)
+        serve(port) => serve(port)
         help => print("help")
         _ => print("Unknown command")
     }

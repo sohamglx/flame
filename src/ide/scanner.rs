@@ -26,6 +26,68 @@ pub struct ScannedStruct {
     pub doc: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ScannedEnumVariant {
+    pub name: String,
+    pub payload: Option<String>,
+    pub doc: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScannedEnum {
+    pub name: String,
+    pub variants: Vec<ScannedEnumVariant>,
+    pub doc: Option<String>,
+}
+
+pub fn scan_document_enums(content: &str) -> Vec<ScannedEnum> {
+    let stripped = strip_comments_and_strings(content);
+    let content = &stripped;
+    let mut enums = Vec::new();
+
+    let enum_header_re = Regex::new(
+        r#"(?:@Docs\s*\(\s*(?:"([^"]*)"|'([^']*)')\s*\)\s*)?(?:export\s+)?enum\s+([a-zA-Z_]\w*)\s*\{"#,
+    )
+    .unwrap();
+    let variant_re = Regex::new(
+        r#"(?:@Docs\s*\(\s*(?:"([^"]*)"|'([^']*)')\s*\)\s*)?([a-zA-Z_]\w*)(?:\s*(\([^)]*\)))?"#,
+    )
+    .unwrap();
+
+    for cap in enum_header_re.captures_iter(content) {
+        let doc = cap
+            .get(1)
+            .or_else(|| cap.get(2))
+            .map(|m| m.as_str().to_string());
+        let name = cap[3].to_string();
+        let match_obj = cap.get(0).unwrap();
+        let open_brace_pos = match_obj.end() - 1;
+        let mut variants = Vec::new();
+        if let Some(body) = extract_balanced_block(content, open_brace_pos) {
+            for v_cap in variant_re.captures_iter(&body) {
+                let v_doc = v_cap
+                    .get(1)
+                    .or_else(|| v_cap.get(2))
+                    .map(|m| m.as_str().to_string());
+                let v_name = v_cap[3].to_string();
+                let v_payload = v_cap.get(4).map(|m| m.as_str().to_string());
+                variants.push(ScannedEnumVariant {
+                    name: v_name,
+                    payload: v_payload,
+                    doc: v_doc,
+                });
+            }
+        }
+        enums.push(ScannedEnum {
+            name,
+            variants,
+            doc,
+        });
+    }
+
+    enums
+}
+
 pub fn scan_document(content: &str) -> (Vec<ScannedVar>, Vec<ScannedStruct>) {
     let stripped = strip_comments_and_strings(content);
     let content = &stripped;

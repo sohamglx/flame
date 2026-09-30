@@ -101,7 +101,7 @@
               "name": "keyword.declaration.flame"
             },
             "3": {
-              "name": "entity.name.function.flame"
+              "name": "keyword.control.flame"
             }
           }
         },
@@ -112,7 +112,7 @@
               "name": "keyword.declaration.flame"
             },
             "2": {
-              "name": "entity.name.function.flame"
+              "name": "keyword.control.flame"
             }
           }
         }
@@ -370,13 +370,21 @@
 
         {
           "name": "constant.language.flame",
-          "match": "\\b(true|false|nil)\\b"
+          "match": "\\b(true|false|nil|None|Some|Ok|Err|Error)\\b"
+        },
+        {
+          "name": "constant.language.flame",
+          "match": "(?<=[A-Z][a-zA-Z0-9_]*\\.)([A-Z][a-zA-Z0-9_]*)"
         }
       ]
     },
 
     "types": {
       "patterns": [
+        {
+          "name": "entity.name.type.enum.flame",
+          "match": "(?<=\\benum\\s+)([A-Z][a-zA-Z0-9_]*)"
+        },
         {
           "name": "support.type.flame",
           "match": "\\b(Int|Num|Float|String|Bool|Array|Map|Option|Result|Vector|Void|Any|Byte|Char|Never|Self|Nil)\\b"
@@ -391,7 +399,7 @@
         },
         {
           "name": "support.type.flame",
-          "match": "(?<=\\b(struct|enum|trait|impl|type|as)\\s+)([A-Z][a-zA-Z0-9_]*)"
+          "match": "(?<=\\b(struct|trait|impl|type|as)\\s+)([A-Z][a-zA-Z0-9_]*)"
         },
         {
           "name": "support.type.flame",
