@@ -2,7 +2,7 @@
   "name": "flame-language-support",
   "displayName": "Flame",
   "description": "Rich IDE syntax highlighting and configuration for the Flame programming language.",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "icon": "flame.png",
   "publisher": "ezet-galaxy",
   "license": "ISC",
@@ -80,7 +80,12 @@
       {
         "language": "flame",
         "scopes": {
-          "enum": ["constant.language.flame", "variable.other.enummember.flame", "entity.name.type.enum.flame"],
+          "type": ["support.type.flame"],
+          "enum": ["support.type.flame"],
+          "struct": ["support.type.flame"],
+          "interface": ["support.type.flame"],
+          "typeParameter": ["support.type.flame"],
+          "class": ["support.type.flame"],
           "enumMember": ["constant.language.flame", "variable.other.enummember.flame"]
         }
       }

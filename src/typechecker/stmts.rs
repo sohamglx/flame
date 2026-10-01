@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use super::checker::*;
+use super::types::*;
 use crate::diagnostics::Diagnostic;
 use crate::lexer::Span;
 use crate::parser::*;
-use super::checker::*;
-use super::types::*;
+use std::collections::{HashMap, HashSet};
 
 impl TypeChecker {
     pub(crate) fn collect_top_level_declarations(&mut self, stmts: &[Stmt]) {
@@ -15,13 +15,24 @@ impl TypeChecker {
                     annotations,
                     span: _,
                     name_span,
+                    generic_params,
                 } => {
-                    let mut hover_str = format!("```flame\nstruct {}\n```", name);
+                    let gen_str = if generic_params.is_empty() {
+                        String::new()
+                    } else {
+                        format!("<{}>", generic_params.iter().map(|p| if !p.bounds.is_empty() { format!("{}: {}", p.name, p.bounds.join(" + ")) } else { p.name.clone() }).collect::<Vec<_>>().join(", "))
+                    };
+                    let mut hover_str = format!("```flame\nstruct {}{}\n```", name, gen_str);
                     let hover_doc = self.process_annotations(annotations);
                     if let Some(doc) = &hover_doc {
                         hover_str = format!("{}\n\n{}", hover_str, doc);
                     }
                     self.insert_hover_info(name_span.clone(), hover_str);
+                    for p in generic_params {
+                        let bounds_str = if p.bounds.is_empty() { String::new() } else { format!(": {}", p.bounds.join(" + ")) };
+                        let p_hover = format!("```flame\ntype {}{}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}` on struct `{}`.", p.name, bounds_str, p.name, name);
+                        self.insert_hover_info(p.span.clone(), p_hover);
+                    }
 
                     let is_builtin_file = self.filepath.ends_with("builtins.fm")
                         || self.filepath.contains("Blaze/std/")
@@ -38,17 +49,25 @@ impl TypeChecker {
                                 };
                                 if duplicate {
                                     let msg = if prev_kind == "struct" {
-                                        format!("Duplicate struct definition: '{}' is already defined", name)
+                                        format!(
+                                            "Duplicate struct definition: '{}' is already defined",
+                                            name
+                                        )
                                     } else {
-                                        format!("Duplicate type definition: '{}' is already defined as an enum", name)
+                                        format!(
+                                            "Duplicate type definition: '{}' is already defined as an enum",
+                                            name
+                                        )
                                     };
-                                    self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
-                                        msg,
-                                        self.filepath.clone(),
-                                        name_span.clone(),
-                                        None,
-                                        None,
-                                    ));
+                                    self.diagnostics.push(
+                                        crate::diagnostics::Diagnostic::new_error(
+                                            msg,
+                                            self.filepath.clone(),
+                                            name_span.clone(),
+                                            None,
+                                            None,
+                                        ),
+                                    );
                                     is_dup = true;
                                     break;
                                 }
@@ -56,7 +75,9 @@ impl TypeChecker {
                         }
 
                         if !is_dup && !is_builtin_file {
-                            if self.structs.contains_key(name) && !self.defined_types_in_file.contains_key(name) {
+                            if self.structs.contains_key(name)
+                                && !self.defined_types_in_file.contains_key(name)
+                            {
                                 self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
                                     format!("Duplicate struct definition: '{}' is already defined as a built-in type", name),
                                     self.filepath.clone(),
@@ -64,7 +85,9 @@ impl TypeChecker {
                                     None,
                                     None,
                                 ));
-                            } else if self.enums.contains_key(name) && !self.defined_types_in_file.contains_key(name) {
+                            } else if self.enums.contains_key(name)
+                                && !self.defined_types_in_file.contains_key(name)
+                            {
                                 self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
                                     format!("Duplicate type definition: '{}' is already defined as a built-in enum", name),
                                     self.filepath.clone(),
@@ -94,8 +117,14 @@ impl TypeChecker {
                         .map(|p| active_os.contains(p) || p.contains(&active_os))
                         .unwrap_or(true);
                     if matches_active_os || !self.structs.contains_key(name) {
-                        self.structs
-                            .insert(name.clone(), StructInfo { fields: parsed_fields, hover_doc });
+                        self.structs.insert(
+                            name.clone(),
+                            StructInfo {
+                                fields: parsed_fields,
+                                hover_doc,
+                                generic_params: generic_params.clone(),
+                            },
+                        );
                     }
                 }
                 Stmt::EnumDecl {
@@ -104,13 +133,24 @@ impl TypeChecker {
                     annotations,
                     span: _,
                     name_span,
+                    generic_params,
                 } => {
-                    let mut hover_str = format!("```flame\nenum {}\n```", name);
+                    let gen_str = if generic_params.is_empty() {
+                        String::new()
+                    } else {
+                        format!("<{}>", generic_params.iter().map(|p| if !p.bounds.is_empty() { format!("{}: {}", p.name, p.bounds.join(" + ")) } else { p.name.clone() }).collect::<Vec<_>>().join(", "))
+                    };
+                    let mut hover_str = format!("```flame\nenum {}{}\n```", name, gen_str);
                     let hover_doc = self.process_annotations(annotations);
                     if let Some(doc) = &hover_doc {
                         hover_str = format!("{}\n\n{}", hover_str, doc);
                     }
                     self.insert_hover_info(name_span.clone(), hover_str);
+                    for p in generic_params {
+                        let bounds_str = if p.bounds.is_empty() { String::new() } else { format!(": {}", p.bounds.join(" + ")) };
+                        let p_hover = format!("```flame\ntype {}{}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}` on enum `{}`.", p.name, bounds_str, p.name, name);
+                        self.insert_hover_info(p.span.clone(), p_hover);
+                    }
 
                     let is_builtin_file = self.filepath.ends_with("builtins.fm")
                         || self.filepath.contains("Blaze/std/")
@@ -127,17 +167,25 @@ impl TypeChecker {
                                 };
                                 if duplicate {
                                     let msg = if prev_kind == "enum" {
-                                        format!("Duplicate enum definition: '{}' is already defined", name)
+                                        format!(
+                                            "Duplicate enum definition: '{}' is already defined",
+                                            name
+                                        )
                                     } else {
-                                        format!("Duplicate type definition: '{}' is already defined as a struct", name)
+                                        format!(
+                                            "Duplicate type definition: '{}' is already defined as a struct",
+                                            name
+                                        )
                                     };
-                                    self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
-                                        msg,
-                                        self.filepath.clone(),
-                                        name_span.clone(),
-                                        None,
-                                        None,
-                                    ));
+                                    self.diagnostics.push(
+                                        crate::diagnostics::Diagnostic::new_error(
+                                            msg,
+                                            self.filepath.clone(),
+                                            name_span.clone(),
+                                            None,
+                                            None,
+                                        ),
+                                    );
                                     is_dup = true;
                                     break;
                                 }
@@ -145,7 +193,9 @@ impl TypeChecker {
                         }
 
                         if !is_dup && !is_builtin_file {
-                            if self.enums.contains_key(name) && !self.defined_types_in_file.contains_key(name) {
+                            if self.enums.contains_key(name)
+                                && !self.defined_types_in_file.contains_key(name)
+                            {
                                 self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
                                     format!("Duplicate enum definition: '{}' is already defined as a built-in type", name),
                                     self.filepath.clone(),
@@ -153,7 +203,9 @@ impl TypeChecker {
                                     None,
                                     None,
                                 ));
-                            } else if self.structs.contains_key(name) && !self.defined_types_in_file.contains_key(name) {
+                            } else if self.structs.contains_key(name)
+                                && !self.defined_types_in_file.contains_key(name)
+                            {
                                 self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
                                     format!("Duplicate type definition: '{}' is already defined as a built-in struct", name),
                                     self.filepath.clone(),
@@ -228,12 +280,14 @@ impl TypeChecker {
                             EnumInfo {
                                 variants: map,
                                 hover_doc,
+                                generic_params: generic_params.clone(),
                             },
                         );
                     }
                 }
                 Stmt::FuncDecl {
                     name,
+                    generic_params,
                     params,
                     return_type,
                     annotations,
@@ -243,7 +297,12 @@ impl TypeChecker {
                 } => {
                     let hover_doc = self.process_annotations(annotations);
 
-                    let mut hover_str = format!("```flame\nfn {}(", name);
+                    let gen_str = if generic_params.is_empty() {
+                        String::new()
+                    } else {
+                        format!("<{}>", generic_params.iter().map(|p| if !p.bounds.is_empty() { format!("{}: {}", p.name, p.bounds.join(" + ")) } else { p.name.clone() }).collect::<Vec<_>>().join(", "))
+                    };
+                    let mut hover_str = format!("```flame\nfn {}{}(", name, gen_str);
                     for (i, p) in params.iter().enumerate() {
                         if i > 0 {
                             hover_str.push_str(", ");
@@ -267,6 +326,11 @@ impl TypeChecker {
                     }
 
                     self.insert_hover_info(name_span.clone(), hover_str.clone());
+                    for p in generic_params {
+                        let bounds_str = if p.bounds.is_empty() { String::new() } else { format!(": {}", p.bounds.join(" + ")) };
+                        let p_hover = format!("```flame\ntype {}{}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}` on function `{}`.", p.name, bounds_str, p.name, name);
+                        self.insert_hover_info(p.span.clone(), p_hover);
+                    }
                     if let Some(cmd_info) =
                         self.parse_command_annotation(name, annotations, params, span)
                     {
@@ -302,7 +366,11 @@ impl TypeChecker {
                                 }
                             }
                         }
-                        if !is_dup && !is_builtin_file && self.functions.contains_key(name) && !self.defined_functions_in_file.contains_key(name) {
+                        if !is_dup
+                            && !is_builtin_file
+                            && self.functions.contains_key(name)
+                            && !self.defined_functions_in_file.contains_key(name)
+                        {
                             self.diagnostics
                                 .push(crate::diagnostics::Diagnostic::new_error(
                                     format!(
@@ -338,7 +406,8 @@ impl TypeChecker {
                                         ty: self.parse_type_name(&param.type_name),
                                         is_ref: param.is_ref,
                                         is_mut: param.is_mut,
-                                        has_default: param.default_val.is_some() || param.type_name.ends_with('?'),
+                                        has_default: param.default_val.is_some()
+                                            || param.type_name.ends_with('?'),
                                     })
                                     .collect(),
                                 hover_doc: hover_doc,
@@ -346,6 +415,7 @@ impl TypeChecker {
                                     .as_ref()
                                     .map(|ret| self.parse_type_name(ret))
                                     .unwrap_or(Type::Nil),
+                                generic_params: generic_params.clone(),
                             },
                         );
                     }
@@ -397,7 +467,8 @@ impl TypeChecker {
                                     ty: self.parse_type_name(&param.type_name),
                                     is_ref: param.is_ref,
                                     is_mut: param.is_mut,
-                                    has_default: param.default_val.is_some() || param.type_name.ends_with('?'),
+                                    has_default: param.default_val.is_some()
+                                        || param.type_name.ends_with('?'),
                                 })
                                 .collect(),
                             hover_doc: hover_doc,
@@ -405,38 +476,63 @@ impl TypeChecker {
                                 .as_ref()
                                 .map(|ret| self.parse_type_name(ret))
                                 .unwrap_or(Type::Nil),
+                            generic_params: Vec::new(),
                         },
                     );
                 }
-                Stmt::ImplDecl {
-                    target_type,
-                    trait_name,
+                Stmt::TraitDecl {
+                    name,
+                    generic_params,
+                    super_traits,
                     methods,
+                    associated_types,
                     annotations,
                     span: _,
                     name_span,
                 } => {
-                    let mut hover_str = if let Some(tr) = &trait_name {
-                        format!("```flame\nimpl {} for {}\n```", tr, target_type)
+                    let gen_str = if generic_params.is_empty() {
+                        String::new()
                     } else {
-                        format!("```flame\nimpl {}\n```", target_type)
+                        format!("<{}>", generic_params.iter().map(|p| if !p.bounds.is_empty() { format!("{}: {}", p.name, p.bounds.join(" + ")) } else { p.name.clone() }).collect::<Vec<_>>().join(", "))
                     };
+                    let super_str = if super_traits.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" = {}", super_traits.join(" and "))
+                    };
+                    let mut hover_str = format!("```flame\ntrait {}{}{}\n```", name, gen_str, super_str);
                     let hover_doc = self.process_annotations(annotations);
-                    if let Some(doc) = hover_doc {
+                    if let Some(doc) = &hover_doc {
                         hover_str = format!("{}\n\n{}", hover_str, doc);
                     }
                     self.insert_hover_info(name_span.clone(), hover_str);
+                    for p in generic_params {
+                        let bounds_str = if p.bounds.is_empty() { String::new() } else { format!(": {}", p.bounds.join(" + ")) };
+                        let p_hover = format!("```flame\ntype {}{}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}` on trait `{}`.", p.name, bounds_str, p.name, name);
+                        self.insert_hover_info(p.span.clone(), p_hover);
+                    }
+
+                    let mut trait_methods = HashMap::new();
+                    let mut default_methods = HashMap::new();
                     for method in methods {
                         if let Stmt::FuncDecl {
-                            name,
+                            name: m_name,
                             params,
                             return_type,
                             annotations,
-                            name_span,
+                            name_span: m_name_span,
+                            is_default,
+                            generic_params: m_generic_params,
+                            body,
                             ..
                         } = method
                         {
-                            let mut m_hover_str = format!("```flame\nfn {}(", name);
+                            let m_gen_str = if m_generic_params.is_empty() {
+                                String::new()
+                            } else {
+                                format!("<{}>", m_generic_params.iter().map(|p| if !p.bounds.is_empty() { format!("{}: {}", p.name, p.bounds.join(" + ")) } else { p.name.clone() }).collect::<Vec<_>>().join(", "))
+                            };
+                            let mut m_hover_str = format!("```flame\nfn {}{}(", m_name, m_gen_str);
                             let params_info: Vec<ParamInfo> = params
                                 .iter()
                                 .enumerate()
@@ -459,7 +555,136 @@ impl TypeChecker {
                                         ty: self.parse_type_name(&param.type_name),
                                         is_ref: param.is_ref,
                                         is_mut: param.is_mut,
-                                        has_default: param.default_val.is_some() || param.type_name.ends_with('?'),
+                                        has_default: param.default_val.is_some()
+                                            || param.type_name.ends_with('?'),
+                                    }
+                                })
+                                .collect();
+                            m_hover_str.push_str(")");
+                            if let Some(ret) = return_type {
+                                m_hover_str.push_str(&format!(" -> {}", ret));
+                            }
+                            m_hover_str.push_str("\n```");
+                            let ret_type = return_type
+                                .as_ref()
+                                .map(|ret| self.parse_type_name(ret))
+                                .unwrap_or(Type::Nil);
+                            let is_static = !params.first().map_or(false, |p| p.name == "self");
+                            let hover_doc = self.process_annotations(annotations);
+                            if let Some(doc) = &hover_doc {
+                                m_hover_str.push_str(&format!("\n\n{}", doc));
+                            }
+                            self.insert_hover_info(m_name_span.clone(), m_hover_str);
+
+                            let sig = FunctionSig {
+                                is_static,
+                                params: params_info,
+                                hover_doc,
+                                return_type: ret_type,
+                                generic_params: m_generic_params.clone(),
+                            };
+                            if *is_default {
+                                default_methods.insert(
+                                    m_name.clone(),
+                                    (sig.clone(), body.clone().unwrap_or_default()),
+                                );
+                            }
+                            trait_methods.insert(m_name.clone(), sig);
+                        }
+                    }
+
+                    self.traits.insert(
+                        name.clone(),
+                        TraitInfo {
+                            name: name.clone(),
+                            super_traits: super_traits.clone(),
+                            methods: trait_methods,
+                            default_methods,
+                            associated_types: associated_types.clone(),
+                            generic_params: generic_params.clone(),
+                            hover_doc,
+                        },
+                    );
+                }
+                Stmt::ImplDecl {
+                    target_type,
+                    traits,
+                    generic_params,
+                    methods,
+                    annotations,
+                    span: _,
+                    name_span,
+                    ..
+                } => {
+                    let gen_str = if generic_params.is_empty() {
+                        String::new()
+                    } else {
+                        format!("<{}> ", generic_params.iter().map(|p| if !p.bounds.is_empty() { format!("{}: {}", p.name, p.bounds.join(" + ")) } else { p.name.clone() }).collect::<Vec<_>>().join(", "))
+                    };
+                    let mut hover_str = if !traits.is_empty() {
+                        format!("```flame\nimpl {}{}: {}\n```", gen_str, target_type, traits.join(", "))
+                    } else {
+                        format!("```flame\nimpl {}{}\n```", gen_str, target_type)
+                    };
+                    let hover_doc = self.process_annotations(annotations);
+                    if let Some(doc) = hover_doc {
+                        hover_str = format!("{}\n\n{}", hover_str, doc);
+                    }
+                    self.insert_hover_info(name_span.clone(), hover_str);
+                    for p in generic_params {
+                        let bounds_str = if p.bounds.is_empty() { String::new() } else { format!(": {}", p.bounds.join(" + ")) };
+                        let p_hover = format!("```flame\ntype {}{}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}`.", p.name, bounds_str, p.name);
+                        self.insert_hover_info(p.span.clone(), p_hover);
+                    }
+
+                    for tr in traits {
+                        self.trait_impls
+                            .entry(target_type.clone())
+                            .or_default()
+                            .insert(tr.clone());
+                    }
+
+                    for method in methods {
+                        if let Stmt::FuncDecl {
+                            name,
+                            params,
+                            return_type,
+                            annotations,
+                            name_span,
+                            generic_params: m_generic_params,
+                            ..
+                        } = method
+                        {
+                            let m_gen_str = if m_generic_params.is_empty() {
+                                String::new()
+                            } else {
+                                format!("<{}>", m_generic_params.iter().map(|p| if !p.bounds.is_empty() { format!("{}: {}", p.name, p.bounds.join(" + ")) } else { p.name.clone() }).collect::<Vec<_>>().join(", "))
+                            };
+                            let mut m_hover_str = format!("```flame\nfn {}{}(", name, m_gen_str);
+                            let params_info: Vec<ParamInfo> = params
+                                .iter()
+                                .enumerate()
+                                .map(|(i, param)| {
+                                    if i > 0 {
+                                        m_hover_str.push_str(", ");
+                                    }
+                                    let ref_mut = match (param.is_ref, param.is_mut) {
+                                        (true, true) => "ref mut ",
+                                        (true, false) => "ref ",
+                                        (false, true) => "mut ",
+                                        _ => "",
+                                    };
+                                    m_hover_str.push_str(&format!(
+                                        "{}{}: {}",
+                                        ref_mut, param.name, param.type_name
+                                    ));
+                                    ParamInfo {
+                                        name: param.name.clone(),
+                                        ty: self.parse_type_name(&param.type_name),
+                                        is_ref: param.is_ref,
+                                        is_mut: param.is_mut,
+                                        has_default: param.default_val.is_some()
+                                            || param.type_name.ends_with('?'),
                                     }
                                 })
                                 .collect();
@@ -480,20 +705,39 @@ impl TypeChecker {
                                 m_hover_str.push_str(&format!("\n\n{}", doc));
                             }
                             self.insert_hover_info(name_span.clone(), m_hover_str);
-
+                            let base_target = target_type.split('<').next().unwrap().trim().to_string();
                             self.methods.entry(target_type.clone()).or_default().insert(
                                 name.clone(),
                                 FunctionSig {
                                     is_static,
-                                    params: params_info,
-                                    hover_doc,
-                                    return_type: ret_type,
+                                    params: params_info.clone(),
+                                    hover_doc: hover_doc.clone(),
+                                    return_type: ret_type.clone(),
+                                    generic_params: m_generic_params.clone(),
                                 },
                             );
+                            if base_target != *target_type {
+                                self.methods.entry(base_target).or_default().insert(
+                                    name.clone(),
+                                    FunctionSig {
+                                        is_static,
+                                        params: params_info,
+                                        hover_doc,
+                                        return_type: ret_type,
+                                        generic_params: m_generic_params.clone(),
+                                    },
+                                );
+                            }
                         }
                     }
                 }
-                Stmt::ImportDecl { path, alias, is_quoted, span, .. } => {
+                Stmt::ImportDecl {
+                    path,
+                    alias,
+                    is_quoted,
+                    span,
+                    ..
+                } => {
                     if *is_quoted {
                         if let Some(file_str) = path.first() {
                             let is_native = file_str.starts_with("native")
@@ -501,7 +745,9 @@ impl TypeChecker {
                                 || file_str.ends_with(".rs")
                                 || self.declared_native_plugins.contains(file_str);
                             if is_native {
-                                if self.rust_plugins_mode == crate::utils::manifest::RustPluginsMode::Deny {
+                                if self.rust_plugins_mode
+                                    == crate::utils::manifest::RustPluginsMode::Deny
+                                {
                                     self.error(
                                         format!(
                                             "cannot import native file '{}': rust-plugins is set to \"deny\" in flame.toml [options]",
@@ -512,7 +758,9 @@ impl TypeChecker {
                                         Some("change `rust-plugins` in flame.toml [options] to \"default\" to allow Rust plugins".to_string()),
                                     );
                                     return;
-                                } else if self.rust_plugins_mode == crate::utils::manifest::RustPluginsMode::Warn {
+                                } else if self.rust_plugins_mode
+                                    == crate::utils::manifest::RustPluginsMode::Warn
+                                {
                                     self.warning(
                                         format!(
                                             "importing native file '{}': rust-plugins is set to \"warn\" in flame.toml [options]",
@@ -528,20 +776,40 @@ impl TypeChecker {
 
                             let bind_name = alias.clone().unwrap_or_else(|| {
                                 let p = std::path::Path::new(file_str);
-                                p.file_stem().and_then(|s| s.to_str()).unwrap_or("resource").to_string()
+                                p.file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("resource")
+                                    .to_string()
                             });
                             self.modules.insert(bind_name.clone());
 
-                            let is_js = file_str.ends_with(".js") || file_str.ends_with(".mjs") || file_str.ends_with(".cjs") || file_str.ends_with(".ts");
+                            let is_js = file_str.ends_with(".js")
+                                || file_str.ends_with(".mjs")
+                                || file_str.ends_with(".cjs")
+                                || file_str.ends_with(".ts");
                             if is_js {
-                                if let Some(resolved) = crate::stdlib::locate_resource_file(std::path::Path::new(&self.filepath), file_str) {
+                                if let Some(resolved) = crate::stdlib::locate_resource_file(
+                                    std::path::Path::new(&self.filepath),
+                                    file_str,
+                                ) {
                                     let mut files_to_scan = vec![resolved.clone()];
                                     if let Ok(content) = std::fs::read_to_string(&resolved) {
                                         for line in content.lines() {
                                             let trimmed = line.trim();
-                                            if let Some(rest) = trimmed.strip_prefix("export * from ") {
-                                                let target = rest.trim().trim_matches(';').trim().trim_matches('"').trim_matches('\'');
-                                                if let Some(reexp) = crate::stdlib::locate_resource_file(&resolved, target) {
+                                            if let Some(rest) =
+                                                trimmed.strip_prefix("export * from ")
+                                            {
+                                                let target = rest
+                                                    .trim()
+                                                    .trim_matches(';')
+                                                    .trim()
+                                                    .trim_matches('"')
+                                                    .trim_matches('\'');
+                                                if let Some(reexp) =
+                                                    crate::stdlib::locate_resource_file(
+                                                        &resolved, target,
+                                                    )
+                                                {
                                                     files_to_scan.push(reexp);
                                                 }
                                             }
@@ -550,29 +818,48 @@ impl TypeChecker {
 
                                     for scan_path in files_to_scan {
                                         if let Ok(content) = std::fs::read_to_string(&scan_path) {
-                                            let actual_file_name = scan_path.file_name().and_then(|n| n.to_str()).unwrap_or(file_str);
+                                            let actual_file_name = scan_path
+                                                .file_name()
+                                                .and_then(|n| n.to_str())
+                                                .unwrap_or(file_str);
                                             for line in content.lines() {
                                                 let trimmed = line.trim();
-                                                let (fn_name, raw_params) = if let Some(rest) = trimmed.strip_prefix("export function ") {
+                                                let (fn_name, raw_params) = if let Some(rest) =
+                                                    trimmed.strip_prefix("export function ")
+                                                {
                                                     let mut parts = rest.splitn(2, '(');
                                                     let n = parts.next().map(|s| s.trim());
-                                                    let p = parts.next().and_then(|s| s.split(')').next());
+                                                    let p = parts
+                                                        .next()
+                                                        .and_then(|s| s.split(')').next());
                                                     (n, p)
-                                                } else if let Some(rest) = trimmed.strip_prefix("function ") {
+                                                } else if let Some(rest) =
+                                                    trimmed.strip_prefix("function ")
+                                                {
                                                     let mut parts = rest.splitn(2, '(');
                                                     let n = parts.next().map(|s| s.trim());
-                                                    let p = parts.next().and_then(|s| s.split(')').next());
+                                                    let p = parts
+                                                        .next()
+                                                        .and_then(|s| s.split(')').next());
                                                     (n, p)
-                                                } else if let Some(rest) = trimmed.strip_prefix("export const ") {
-                                                    let n = rest.split('=').next().map(|s| s.trim());
+                                                } else if let Some(rest) =
+                                                    trimmed.strip_prefix("export const ")
+                                                {
+                                                    let n =
+                                                        rest.split('=').next().map(|s| s.trim());
                                                     (n, None)
                                                 } else {
                                                     (None, None)
                                                 };
                                                 if let Some(name) = fn_name {
                                                     let clean_name = name.trim();
-                                                    if !clean_name.is_empty() && clean_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                                                        let qualified = format!("{}.{}", bind_name, clean_name);
+                                                    if !clean_name.is_empty()
+                                                        && clean_name.chars().all(|c| {
+                                                            c.is_alphanumeric() || c == '_'
+                                                        })
+                                                    {
+                                                        let qualified =
+                                                            format!("{}.{}", bind_name, clean_name);
                                                         let mut params = Vec::new();
                                                         if let Some(p_str) = raw_params {
                                                             for p in p_str.split(',') {
@@ -593,6 +880,7 @@ impl TypeChecker {
                                                             return_type: Type::Unknown,
                                                             hover_doc: Some(format!("External JavaScript function in `{}`", actual_file_name)),
                                                             is_static: false,
+                                                            generic_params: Vec::new(),
                                                         });
                                                     }
                                                 }
@@ -607,10 +895,14 @@ impl TypeChecker {
                         let is_native = path.first().map_or(false, |p| p == "native")
                             || path.iter().any(|p| p == "native")
                             || self.declared_native_plugins.contains(mod_name)
-                            || path.first().map_or(false, |p| self.declared_native_plugins.contains(p));
+                            || path
+                                .first()
+                                .map_or(false, |p| self.declared_native_plugins.contains(p));
 
                         if is_native {
-                            if self.rust_plugins_mode == crate::utils::manifest::RustPluginsMode::Deny {
+                            if self.rust_plugins_mode
+                                == crate::utils::manifest::RustPluginsMode::Deny
+                            {
                                 self.error(
                                     format!(
                                         "cannot import native plugin '{}': rust-plugins is set to \"deny\" in flame.toml [options]",
@@ -621,7 +913,9 @@ impl TypeChecker {
                                     Some("change `rust-plugins` in flame.toml [options] to \"default\" to allow Rust plugins".to_string()),
                                 );
                                 return;
-                            } else if self.rust_plugins_mode == crate::utils::manifest::RustPluginsMode::Warn {
+                            } else if self.rust_plugins_mode
+                                == crate::utils::manifest::RustPluginsMode::Warn
+                            {
                                 self.warning(
                                     format!(
                                         "importing native plugin '{}': rust-plugins is set to \"warn\" in flame.toml [options]",
@@ -714,7 +1008,10 @@ impl TypeChecker {
                                                                                 m.as_bool()
                                                                             })
                                                                             .unwrap_or(false),
-                                                                        has_default: p_ty_str.ends_with('?') || p.get("default_val").is_some(),
+                                                                        has_default: p_ty_str
+                                                                            .ends_with('?')
+                                                                            || p.get("default_val")
+                                                                                .is_some(),
                                                                     });
                                                                 }
                                                             }
@@ -732,6 +1029,7 @@ impl TypeChecker {
                                                                 params,
                                                                 return_type: ret_ty,
                                                                 hover_doc: doc,
+                                                                generic_params: Vec::new(),
                                                             },
                                                         );
                                                     }
@@ -750,10 +1048,17 @@ impl TypeChecker {
                                                             Type::Struct(struct_name.to_string()),
                                                         );
 
-                                                        self.structs.insert(struct_name.to_string(), StructInfo {
-                                                            fields: Vec::new(),
-                                                            hover_doc: Some("**Native Plugin Struct**".to_string()),
-                                                        });
+                                                        self.structs.insert(
+                                                            struct_name.to_string(),
+                                                            StructInfo {
+                                                                fields: Vec::new(),
+                                                                hover_doc: Some(
+                                                                    "**Native Plugin Struct**"
+                                                                        .to_string(),
+                                                                ),
+                                                                generic_params: Vec::new(),
+                                                            },
+                                                        );
 
                                                         if let Some(s_methods) = s
                                                             .get("methods")
@@ -824,6 +1129,8 @@ impl TypeChecker {
                                                                                     ret_str,
                                                                                 ),
                                                                             hover_doc: doc,
+                                                                            generic_params:
+                                                                                Vec::new(),
                                                                         },
                                                                     );
                                                                 }
@@ -929,12 +1236,21 @@ impl TypeChecker {
 
     pub(crate) fn check_stmt(&mut self, stmt: &Stmt) {
         match stmt {
-            Stmt::ImportDecl { path, alias, is_quoted, span, .. } => {
+            Stmt::ImportDecl {
+                path,
+                alias,
+                is_quoted,
+                span,
+                ..
+            } => {
                 if *is_quoted {
                     if let Some(file_str) = path.first() {
                         let bind_name = alias.clone().unwrap_or_else(|| {
                             let p = std::path::Path::new(file_str);
-                            p.file_stem().and_then(|s| s.to_str()).unwrap_or("resource").to_string()
+                            p.file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("resource")
+                                .to_string()
                         });
                         let ext = std::path::Path::new(file_str)
                             .extension()
@@ -944,36 +1260,45 @@ impl TypeChecker {
                         let (ty, hover_desc) = match ext {
                             "js" | "mjs" | "cjs" | "ts" => (
                                 Type::Named(format!("js:{}", bind_name)),
-                                format!("**External JavaScript Module**\n\nResource: `{}`", file_str)
+                                format!(
+                                    "**External JavaScript Module**\n\nResource: `{}`",
+                                    file_str
+                                ),
                             ),
                             "css" => (
                                 Type::Named("css:resource".to_string()),
-                                format!("**CSS Stylesheet Resource**\n\nResource: `{}`", file_str)
+                                format!("**CSS Stylesheet Resource**\n\nResource: `{}`", file_str),
                             ),
                             "json" | "fmi" => (
                                 Type::Named("json:data".to_string()),
-                                format!("**JSON / FMI Data Resource**\n\nResource: `{}`", file_str)
+                                format!("**JSON / FMI Data Resource**\n\nResource: `{}`", file_str),
                             ),
                             "toml" => (
                                 Type::Named("toml:data".to_string()),
-                                format!("**TOML Configuration Resource**\n\nResource: `{}`", file_str)
+                                format!(
+                                    "**TOML Configuration Resource**\n\nResource: `{}`",
+                                    file_str
+                                ),
                             ),
                             "txt" | "text" => (
                                 Type::String,
-                                format!("**Text Resource**\n\nResource: `{}`", file_str)
+                                format!("**Text Resource**\n\nResource: `{}`", file_str),
                             ),
                             "html" | "htm" => (
                                 Type::Named("HtmlNode".to_string()),
-                                format!("**HTML Template Resource**\n\nResource: `{}`", file_str)
+                                format!("**HTML Template Resource**\n\nResource: `{}`", file_str),
                             ),
                             _ => (
                                 Type::String,
-                                format!("**File Resource**\n\nResource: `{}`", file_str)
+                                format!("**File Resource**\n\nResource: `{}`", file_str),
                             ),
                         };
 
                         let hover = if let Some(a) = alias {
-                            format!("```flame\nimport \"{}\" as {}\n```\n{}", file_str, a, hover_desc)
+                            format!(
+                                "```flame\nimport \"{}\" as {}\n```\n{}",
+                                file_str, a, hover_desc
+                            )
                         } else {
                             format!("```flame\nimport \"{}\"\n```\n{}", file_str, hover_desc)
                         };
@@ -1142,8 +1467,12 @@ impl TypeChecker {
                     if path.first().map_or(false, |p| p == "std") {
                         for part in path.iter().rev() {
                             let candidate = format!("{}.fm", part);
-                            if let Some((_, src)) = crate::blaze::EMBEDDED_BLAZE_STD.iter().find(|(name, _)| *name == candidate) {
-                                sources_to_parse.push((format!("<std::{}>", candidate), (*src).to_string()));
+                            if let Some((_, src)) = crate::blaze::EMBEDDED_BLAZE_STD
+                                .iter()
+                                .find(|(name, _)| *name == candidate)
+                            {
+                                sources_to_parse
+                                    .push((format!("<std::{}>", candidate), (*src).to_string()));
                                 break;
                             }
                         }
@@ -1170,7 +1499,10 @@ impl TypeChecker {
 
                             for path_to_read in paths_to_read {
                                 if let Ok(content) = std::fs::read_to_string(&path_to_read) {
-                                    sources_to_parse.push((path_to_read.to_string_lossy().to_string(), content));
+                                    sources_to_parse.push((
+                                        path_to_read.to_string_lossy().to_string(),
+                                        content,
+                                    ));
                                 }
                             }
                         }
@@ -1187,10 +1519,7 @@ impl TypeChecker {
                                 break;
                             }
                         }
-                        let mut parser = crate::parser::Parser::new(
-                            tokens,
-                            source_name,
-                        );
+                        let mut parser = crate::parser::Parser::new(tokens, source_name);
                         if let Ok(parsed_stmts) = parser.parse() {
                             let prev = self.is_importing;
                             self.is_importing = true;
@@ -1214,6 +1543,7 @@ impl TypeChecker {
                                                 StructInfo {
                                                     fields: Vec::new(),
                                                     hover_doc: None,
+                                                    generic_params: Vec::new(),
                                                 },
                                             );
                                         }
@@ -1223,6 +1553,7 @@ impl TypeChecker {
                                                 StructInfo {
                                                     fields: Vec::new(),
                                                     hover_doc: None,
+                                                    generic_params: Vec::new(),
                                                 },
                                             );
                                         }
@@ -1232,6 +1563,7 @@ impl TypeChecker {
                                                 params,
                                                 return_type,
                                                 annotations,
+                                                generic_params: m_generic_params,
                                                 ..
                                             } = m
                                             {
@@ -1245,19 +1577,22 @@ impl TypeChecker {
                                                         ty: self.parse_type_name(&p.type_name),
                                                         is_ref: p.is_ref,
                                                         is_mut: p.is_mut,
-                                                        has_default: p.default_val.is_some() || p.type_name.ends_with('?'),
+                                                        has_default: p.default_val.is_some()
+                                                            || p.type_name.ends_with('?'),
                                                     })
                                                     .collect();
                                                 let r_type = return_type
                                                     .as_ref()
                                                     .map(|t| self.parse_type_name(t))
                                                     .unwrap_or(Type::Nil);
-                                                let m_hover_doc = self.process_annotations(annotations);
+                                                let m_hover_doc =
+                                                    self.process_annotations(annotations);
                                                 let sig = FunctionSig {
                                                     params: p_info,
                                                     return_type: r_type,
                                                     is_static,
                                                     hover_doc: m_hover_doc,
+                                                    generic_params: m_generic_params.clone(),
                                                 };
                                                 self.methods
                                                     .entry(prefixed_target.clone())
@@ -1274,6 +1609,7 @@ impl TypeChecker {
                                         name,
                                         fields,
                                         annotations,
+                                        generic_params,
                                         ..
                                     } => {
                                         let hover_doc = self.process_annotations(annotations);
@@ -1287,6 +1623,7 @@ impl TypeChecker {
                                         let s_info = StructInfo {
                                             fields: struct_fields,
                                             hover_doc,
+                                            generic_params: generic_params.clone(),
                                         };
                                         self.structs.insert(name.clone(), s_info.clone());
                                         self.structs.insert(format!("{}.{}", last, name), s_info);
@@ -1296,6 +1633,7 @@ impl TypeChecker {
                                         params,
                                         return_type,
                                         annotations,
+                                        generic_params,
                                         ..
                                     } => {
                                         let hover_doc = self.process_annotations(annotations);
@@ -1306,7 +1644,8 @@ impl TypeChecker {
                                                 ty: self.parse_type_name(&p.type_name),
                                                 is_ref: p.is_ref,
                                                 is_mut: p.is_mut,
-                                                has_default: p.default_val.is_some() || p.type_name.ends_with('?'),
+                                                has_default: p.default_val.is_some()
+                                                    || p.type_name.ends_with('?'),
                                             })
                                             .collect();
                                         let r_type = return_type
@@ -1318,6 +1657,7 @@ impl TypeChecker {
                                             return_type: r_type,
                                             is_static: false,
                                             hover_doc,
+                                            generic_params: generic_params.clone(),
                                         };
                                         self.functions.insert(name.clone(), sig.clone());
                                         self.functions.insert(format!("{}.{}", last, name), sig);
@@ -1350,6 +1690,7 @@ impl TypeChecker {
                                         name,
                                         variants,
                                         annotations,
+                                        generic_params,
                                         ..
                                     } => {
                                         let hover_doc = self.process_annotations(annotations);
@@ -1357,35 +1698,53 @@ impl TypeChecker {
                                         for var in variants {
                                             match var {
                                                 crate::parser::EnumVariant::Unit(n) => {
-                                                    enum_variants.insert(n.clone(), VariantInfo {
-                                                        tuple_items: vec![],
-                                                        struct_fields: Vec::new(),
-                                                        hover_doc: None,
-                                                    });
+                                                    enum_variants.insert(
+                                                        n.clone(),
+                                                        VariantInfo {
+                                                            tuple_items: vec![],
+                                                            struct_fields: Vec::new(),
+                                                            hover_doc: None,
+                                                        },
+                                                    );
                                                 }
                                                 crate::parser::EnumVariant::Tuple(n, items) => {
-                                                    enum_variants.insert(n.clone(), VariantInfo {
-                                                        tuple_items: items.iter().map(|item| self.parse_type_name(item)).collect(),
-                                                        struct_fields: Vec::new(),
-                                                        hover_doc: None,
-                                                    });
+                                                    enum_variants.insert(
+                                                        n.clone(),
+                                                        VariantInfo {
+                                                            tuple_items: items
+                                                                .iter()
+                                                                .map(|item| {
+                                                                    self.parse_type_name(item)
+                                                                })
+                                                                .collect(),
+                                                            struct_fields: Vec::new(),
+                                                            hover_doc: None,
+                                                        },
+                                                    );
                                                 }
                                                 crate::parser::EnumVariant::Struct(n, fields) => {
                                                     let mut struct_fields = Vec::new();
                                                     for (f_name, f_type) in fields {
-                                                        struct_fields.push((f_name.clone(), self.parse_type_name(f_type)));
+                                                        struct_fields.push((
+                                                            f_name.clone(),
+                                                            self.parse_type_name(f_type),
+                                                        ));
                                                     }
-                                                    enum_variants.insert(n.clone(), VariantInfo {
-                                                        tuple_items: vec![],
-                                                        struct_fields,
-                                                        hover_doc: None,
-                                                    });
+                                                    enum_variants.insert(
+                                                        n.clone(),
+                                                        VariantInfo {
+                                                            tuple_items: vec![],
+                                                            struct_fields,
+                                                            hover_doc: None,
+                                                        },
+                                                    );
                                                 }
                                             }
                                         }
                                         let e_info = EnumInfo {
                                             variants: enum_variants,
                                             hover_doc,
+                                            generic_params: generic_params.clone(),
                                         };
                                         self.enums.insert(name.clone(), e_info.clone());
                                         self.enums.insert(format!("{}.{}", last, name), e_info);
@@ -1441,7 +1800,10 @@ impl TypeChecker {
                                 format!("cannot redeclare variable '{}' in the same scope", name),
                                 name_span.clone(),
                                 Some(format!("'{}' already declared in this scope", name)),
-                                Some(format!("reassign to '{}' without 'let' or rename the variable", name)),
+                                Some(format!(
+                                    "reassign to '{}' without 'let' or rename the variable",
+                                    name
+                                )),
                             );
                         }
                     }
@@ -1513,9 +1875,15 @@ impl TypeChecker {
                             if let Some(scope) = self.scopes.last() {
                                 if scope.contains_key(actual_name) {
                                     self.error(
-                                        format!("cannot redeclare variable '{}' in the same scope", actual_name),
+                                        format!(
+                                            "cannot redeclare variable '{}' in the same scope",
+                                            actual_name
+                                        ),
                                         name_span.clone(),
-                                        Some(format!("'{}' already declared in this scope", actual_name)),
+                                        Some(format!(
+                                            "'{}' already declared in this scope",
+                                            actual_name
+                                        )),
                                         None,
                                     );
                                 }
@@ -1562,9 +1930,15 @@ impl TypeChecker {
                                 if let Some(scope) = self.scopes.last() {
                                     if scope.contains_key(v_name) {
                                         self.error(
-                                            format!("cannot redeclare variable '{}' in the same scope", v_name),
+                                            format!(
+                                                "cannot redeclare variable '{}' in the same scope",
+                                                v_name
+                                            ),
                                             name_span.clone(),
-                                            Some(format!("'{}' already declared in this scope", v_name)),
+                                            Some(format!(
+                                                "'{}' already declared in this scope",
+                                                v_name
+                                            )),
                                             None,
                                         );
                                     }
@@ -1586,9 +1960,15 @@ impl TypeChecker {
                                 if let Some(scope) = self.scopes.last() {
                                     if scope.contains_key(v_name) {
                                         self.error(
-                                            format!("cannot redeclare variable '{}' in the same scope", v_name),
+                                            format!(
+                                                "cannot redeclare variable '{}' in the same scope",
+                                                v_name
+                                            ),
                                             name_span.clone(),
-                                            Some(format!("'{}' already declared in this scope", v_name)),
+                                            Some(format!(
+                                                "'{}' already declared in this scope",
+                                                v_name
+                                            )),
                                             None,
                                         );
                                     }
@@ -1757,7 +2137,10 @@ impl TypeChecker {
                     );
                 }
                 let prev_expect_panic = self.in_expect_panic;
-                if annotations.iter().any(|a| a.name == "ExpectPanic" || a.name == "expect_panic") {
+                if annotations
+                    .iter()
+                    .any(|a| a.name == "ExpectPanic" || a.name == "expect_panic")
+                {
                     self.in_expect_panic = true;
                 }
                 if let Some(body_stmts) = body {
@@ -2045,7 +2428,8 @@ impl TypeChecker {
                             }
                             Type::Enum(name) => {
                                 if let Some(e_info) = self.enums.get(name) {
-                                    let v_names: Vec<&str> = e_info.variants.keys().map(|s| s.as_str()).collect();
+                                    let v_names: Vec<&str> =
+                                        e_info.variants.keys().map(|s| s.as_str()).collect();
                                     (v_names, name.clone())
                                 } else if name == "Option" {
                                     (vec!["Some", "None"], name.clone())
@@ -2057,7 +2441,8 @@ impl TypeChecker {
                             }
                             Type::EnumVariant { enum_name, .. } => {
                                 if let Some(e_info) = self.enums.get(enum_name) {
-                                    let v_names: Vec<&str> = e_info.variants.keys().map(|s| s.as_str()).collect();
+                                    let v_names: Vec<&str> =
+                                        e_info.variants.keys().map(|s| s.as_str()).collect();
                                     (v_names, enum_name.clone())
                                 } else if enum_name == "Option" {
                                     (vec!["Some", "None"], enum_name.clone())
@@ -2113,14 +2498,129 @@ impl TypeChecker {
             }
             Stmt::StructDecl { .. }
             | Stmt::EnumDecl { .. }
-            | Stmt::TraitDecl { .. }
-            | Stmt::ImplDecl { .. }
             | Stmt::Break(_)
             | Stmt::Continue(_)
             | Stmt::PackageDecl { .. }
             | Stmt::PluginDecl { .. } => {}
+            Stmt::TraitDecl { methods, .. } => {
+                for method in methods {
+                    if let Stmt::FuncDecl { body: Some(_), .. } = method {
+                        self.check_stmt(method);
+                    }
+                }
+            }
+            Stmt::ImplDecl {
+                target_type,
+                traits,
+                methods,
+                span,
+                ..
+            } => {
+                for tr in traits {
+                    let mut required = Vec::new();
+                    let mut default_to_inherit = Vec::new();
+                    let mut visited = std::collections::HashSet::new();
+                    let mut queue = vec![tr.clone()];
+
+                    while let Some(current) = queue.pop() {
+                        if !visited.insert(current.clone()) {
+                            continue;
+                        }
+                        if let Some(t_info) = self.traits.get(&current).cloned() {
+                            for (m_name, m_sig) in &t_info.methods {
+                                if t_info.default_methods.contains_key(m_name) {
+                                    default_to_inherit.push((m_name.clone(), m_sig.clone()));
+                                } else {
+                                    required.push((m_name.clone(), m_sig.clone()));
+                                }
+                            }
+                            for parent in &t_info.super_traits {
+                                queue.push(parent.clone());
+                            }
+                        }
+                    }
+
+                    for (req_name, req_sig) in required {
+                        let implemented = methods.iter().any(|m| match m {
+                            Stmt::FuncDecl { name, .. } => name == &req_name,
+                            _ => false,
+                        }) || self
+                            .methods
+                            .get(target_type)
+                            .map_or(false, |m| m.contains_key(&req_name));
+
+                        if !implemented {
+                            let mut params_str = String::new();
+                            for (i, p) in req_sig.params.iter().enumerate() {
+                                if i > 0 {
+                                    params_str.push_str(", ");
+                                }
+                                if p.name == "self" {
+                                    if p.is_ref {
+                                        if p.is_mut {
+                                            params_str.push_str("&mut self");
+                                        } else {
+                                            params_str.push_str("&self");
+                                        }
+                                    } else {
+                                        params_str.push_str("self");
+                                    }
+                                } else {
+                                    let ref_mut = match (p.is_ref, p.is_mut) {
+                                        (true, true) => "&mut ",
+                                        (true, false) => "&",
+                                        (false, true) => "mut ",
+                                        _ => "",
+                                    };
+                                    params_str
+                                        .push_str(&format!("{}{}: {}", ref_mut, p.name, p.ty));
+                                }
+                            }
+                            let ret_str = match &req_sig.return_type {
+                                Type::Nil => String::new(),
+                                ty => format!(" -> {}", ty),
+                            };
+                            let missing_sig = format!("{}({}){}", req_name, params_str, ret_str);
+
+                            self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
+                                format!(
+                                    "incomplete implementation of trait '{}': '{}' implements '{}' but is missing required method: '{}'",
+                                    tr, target_type, tr, missing_sig
+                                ),
+                                self.filepath.clone(),
+                                span.clone(),
+                                None,
+                                None,
+                            ));
+                        }
+                    }
+
+                    let base_target = target_type.split('<').next().unwrap().trim().to_string();
+                    for (def_name, def_sig) in default_to_inherit {
+                        let has_method = self
+                            .methods
+                            .get(target_type)
+                            .or_else(|| self.methods.get(&base_target))
+                            .map_or(false, |m| m.contains_key(&def_name));
+                        if !has_method {
+                            self.methods
+                                .entry(target_type.clone())
+                                .or_default()
+                                .insert(def_name.clone(), def_sig.clone());
+                            if base_target != *target_type {
+                                self.methods
+                                    .entry(base_target.clone())
+                                    .or_default()
+                                    .insert(def_name, def_sig);
+                            }
+                        }
+                    }
+                }
+
+                for method in methods {
+                    self.check_stmt(method);
+                }
+            }
         }
     }
-
-
 }

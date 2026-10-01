@@ -314,8 +314,21 @@ impl Runner {
                 }
                 Ok(Value::Nil)
             }
+            Stmt::TraitDecl {
+                name,
+                methods,
+                ..
+            } => {
+                let trait_env = Arc::new(Mutex::new(Env::new_child(env.clone())));
+                for method in methods {
+                    let _ = self.execute_statement(method, trait_env.clone());
+                }
+                self.modules.insert(format!("trait_{}", name), trait_env);
+                Ok(Value::Nil)
+            }
             Stmt::ImplDecl {
                 target_type,
+                traits,
                 methods,
                 ..
             } => {
@@ -324,11 +337,31 @@ impl Runner {
                     .get(&format!("impl_{}", target_type))
                     .cloned()
                     .unwrap_or_else(|| Arc::new(Mutex::new(Env::new_child(env.clone()))));
+
+                for tr in traits {
+                    if let Some(trait_env) = self.modules.get(&format!("trait_{}", tr)) {
+                        let t_lock = trait_env.lock().unwrap();
+                        let mut i_lock = impl_env.lock().unwrap();
+                        for (m_name, m_val) in &t_lock.variables {
+                            if !i_lock.variables.contains_key(m_name) {
+                                i_lock.variables.insert(m_name.clone(), m_val.clone());
+                            }
+                        }
+                    }
+                }
+
                 for method in methods {
                     self.execute_statement(method, impl_env.clone())?;
                 }
                 self.modules
-                    .insert(format!("impl_{}", target_type), impl_env);
+                    .insert(format!("impl_{}", target_type), impl_env.clone());
+
+                if let Some(base) = target_type.split('<').next() {
+                    let base = base.trim();
+                    if base != target_type {
+                        self.modules.insert(format!("impl_{}", base), impl_env);
+                    }
+                }
                 Ok(Value::Nil)
             }
             Stmt::ImportDecl { path, alias, is_quoted, .. } => {

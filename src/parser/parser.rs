@@ -210,6 +210,7 @@ impl Parser {
             TokenKind::Annotation => self.parse_annotation_decl(annotations),
             TokenKind::Struct => self.parse_struct_decl(annotations),
             TokenKind::Enum => self.parse_enum_decl(annotations),
+            TokenKind::Trait => self.parse_trait_decl(annotations),
             TokenKind::Impl => self.parse_impl_decl(annotations),
             TokenKind::If => self.parse_if_statement(),
             TokenKind::For => self.parse_for_statement(),
@@ -418,6 +419,7 @@ impl Parser {
                 | Stmt::EnumDecl { annotations, .. }
                 | Stmt::AnnotationDecl { annotations, .. }
                 | Stmt::PackageDecl { annotations, .. }
+                | Stmt::TraitDecl { annotations, .. }
                 | Stmt::ImplDecl { annotations, .. } => {
                     let mut combined = outer_annotations;
                     combined.append(annotations);
@@ -663,11 +665,9 @@ impl Parser {
         };
         let name = name_tok.lexeme.clone();
 
+        let mut generic_params = Vec::new();
         if self.match_token(TokenKind::Lt) {
-            while !self.check(TokenKind::Gt) && !self.check(TokenKind::EOF) {
-                self.advance();
-            }
-            self.consume(TokenKind::Gt, "expected '>' after generic type parameters")?;
+            generic_params = self.parse_generic_params()?;
         }
 
         self.consume(TokenKind::OpenParen, "expected '(' for parameters list")?;
@@ -755,7 +755,39 @@ impl Parser {
                 col: start_tok.span.col,
             },
             name_span: name_tok.span,
+            generic_params,
+            is_default: false,
         })
+    }
+
+    fn parse_generic_params(&mut self) -> Result<Vec<GenericParam>, Diagnostic> {
+        let mut params = Vec::new();
+        while !self.check(TokenKind::Gt) && !self.check(TokenKind::EOF) {
+            let name_tok = self.consume(TokenKind::Identifier, "expected generic type parameter name")?;
+            let mut bounds = Vec::new();
+            if self.match_token(TokenKind::Colon) {
+                loop {
+                    let bound_tok = self.consume(TokenKind::Identifier, "expected trait bound name")?;
+                    bounds.push(bound_tok.lexeme.clone());
+                    if self.match_token(TokenKind::Ampersand2)
+                        || self.match_token(TokenKind::Plus)
+                    {
+                        continue;
+                    }
+                    break;
+                }
+            }
+            params.push(GenericParam {
+                name: name_tok.lexeme,
+                bounds,
+                span: name_tok.span,
+            });
+            if !self.match_token(TokenKind::Comma) {
+                break;
+            }
+        }
+        self.consume(TokenKind::Gt, "expected '>' after generic type parameters")?;
+        Ok(params)
     }
 
     fn parse_annotation_decl(&mut self, annotations: Vec<Annotation>) -> Result<Stmt, Diagnostic> {
@@ -850,6 +882,11 @@ impl Parser {
         let name_tok = self.consume(TokenKind::Identifier, "expected struct name")?;
         let name = name_tok.lexeme.clone();
 
+        let mut generic_params = Vec::new();
+        if self.match_token(TokenKind::Lt) {
+            generic_params = self.parse_generic_params()?;
+        }
+
         self.consume(TokenKind::OpenBrace, "expected '{'")?;
         let mut fields = Vec::new();
         while !self.check(TokenKind::CloseBrace) && !self.check(TokenKind::EOF) {
@@ -873,6 +910,7 @@ impl Parser {
                 col: start_tok.span.col,
             },
             name_span: name_tok.span,
+            generic_params,
         })
     }
 
@@ -880,6 +918,11 @@ impl Parser {
         let start_tok = self.consume(TokenKind::Enum, "expected 'enum'")?;
         let name_tok = self.consume(TokenKind::Identifier, "expected enum name")?;
         let name = name_tok.lexeme.clone();
+
+        let mut generic_params = Vec::new();
+        if self.match_token(TokenKind::Lt) {
+            generic_params = self.parse_generic_params()?;
+        }
 
         self.consume(TokenKind::OpenBrace, "expected '{'")?;
         let mut variants = Vec::new();
@@ -929,27 +972,297 @@ impl Parser {
                 col: start_tok.span.col,
             },
             name_span: name_tok.span,
+            generic_params,
+        })
+    }
+
+    fn parse_trait_decl(&mut self, annotations: Vec<Annotation>) -> Result<Stmt, Diagnostic> {
+        let start_tok = self.consume(TokenKind::Trait, "expected 'trait'")?;
+        let name_tok = self.consume(TokenKind::Identifier, "expected trait name")?;
+        let name = name_tok.lexeme.clone();
+
+        let mut generic_params = Vec::new();
+        if self.match_token(TokenKind::Lt) {
+            generic_params = self.parse_generic_params()?;
+        }
+
+        let mut super_traits = Vec::new();
+
+        // Check for trait composition alias: `trait Shape = Drawable and Describable`
+        if self.match_token(TokenKind::Equal) {
+            loop {
+                let t_tok = self.consume(TokenKind::Identifier, "expected trait name in composition")?;
+                super_traits.push(t_tok.lexeme.clone());
+                if self.match_token(TokenKind::Ampersand2) /* 'and' */
+                    || self.match_token(TokenKind::Plus)
+                    || self.match_token(TokenKind::Comma)
+                {
+                    continue;
+                }
+                break;
+            }
+            let end_span = self.peek().span.clone();
+            return Ok(Stmt::TraitDecl {
+                name,
+                generic_params,
+                super_traits,
+                methods: Vec::new(),
+                associated_types: Vec::new(),
+                annotations,
+                span: Span {
+                    start: start_tok.span.start,
+                    end: end_span.start,
+                    line: start_tok.span.line,
+                    col: start_tok.span.col,
+                },
+                name_span: name_tok.span,
+            });
+        }
+
+        // Check for supertraits: `trait Shape: Drawable and Describable`
+        if self.match_token(TokenKind::Colon) {
+            loop {
+                let t_tok = self.consume(TokenKind::Identifier, "expected trait name in supertraits")?;
+                super_traits.push(t_tok.lexeme.clone());
+                if self.match_token(TokenKind::Ampersand2) /* 'and' */
+                    || self.match_token(TokenKind::Plus)
+                    || self.match_token(TokenKind::Comma)
+                {
+                    continue;
+                }
+                break;
+            }
+        }
+
+        self.consume(TokenKind::OpenBrace, "expected '{' or '=' in trait declaration")?;
+        let mut methods = Vec::new();
+        let mut associated_types = Vec::new();
+
+        while !self.check(TokenKind::CloseBrace) && !self.check(TokenKind::EOF) {
+            // Associated type: `type Item` or `type Item = ...`
+            if self.match_token(TokenKind::Type) {
+                let type_id = self.consume(TokenKind::Identifier, "expected associated type name")?;
+                let mut type_def = type_id.lexeme.clone();
+                if self.match_token(TokenKind::Equal) {
+                    let val_type = self.parse_type()?;
+                    type_def = format!("{} = {}", type_def, val_type);
+                }
+                associated_types.push(type_def);
+                continue;
+            }
+
+            let mut is_default = false;
+            if self.match_token(TokenKind::Default) {
+                is_default = true;
+            }
+
+            if self.check(TokenKind::Fn) {
+                let method = self.parse_trait_method(is_default)?;
+                methods.push(method);
+            } else {
+                return Err(Diagnostic::new_error(
+                    format!("unexpected token in trait body: {:?}", self.peek().kind),
+                    self.filepath.clone(),
+                    self.peek().span.clone(),
+                    Some("expected 'fn', 'default fn', or 'type'".to_string()),
+                    Some("Define a method or associated type for the trait".to_string()),
+                ));
+            }
+        }
+        self.consume(TokenKind::CloseBrace, "expected '}' after trait body")?;
+        let end_span = self.peek().span.clone();
+
+        Ok(Stmt::TraitDecl {
+            name,
+            generic_params,
+            super_traits,
+            methods,
+            associated_types,
+            annotations,
+            span: Span {
+                start: start_tok.span.start,
+                end: end_span.start,
+                line: start_tok.span.line,
+                col: start_tok.span.col,
+            },
+            name_span: name_tok.span,
+        })
+    }
+
+    fn parse_trait_method(&mut self, is_default: bool) -> Result<Stmt, Diagnostic> {
+        let start_tok = self.consume(TokenKind::Fn, "expected 'fn'")?;
+        let name_tok = self.consume(TokenKind::Identifier, "expected method name")?;
+        let name = name_tok.lexeme.clone();
+
+        let mut generic_params = Vec::new();
+        if self.match_token(TokenKind::Lt) {
+            generic_params = self.parse_generic_params()?;
+        }
+
+        self.consume(TokenKind::OpenParen, "expected '(' for parameter list")?;
+        let mut params = Vec::new();
+        while !self.check(TokenKind::CloseParen) && !self.check(TokenKind::EOF) {
+            let mut is_ref = false;
+            let mut is_mut = false;
+            if self.match_token(TokenKind::Ampersand) {
+                is_ref = true;
+                if self.match_token(TokenKind::Mut) {
+                    is_mut = true;
+                }
+            }
+            let p_name_tok = if self.check(TokenKind::SelfLower) {
+                self.advance()
+            } else {
+                self.consume(TokenKind::Identifier, "expected parameter name")?
+            };
+            let p_type = if self.match_token(TokenKind::Colon) {
+                self.parse_type()?
+            } else if p_name_tok.kind == TokenKind::SelfLower {
+                "Self".to_string()
+            } else {
+                return Err(Diagnostic::new_error(
+                    "expected ':' after parameter name".to_string(),
+                    self.filepath.clone(),
+                    p_name_tok.span.clone(),
+                    Some("Add a type annotation for this parameter".to_string()),
+                    Some("Use ': Type' after the parameter name".to_string()),
+                ));
+            };
+            params.push(Param {
+                name: p_name_tok.lexeme,
+                type_name: p_type,
+                default_val: None,
+                is_ref,
+                is_mut,
+            });
+            if !self.match_token(TokenKind::Comma) {
+                break;
+            }
+        }
+        self.consume(TokenKind::CloseParen, "expected ')' to close parameters list")?;
+
+        let mut return_type = None;
+        if self.match_token(TokenKind::Arrow) {
+            return_type = Some(self.parse_type()?);
+        }
+
+        let mut body = None;
+        if self.check(TokenKind::OpenBrace) {
+            if !is_default {
+                println!(
+                    "\x1b[1;33m⚠ warning:\x1b[0m trait method '{}' has a body but is not marked with 'default'\n  --> {}:{}:{}\n  = help: add 'default' keyword: 'default fn {}...'",
+                    name, self.filepath, start_tok.span.line, start_tok.span.col, name
+                );
+            }
+            body = Some(self.parse_block()?);
+        }
+        let end_span = self.peek().span.clone();
+
+        Ok(Stmt::FuncDecl {
+            name,
+            params,
+            return_type,
+            body,
+            annotations: if is_default {
+                vec![Annotation {
+                    name: "default".to_string(),
+                    args: Vec::new(),
+                    span: start_tok.span.clone(),
+                    name_span: start_tok.span.clone(),
+                }]
+            } else {
+                Vec::new()
+            },
+            span: Span {
+                start: start_tok.span.start,
+                end: end_span.start,
+                line: start_tok.span.line,
+                col: start_tok.span.col,
+            },
+            name_span: name_tok.span,
+            generic_params,
+            is_default,
         })
     }
 
     fn parse_impl_decl(&mut self, annotations: Vec<Annotation>) -> Result<Stmt, Diagnostic> {
         let start_tok = self.consume(TokenKind::Impl, "expected 'impl'")?;
-        let name_tok =
-            self.consume(TokenKind::Identifier, "expected implementation target type")?;
+
+        let mut generic_params = Vec::new();
+        if self.match_token(TokenKind::Lt) {
+            generic_params = self.parse_generic_params()?;
+        }
+
+        let first_tok = self.consume(TokenKind::Identifier, "expected implementation target type or trait")?;
+        let mut first_name = first_tok.lexeme.clone();
+        if self.match_token(TokenKind::Lt) {
+            let mut type_args = Vec::new();
+            while !self.check(TokenKind::Gt) && !self.check(TokenKind::EOF) {
+                type_args.push(self.parse_type()?);
+                self.match_token(TokenKind::Comma);
+            }
+            self.consume(TokenKind::Gt, "expected '>' after generic type arguments")?;
+            first_name = format!("{}<{}>", first_name, type_args.join(", "));
+        }
+
+        let mut target_type = first_name.clone();
+        let mut target_span = first_tok.span.clone();
         let mut trait_name = None;
-        let mut target_type = name_tok.lexeme.clone();
-        let mut target_span = name_tok.span.clone();
+        let mut traits = Vec::new();
 
         if self.match_token(TokenKind::For) {
-            trait_name = Some(target_type);
+            // Old syntax: `impl Trait for Target`
+            trait_name = Some(first_name.clone());
+            traits.push(first_name);
             let target_tok = self.consume(TokenKind::Identifier, "expected target struct name")?;
-            target_type = target_tok.lexeme.clone();
+            let mut t_name = target_tok.lexeme.clone();
+            if self.match_token(TokenKind::Lt) {
+                let mut type_args = Vec::new();
+                while !self.check(TokenKind::Gt) && !self.check(TokenKind::EOF) {
+                    type_args.push(self.parse_type()?);
+                    self.match_token(TokenKind::Comma);
+                }
+                self.consume(TokenKind::Gt, "expected '>' after generic type arguments")?;
+                t_name = format!("{}<{}>", t_name, type_args.join(", "));
+            }
+            target_type = t_name;
             target_span = target_tok.span.clone();
+        } else if self.match_token(TokenKind::Colon) {
+            // New syntax: `impl Target: Trait1, Trait2` or `impl Target: Trait1 and Trait2`
+            loop {
+                let tr_tok = self.consume(TokenKind::Identifier, "expected trait name")?;
+                let mut tr_name = tr_tok.lexeme.clone();
+                if self.match_token(TokenKind::Lt) {
+                    let mut type_args = Vec::new();
+                    while !self.check(TokenKind::Gt) && !self.check(TokenKind::EOF) {
+                        type_args.push(self.parse_type()?);
+                        self.match_token(TokenKind::Comma);
+                    }
+                    self.consume(TokenKind::Gt, "expected '>' after generic type arguments")?;
+                    tr_name = format!("{}<{}>", tr_name, type_args.join(", "));
+                }
+                traits.push(tr_name);
+                if self.match_token(TokenKind::Comma)
+                    || self.match_token(TokenKind::Ampersand2) /* 'and' */
+                    || self.match_token(TokenKind::Plus)
+                {
+                    continue;
+                }
+                break;
+            }
+            trait_name = traits.first().cloned();
         }
 
         self.consume(TokenKind::OpenBrace, "expected '{'")?;
         let mut methods = Vec::new();
         while !self.check(TokenKind::CloseBrace) && !self.check(TokenKind::EOF) {
+            // Support associated types inside impl: `type Item = String`
+            if self.match_token(TokenKind::Type) {
+                let _type_id = self.consume(TokenKind::Identifier, "expected associated type name in impl")?;
+                self.consume(TokenKind::Equal, "expected '=' after associated type name")?;
+                let _concrete_type = self.parse_type()?;
+                continue;
+            }
             methods.push(self.parse_statement()?);
         }
         self.consume(TokenKind::CloseBrace, "expected '}'")?;
@@ -957,6 +1270,8 @@ impl Parser {
 
         Ok(Stmt::ImplDecl {
             trait_name,
+            traits,
+            generic_params,
             target_type,
             methods,
             annotations,

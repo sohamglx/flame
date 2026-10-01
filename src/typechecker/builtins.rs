@@ -20,6 +20,7 @@ impl TypeChecker {
                 }],
                 hover_doc: Some("Prints a value to standard output without a newline.".to_string()),
                 return_type: Type::Nil,
+                generic_params: Vec::new(),
             },
         );
         self.functions.insert(
@@ -35,6 +36,7 @@ impl TypeChecker {
                 }],
                 hover_doc: Some("Prints a value to standard error without a newline.".to_string()),
                 return_type: Type::Nil,
+                generic_params: Vec::new(),
             },
         );
         self.functions.insert(
@@ -52,6 +54,7 @@ impl TypeChecker {
                     "Prints a value to standard output, followed by a newline.".to_string(),
                 ),
                 return_type: Type::Nil,
+                generic_params: Vec::new(),
             },
         );
         self.functions.insert(
@@ -69,6 +72,7 @@ impl TypeChecker {
                     "Terminates the program immediately with an error message.".to_string(),
                 ),
                 return_type: Type::Unknown,
+                generic_params: Vec::new(),
             },
         );
         self.functions.insert(
@@ -84,6 +88,7 @@ impl TypeChecker {
                 }],
                 hover_doc: Some("Asserts that a condition is true. Panics if false.".to_string()),
                 return_type: Type::Nil,
+                generic_params: Vec::new(),
             },
         );
         self.functions.insert(
@@ -99,6 +104,7 @@ impl TypeChecker {
                 }],
                 hover_doc: Some("Creates a new native Rust server handle.".to_string()),
                 return_type: Type::Named("ServerHandle".to_string()),
+                generic_params: Vec::new(),
             },
         );
         self.functions.insert(
@@ -117,6 +123,7 @@ impl TypeChecker {
                         .to_string(),
                 ),
                 return_type: Type::String,
+                generic_params: Vec::new(),
             },
         );
         self.functions.insert(
@@ -148,6 +155,7 @@ impl TypeChecker {
                 ],
                 hover_doc: Some("Asserts that two values are equal. Panics with the provided message if they are not.".to_string()),
                 return_type: Type::Nil,
+                generic_params: Vec::new(),
             },
         );
         self.functions.insert(
@@ -179,6 +187,7 @@ impl TypeChecker {
                 ],
                 hover_doc: Some("Asserts that two values are not equal. Panics with the provided message if they are.".to_string()),
                 return_type: Type::Nil,
+                generic_params: Vec::new(),
             },
         );
         self.functions.insert(
@@ -203,6 +212,7 @@ impl TypeChecker {
                 ],
                 hover_doc: Some("Asserts that a boolean condition is true. Panics with the provided message if false.".to_string()),
                 return_type: Type::Nil,
+                generic_params: Vec::new(),
             },
         );
         self.functions.insert(
@@ -227,6 +237,7 @@ impl TypeChecker {
                 ],
                 hover_doc: Some("Asserts that a boolean condition is false. Panics with the provided message if true.".to_string()),
                 return_type: Type::Nil,
+                generic_params: Vec::new(),
             },
         );
         self.functions.insert(
@@ -236,6 +247,7 @@ impl TypeChecker {
                 params: vec![],
                 hover_doc: Some("Mocks an API endpoint for testing purposes.".to_string()),
                 return_type: Type::Unknown,
+                generic_params: Vec::new(),
             },
         );
         self.functions.insert(
@@ -245,6 +257,7 @@ impl TypeChecker {
                 params: vec![],
                 hover_doc: Some("Returns mock data for testing purposes.".to_string()),
                 return_type: Type::Unknown,
+                generic_params: Vec::new(),
             },
         );
         self.functions.insert(
@@ -254,6 +267,7 @@ impl TypeChecker {
                 params: vec![],
                 hover_doc: Some("Returns a mock function for testing purposes.".to_string()),
                 return_type: Type::Nil,
+                generic_params: Vec::new(),
             },
         );
 
@@ -264,6 +278,10 @@ impl TypeChecker {
         self.enums.insert("Result".to_string(), EnumInfo {
             variants: result_variants,
             hover_doc: Some("`Result` is a generic type that represents either success (`Ok`) or failure (`Err`).\nIt is commonly used for error handling instead of exceptions.\n\n### Example\n```flame\nfn divide(a: Int, b: Int) -> Result<Int, Error> {\n    if b == 0 {\n        return Err(Error { code: 1, message: \"Divide by zero\" })\n    }\n    return Ok(a / b)\n}\n```".to_string()),
+            generic_params: vec![
+                crate::parser::GenericParam { name: "T".to_string(), bounds: Vec::new(), span: crate::lexer::Span::dummy() },
+                crate::parser::GenericParam { name: "E".to_string(), bounds: Vec::new(), span: crate::lexer::Span::dummy() },
+            ],
         });
 
         let mut option_variants = HashMap::new();
@@ -272,6 +290,9 @@ impl TypeChecker {
         self.enums.insert("Option".to_string(), EnumInfo {
             variants: option_variants,
             hover_doc: Some("`Option` is a generic type that represents an optional value: every `Option` is either `Some` and contains a value, or `None`, and does not.\n\n### Example\n```flame\nlet val = Some(42)\nlet empty = None\n```".to_string()),
+            generic_params: vec![
+                crate::parser::GenericParam { name: "T".to_string(), bounds: Vec::new(), span: crate::lexer::Span::dummy() },
+            ],
         });
 
         // Built-in Structs
@@ -281,6 +302,7 @@ impl TypeChecker {
                 ("code".to_string(), Type::Named("Int".to_string())),
             ],
             hover_doc: Some("`Error` is a built-in type that represents a standard runtime error.\n\n### Example\n```flame\nlet err = Error { message: \"Not found\", code: 404 }\n```".to_string()),
+            generic_params: Vec::new(),
         });
 
         self.structs.insert("ParameterInfo".to_string(), StructInfo {
@@ -292,6 +314,7 @@ impl TypeChecker {
                 ("isMut".to_string(), Type::Bool),
             ],
             hover_doc: Some("Parameter reflection info for the annotated target.".to_string()),
+            generic_params: Vec::new(),
         });
 
         self.structs.insert("AnnotationInfo".to_string(), StructInfo {
@@ -300,6 +323,7 @@ impl TypeChecker {
                 ("args".to_string(), Type::Vector(Box::new(Type::String))),
             ],
             hover_doc: Some("Annotation reflection info applied to a declaration.".to_string()),
+            generic_params: Vec::new(),
         });
 
         self.structs.insert("CompilerInfo".to_string(), StructInfo {
@@ -308,6 +332,7 @@ impl TypeChecker {
                 ("version".to_string(), Type::String),
             ],
             hover_doc: Some("Compiler reflection info available to custom annotations.".to_string()),
+            generic_params: Vec::new(),
         });
 
         self.structs.insert("ModuleInfo".to_string(), StructInfo {
@@ -316,6 +341,7 @@ impl TypeChecker {
                 ("filepath".to_string(), Type::String),
             ],
             hover_doc: Some("Current module reflection info available to custom annotations.".to_string()),
+            generic_params: Vec::new(),
         });
 
         self.structs.insert("BuildInfo".to_string(), StructInfo {
@@ -327,6 +353,7 @@ impl TypeChecker {
                 ("features".to_string(), Type::Vector(Box::new(Type::String))),
             ],
             hover_doc: Some("Target platform and compilation build info available to custom annotations.".to_string()),
+            generic_params: Vec::new(),
         });
 
         self.structs.insert("TargetMetadata".to_string(), StructInfo {
@@ -338,6 +365,7 @@ impl TypeChecker {
                 ("annotations".to_string(), Type::Vector(Box::new(Type::Named("AnnotationInfo".to_string())))),
             ],
             hover_doc: Some("Metadata and callable reference for the annotated declaration.\n\n### Methods\n- `ref()`: Callable reference to the target function\n- `transform(transformer)`: Wraps target function".to_string()),
+            generic_params: Vec::new(),
         });
 
         let mut target_methods = HashMap::new();
@@ -348,6 +376,7 @@ impl TypeChecker {
                 params: vec![],
                 hover_doc: Some("Returns a callable reference to the annotated target declaration.\n\n### Example\n```flame\nlet handler = ctx.target.ref()\n```".to_string()),
                 return_type: Type::Unknown,
+                generic_params: Vec::new(),
             },
         );
         target_methods.insert(
@@ -363,6 +392,7 @@ impl TypeChecker {
                 }],
                 hover_doc: Some("Wraps the target function with the provided transformer callback.\n\n### Examples\n```flame\n// Direct wrapper receiving target ref and parameters:\nctx.target.transform((ref, text: String) {\n    let res = ref(text)\n    return prefix + \": \" + res\n})\n\n// No-arg wrapper:\nctx.target.transform((ref) {\n    let res = ref()\n    return \"[LOGGED: \" + res + \"]\"\n})\n```".to_string()),
                 return_type: Type::Unknown,
+                generic_params: Vec::new(),
             },
         );
         self.methods.insert("TargetMetadata".to_string(), target_methods);
@@ -375,6 +405,7 @@ impl TypeChecker {
                 ("build".to_string(), Type::Named("BuildInfo".to_string())),
             ],
             hover_doc: Some("Context provided to custom annotations exposing target metadata, compiler info, module info, and build configuration.".to_string()),
+            generic_params: Vec::new(),
         });
 
         let anno_ctx_sig = FunctionSig {
@@ -382,6 +413,7 @@ impl TypeChecker {
             params: vec![],
             hover_doc: Some("Retrieves the active AnnotationContext for the annotated target.\n\nOnly callable inside a custom annotation declaration.\n\n### Example\n```flame\nannotation Route(path: String) {\n    let ctx = annotation.context()\n    let handler = ctx.target.ref()\n}\n```".to_string()),
             return_type: Type::Named("AnnotationContext".to_string()),
+            generic_params: Vec::new(),
         };
 
         self.functions.insert("context".to_string(), anno_ctx_sig.clone());

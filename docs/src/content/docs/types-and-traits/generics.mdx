@@ -1,0 +1,164 @@
+---
+title: Generics & Type Parameters
+description: Writing flexible, reusable, and type-safe code using generic parameters across functions, structs, enums, and traits in Flame.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+**Generics** allow you to write reusable algorithms and data structures that work across multiple concrete data types while preserving Flame's static type safety, ownership guarantees, and zero-cost abstractions.
+
+---
+
+## Generic Functions
+
+Declare generic functions by placing type parameters inside angle brackets `<T>` after the function name:
+
+```flame
+// Single type parameter
+fn identity<T>(x: T) -> T {
+    return x
+}
+
+// Multiple type parameters
+fn pair<A, B>(first: A, second: B) -> (A, B) {
+    return (first, second)
+}
+
+let num = identity(42)          // Type inferred as Int
+let greeting = identity("Flame") // Type inferred as String
+```
+
+---
+
+## Generic Structs
+
+Structs can store generic fields, allowing unified layouts for collections, wrappers, and containers:
+
+```flame
+// Single generic parameter
+struct Box<T> {
+    value: T
+}
+
+// Multiple generic parameters
+struct KeyValuePair<K, V> {
+    key: K,
+    value: V
+}
+
+let int_box = Box { value: 100 }
+let str_box = Box { value: "hello world" }
+
+let entry = KeyValuePair { key: "port", value: 8080 }
+```
+
+---
+
+## Generic Impl Blocks
+
+To add methods to a generic struct, declare the generic parameters on `impl` and apply them to the target type:
+
+```flame
+impl<T> Box<T> {
+    // Consume self and return inner value
+    fn unwrap(self) -> T {
+        return self.value
+    }
+
+    // Borrow reference to inner value
+    fn get(&self) -> &T {
+        return &self.value
+    }
+}
+
+let b = Box { value: 42 }
+print(b.unwrap()) // 42
+```
+
+---
+
+## Generic Enums
+
+Enums frequently use generics to represent variant payloads that vary by type, such as `Option<T>` or `Result<T, E>`:
+
+```flame
+enum MyOption<T> {
+    Some(T),
+    None,
+}
+
+let opt_int = MyOption.Some(99)
+let opt_str = MyOption.Some("active")
+
+match opt_int {
+    MyOption.Some(v) => print($"Value: {v}"),
+    MyOption.None => print("No value"),
+}
+```
+
+---
+
+## Ownership, References & Borrow Semantics
+
+Generics in Flame follow the same ownership, borrow checking, and mutation semantics as concrete types:
+
+| Syntax | Semantics | Description |
+|---|---|---|
+| `x: T` | **Value (Move)** | Ownership is transferred into the function or struct. |
+| `x: &T` | **Immutable Reference** | Read-only borrow; multiple immutable borrows can coexist simultaneously. |
+| `x: &mut T` | **Mutable Reference** | Exclusive borrow; allows updating the underlying data without reallocating. |
+
+```flame
+struct Container<T> {
+    item: T
+}
+
+impl<T> Container<T> {
+    // Read-only inspection
+    fn inspect(&self) {
+        // self.item is borrowed immutably as &T
+    }
+
+    // In-place mutation
+    fn replace(&mut self, new_item: T) -> T {
+        let old = self.item
+        self.item = new_item
+        return old
+    }
+}
+```
+
+---
+
+## Trait Bounds: `<T: Trait>`
+
+You can restrict generic parameters to types that satisfy specific trait contracts:
+
+```flame
+trait Drawable {
+    fn draw(&self) -> String
+}
+
+// T must implement Drawable
+fn render<T: Drawable>(shape: &T) {
+    print(shape.draw())
+}
+```
+
+Multiple trait bounds can be combined using `+`:
+
+```flame
+trait Describable {
+    fn describe(&self) -> String
+}
+
+// T must satisfy both Drawable and Describable
+fn inspect_and_draw<T: Drawable + Describable>(item: &T) {
+    print(item.describe())
+    print(item.draw())
+}
+```
+
+<Aside type="tip">
+When using semantic trait composition (`trait Shape = Drawable and Describable`), you can use `<T: Shape>` directly for cleaner and more readable bounds!
+</Aside>

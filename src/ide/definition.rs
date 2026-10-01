@@ -138,15 +138,28 @@ pub fn find_declaration_in_stmts(
     for stmt in stmts {
         match stmt {
             crate::parser::Stmt::FuncDecl {
-                name, name_span, ..
-            } if name == clean => {
-                return Some(JsonDefinition {
-                    file: filepath.to_string(),
-                    line: name_span.line,
-                    column: name_span.col,
-                    end_line: Some(name_span.line),
-                    end_column: Some(name_span.col + name.len()),
-                });
+                name, name_span, generic_params, ..
+            } => {
+                if name == clean {
+                    return Some(JsonDefinition {
+                        file: filepath.to_string(),
+                        line: name_span.line,
+                        column: name_span.col,
+                        end_line: Some(name_span.line),
+                        end_column: Some(name_span.col + name.len()),
+                    });
+                }
+                for p in generic_params {
+                    if p.name == clean {
+                        return Some(JsonDefinition {
+                            file: filepath.to_string(),
+                            line: p.span.line,
+                            column: p.span.col,
+                            end_line: Some(p.span.line),
+                            end_column: Some(p.span.col + p.name.len()),
+                        });
+                    }
+                }
             }
             crate::parser::Stmt::AnnotationDecl {
                 name, name_span, ..
@@ -160,26 +173,76 @@ pub fn find_declaration_in_stmts(
                 });
             }
             crate::parser::Stmt::StructDecl {
-                name, name_span, ..
-            } if name == clean => {
-                return Some(JsonDefinition {
-                    file: filepath.to_string(),
-                    line: name_span.line,
-                    column: name_span.col,
-                    end_line: Some(name_span.line),
-                    end_column: Some(name_span.col + name.len()),
-                });
+                name, name_span, generic_params, ..
+            } => {
+                if name == clean {
+                    return Some(JsonDefinition {
+                        file: filepath.to_string(),
+                        line: name_span.line,
+                        column: name_span.col,
+                        end_line: Some(name_span.line),
+                        end_column: Some(name_span.col + name.len()),
+                    });
+                }
+                for p in generic_params {
+                    if p.name == clean {
+                        return Some(JsonDefinition {
+                            file: filepath.to_string(),
+                            line: p.span.line,
+                            column: p.span.col,
+                            end_line: Some(p.span.line),
+                            end_column: Some(p.span.col + p.name.len()),
+                        });
+                    }
+                }
             }
             crate::parser::Stmt::EnumDecl {
-                name, name_span, ..
-            } if name == clean => {
-                return Some(JsonDefinition {
-                    file: filepath.to_string(),
-                    line: name_span.line,
-                    column: name_span.col,
-                    end_line: Some(name_span.line),
-                    end_column: Some(name_span.col + name.len()),
-                });
+                name, name_span, generic_params, ..
+            } => {
+                if name == clean {
+                    return Some(JsonDefinition {
+                        file: filepath.to_string(),
+                        line: name_span.line,
+                        column: name_span.col,
+                        end_line: Some(name_span.line),
+                        end_column: Some(name_span.col + name.len()),
+                    });
+                }
+                for p in generic_params {
+                    if p.name == clean {
+                        return Some(JsonDefinition {
+                            file: filepath.to_string(),
+                            line: p.span.line,
+                            column: p.span.col,
+                            end_line: Some(p.span.line),
+                            end_column: Some(p.span.col + p.name.len()),
+                        });
+                    }
+                }
+            }
+            crate::parser::Stmt::TraitDecl {
+                name, name_span, generic_params, ..
+            } => {
+                if name == clean {
+                    return Some(JsonDefinition {
+                        file: filepath.to_string(),
+                        line: name_span.line,
+                        column: name_span.col,
+                        end_line: Some(name_span.line),
+                        end_column: Some(name_span.col + name.len()),
+                    });
+                }
+                for p in generic_params {
+                    if p.name == clean {
+                        return Some(JsonDefinition {
+                            file: filepath.to_string(),
+                            line: p.span.line,
+                            column: p.span.col,
+                            end_line: Some(p.span.line),
+                            end_column: Some(p.span.col + p.name.len()),
+                        });
+                    }
+                }
             }
             crate::parser::Stmt::ConstDecl {
                 name, name_span, ..
@@ -209,7 +272,18 @@ pub fn find_declaration_in_stmts(
                     return Some(def);
                 }
             }
-            crate::parser::Stmt::ImplDecl { methods, .. } => {
+            crate::parser::Stmt::ImplDecl { generic_params, methods, .. } => {
+                for p in generic_params {
+                    if p.name == clean {
+                        return Some(JsonDefinition {
+                            file: filepath.to_string(),
+                            line: p.span.line,
+                            column: p.span.col,
+                            end_line: Some(p.span.line),
+                            end_column: Some(p.span.col + p.name.len()),
+                        });
+                    }
+                }
                 for m in methods {
                     if let crate::parser::Stmt::FuncDecl {
                         name, name_span, ..
@@ -395,6 +469,8 @@ pub fn find_symbol_in_file(path: &std::path::Path, symbol: &str) -> Option<JsonD
             || trimmed.starts_with(&format!("export struct {}", clean))
             || trimmed.starts_with(&format!("enum {}", clean))
             || trimmed.starts_with(&format!("export enum {}", clean))
+            || trimmed.starts_with(&format!("trait {}", clean))
+            || trimmed.starts_with(&format!("export trait {}", clean))
             || trimmed.starts_with(&format!("const {}:", clean))
             || trimmed.starts_with(&format!("export const {}:", clean))
             || trimmed.starts_with(&format!("let {}", clean))
@@ -1171,6 +1247,26 @@ pub fn find_definition(
                 end_line: Some(1),
                 end_column: Some(1),
             });
+        }
+    }
+
+    // Check if clean_word is a generic parameter declared in the current file
+    let gen_re_str = format!(r"<[^>]*\b{}\b[^>]*>", regex::escape(clean_word));
+    if let Ok(gen_re) = regex::Regex::new(&gen_re_str) {
+        if gen_re.is_match(content) {
+            for (line_idx, l_str) in content.lines().enumerate() {
+                if gen_re.is_match(l_str) {
+                    if let Some(col_idx) = l_str.find(clean_word) {
+                        return Some(JsonDefinition {
+                            file: file.to_string(),
+                            line: line_idx + 1,
+                            column: col_idx + 1,
+                            end_line: Some(line_idx + 1),
+                            end_column: Some(col_idx + 1 + clean_word.len()),
+                        });
+                    }
+                }
+            }
         }
     }
 

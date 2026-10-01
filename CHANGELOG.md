@@ -2,6 +2,111 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.6.6] - 2026-10-01 (Codename: *Sixth Spark*)
+
+### 🧬 First-Class Traits & Composition System (`trait`)
+
+- **Semantic Implementation Syntax (`impl Type: Trait`)**:
+  - Implemented intuitive semantic implementation syntax `impl Type: Trait` (e.g. `impl Circle: Drawable`), replacing verbose syntax alternatives.
+  - Supports multiple comma-separated traits on a single `impl` block: `impl Circle: Drawable, Describable { ... }`.
+- **Default Method Implementations (`default fn`)**:
+  - Added support for explicit default method declarations inside traits using the `default` keyword:
+    ```flame
+    trait Describable {
+        default fn describe(&self) -> String {
+            return "default object description"
+        }
+    }
+    ```
+  - Implementing types automatically inherit default methods without boilerplate, and can selectively override them with custom implementations.
+- **Trait Composition (`trait Composed = TraitA and TraitB`)**:
+  - Introduced first-class trait composition using the logical `and` keyword (`trait Shape = Drawable and Describable`).
+  - Implementing types can target the composite trait directly (`impl Rectangle: Shape { ... }`), requiring implementation of all member trait contracts.
+- **Strict Compile-Time Contract Enforcement**:
+  - Implemented thorough trait validation in the typechecker (`src/typechecker/stmts.rs`):
+    - Verifies that all required non-default methods are fully implemented.
+    - Validates method arity, parameter types, receiver mutability (`&self` vs `&mut self`), and return types against trait definitions.
+    - Prevents orphan or unrecognized method implementations.
+- **Runtime Trait Dynamic Dispatch**:
+  - Full runtime execution support in `src/runner/stmts.rs` ensuring trait methods, default implementations, and overrides execute with zero runtime overhead.
+
+### 📦 Comprehensive Generics & Type Parameters (`<T>`)
+
+- **Generic Functions**:
+  - Full support for generic function signatures with single or multiple type parameters:
+    ```flame
+    fn identity<T>(x: T) -> T {
+        return x
+    }
+    fn pair<A, B>(first: A, second: B) -> (A, B) {
+        return (first, second)
+    }
+    ```
+- **Generic Structs & Enums**:
+  - Support for type parameters on structs and algebraic data types:
+    ```flame
+    struct Box<T> {
+        value: T
+    }
+    enum MyOption<T> {
+        Some(T),
+        None,
+    }
+    ```
+- **Generic Implementation Blocks (`impl<T> Box<T>`)**:
+  - Methods declared on generic types preserve generic type bindings across receivers, parameters, and return types:
+    ```flame
+    impl<T> Box<T> {
+        fn unwrap(self) -> T {
+            return self.value
+        }
+        fn get_ref(&self) -> &T {
+            return &self.value
+        }
+        fn set_value(&mut self, new_val: T) {
+            self.value = new_val
+        }
+    }
+    ```
+- **Borrowed and Mutable References on Generics**:
+  - Added full support for immutable (`&T`, `&self`) and mutable (`&mut Box<T>`, `&mut self`) references across generic functions and methods:
+    ```flame
+    fn borrow_val<T>(val: &T) -> &T { return val }
+    fn mutate_box<T>(b: &mut Box<T>, new_val: T) { b.value = new_val }
+    fn swap_boxes<T>(a: &mut Box<T>, b: &mut Box<T>) {
+        let tmp = a.value
+        a.value = b.value
+        b.value = tmp
+    }
+    ```
+- **Comprehensive Verification Suite**:
+  - Added full end-to-end integration tests in `examples/ex/tests/test_traits_and_generics.fm` validating trait contracts, default inheritance, method overrides, generic structs, generic enums, and borrowed/mutable references.
+
+### 🎨 IDE & Developer Experience Architecture
+
+- **TextMate Grammar Reordering & Universal Type Blue (`support.type.flame`)**:
+  - Reordered grammar patterns in `ide/syntaxes/flame.tmLanguage.json` to process `#types` before `#keywords`, preventing keywords like `struct`, `trait`, and `enum` from consuming type declarations prematurely.
+  - Eliminated variable-width lookbehinds that failed to compile in Oniguruma regex engines, replacing them with clean PascalCase type matching (`\b[A-Z][a-zA-Z0-9_]*\b`) mapped strictly to `support.type.flame`.
+  - Guarantees structs, enums, traits, and generic parameters (`T`) render in authentic editor blue (`#79b8ff`) across files and inside hover tooltips.
+- **Rich Hover Documentation for Generics & Traits**:
+  - Added dedicated hover cards for generic type parameters (`type T` with **Generic Type Parameter** documentation and parent struct/enum/trait/impl/fn context).
+  - Enhanced trait hover cards in `flamelang check` with member signatures and default implementations.
+- **Local Definition Resolution for Type Parameters**:
+  - Upgraded Go-to-Definition in `src/ide/definition.rs` to jump directly to generic type parameter declarations (`<T>`) within the active file rather than falling back to standard library types.
+- **Semantic Token Scopes Standardization**:
+  - Updated `ide/package.json` to map `type`, `struct`, `enum`, `interface`, `typeParameter`, and `class` to `support.type.flame`.
+
+### 📚 Complete Documentation Overhaul (`docs/`)
+
+- **New Traits & Interfaces Guide (`docs/src/content/docs/types-and-traits/traits.mdx`)**:
+  - In-depth documentation covering trait declarations, semantic `impl Type: Trait` syntax, default methods, trait composition (`trait Shape = Drawable and Describable`), and method overriding.
+- **New Generics & Type Parameters Guide (`docs/src/content/docs/types-and-traits/generics.mdx`)**:
+  - Comprehensive guide covering generic functions, generic structs, generic enums, generic impl blocks, and borrowed/mutable references.
+- **Sidebar Navigation Integration**:
+  - Added both guides under the `Types & Object-Oriented` section in `docs/astro.config.mjs`.
+
+---
+
 ## [0.6.5] - 2026-09-30 (Codename: *Sixth Spark*)
 
 ### 🛡️ Configurable Security Policies & Manifest Options (`flame.toml`)

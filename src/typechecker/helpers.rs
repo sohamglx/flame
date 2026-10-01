@@ -239,6 +239,30 @@ impl TypeChecker {
             return true;
         }
 
+        let exp_name = match expected {
+            Type::Named(n) | Type::Struct(n) => Some(n.as_str()),
+            Type::Reference { inner, .. } => match &**inner {
+                Type::Named(n) | Type::Struct(n) => Some(n.as_str()),
+                _ => None,
+            },
+            _ => None,
+        };
+        let act_name = match actual {
+            Type::Named(n) | Type::Struct(n) => Some(n.as_str()),
+            Type::Reference { inner, .. } => match &**inner {
+                Type::Named(n) | Type::Struct(n) => Some(n.as_str()),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let (Some(exp), Some(act)) = (exp_name, act_name) {
+            let base_exp = exp.split('<').next().unwrap().trim();
+            let base_act = act.split('<').next().unwrap().trim();
+            if self.traits.contains_key(base_exp) && self.implements_trait(base_act, base_exp) {
+                return true;
+            }
+        }
+
         match (expected, actual) {
             (Type::Float, Type::Int) => true,
             (Type::Byte, Type::Int) => true,

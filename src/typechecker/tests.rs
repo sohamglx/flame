@@ -228,4 +228,76 @@ fn check_source(src: &str) -> Result<(), Vec<crate::diagnostics::Diagnostic>> {
         assert!(diags.iter().any(|d| d.message.contains("if expression missing 'else' branch")));
     }
 
+    #[test]
+    fn test_incomplete_trait_implementation_fails() {
+        let src = r#"
+        trait Drawable {
+            fn draw(&self) -> String
+            fn area(&self) -> Float
+        }
+
+        struct Circle {
+            radius: Float
+        }
+
+        impl Circle: Drawable {
+            fn draw(&self) -> String {
+                return "Circle"
+            }
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_err(), "Incomplete trait implementation should fail");
+        let diags = res.unwrap_err();
+        assert!(diags.iter().any(|d| d.message.contains("incomplete implementation of trait 'Drawable': 'Circle' implements 'Drawable' but is missing required method: 'area(&self) -> Float'")));
+    }
+
+    #[test]
+    fn test_trait_default_method_not_missing() {
+        let src = r#"
+        trait Describable {
+            fn name(&self) -> String
+            default fn describe(&self) -> String {
+                return "default description"
+            }
+        }
+
+        struct Item {
+            title: String
+        }
+
+        impl Item: Describable {
+            fn name(&self) -> String {
+                return self.title
+            }
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_ok(), "Trait implementation with default method should pass without implementing default: {:?}", res.err());
+    }
+
+    #[test]
+    fn test_trait_composition_missing_super_method_fails() {
+        let src = r#"
+        trait A {
+            fn foo(&self)
+        }
+        trait B {
+            fn bar(&self)
+        }
+        trait Composed = A and B
+
+        struct Foo {}
+
+        impl Foo: Composed {
+            fn foo(&self) {}
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_err(), "Missing method from composed trait should fail");
+        let diags = res.unwrap_err();
+        assert!(diags.iter().any(|d| d.message.contains("missing required method: 'bar(&self)'")));
+    }
+
+
 

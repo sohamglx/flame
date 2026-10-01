@@ -70,5 +70,84 @@
       "let mut ${1:name}: ${2:Type} = ${3:value}"
     ],
     "description": "Declare a mutable variable"
+  },
+  "Trait Declaration": {
+    "prefix": ["trait"],
+    "body": [
+      "trait ${1:Name} {",
+      "\tfn ${2:method_name}(&self) -> ${3:Type}",
+      "}"
+    ],
+    "description": "Declare a trait with required methods"
+  },
+  "Trait with Default Method": {
+    "prefix": ["trait-default", "trait-def"],
+    "body": [
+      "trait ${1:Name} {",
+      "\tfn ${2:required_method}(&self) -> ${3:Type}",
+      "",
+      "\tdefault fn ${4:default_method}(&self) -> ${5:String} {",
+      "\t\treturn \"${6:default implementation}\"",
+      "\t}",
+      "}"
+    ],
+    "description": "Declare a trait with required and default methods"
+  },
+  "Trait Composition": {
+    "prefix": ["trait-compose", "trait-comp"],
+    "body": [
+      "trait ${1:ComposedTrait} = ${2:TraitA} and ${3:TraitB}"
+    ],
+    "description": "Compose multiple traits into a supertrait using 'and'"
+  },
+  "Implement Trait for Type": {
+    "prefix": ["impl-trait", "impltrait"],
+    "body": [
+      "impl ${1:Type}: ${2:Trait} {",
+      "\tfn ${3:method_name}(&self) -> ${4:Type} {",
+      "\t\t${0}",
+      "\t}",
+      "}"
+    ],
+    "description": "Implement one or more traits for a struct or type"
+  },
+  "Generic Function": {
+    "prefix": ["fn-generic", "fn-gen"],
+    "body": [
+      "fn ${1:name}<${2:T}>(${3:x}: ${2:T}) -> ${2:T} {",
+      "\treturn ${3:x}",
+      "}"
+    ],
+    "description": "Declare a generic function with type parameter"
+  },
+  "Generic Struct": {
+    "prefix": ["struct-generic", "struct-gen"],
+    "body": [
+      "struct ${1:Name}<${2:T}> {",
+      "\t${3:value}: ${2:T},",
+      "}"
+    ],
+    "description": "Declare a generic struct with type parameter"
+  },
+  "Generic Impl Block": {
+    "prefix": ["impl-generic", "impl-gen"],
+    "body": [
+      "impl<${1:T}> ${2:Type}<${1:T}> {",
+      "\tfn ${3:method}(self) -> ${1:T} {",
+      "\t\treturn self.${4:value}",
+      "\t}",
+      "}"
+    ],
+    "description": "Implement methods for a generic struct or type"
+  },
+  "Generic Enum": {
+    "prefix": ["enum-generic", "enum-gen"],
+    "body": [
+      "enum ${1:Name}<${2:T}> {",
+      "\t${3:Some}(${2:T}),",
+      "\t${4:None},",
+      "}"
+    ],
+    "description": "Declare a generic enum with type parameter"
   }
 }

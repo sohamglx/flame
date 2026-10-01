@@ -46,7 +46,7 @@ pub fn scan_document_enums(content: &str) -> Vec<ScannedEnum> {
     let mut enums = Vec::new();
 
     let enum_header_re = Regex::new(
-        r#"(?:@Docs\s*\(\s*(?:"([^"]*)"|'([^']*)')\s*\)\s*)?(?:export\s+)?enum\s+([a-zA-Z_]\w*)\s*\{"#,
+        r#"(?:@Docs\s*\(\s*(?:"([^"]*)"|'([^']*)')\s*\)\s*)?(?:export\s+)?enum\s+([a-zA-Z_]\w*)(?:\s*<[^>]*>)?\s*\{"#,
     )
     .unwrap();
     let variant_re = Regex::new(
@@ -95,7 +95,7 @@ pub fn scan_document(content: &str) -> (Vec<ScannedVar>, Vec<ScannedStruct>) {
     let mut structs = Vec::new();
 
     // Scan for structs: `struct Name { field: type, ... }`
-    let struct_header_re = Regex::new(r#"(?:@Docs\s*\(\s*(?:"([^"]*)"|'([^']*)')\s*\)\s*)?(?:export\s+)?struct\s+([a-zA-Z_]\w*)\s*\{"#).unwrap();
+    let struct_header_re = Regex::new(r#"(?:@Docs\s*\(\s*(?:"([^"]*)"|'([^']*)')\s*\)\s*)?(?:export\s+)?struct\s+([a-zA-Z_]\w*)(?:\s*<[^>]*>)?\s*\{"#).unwrap();
     let field_re = Regex::new(r"([a-zA-Z_]\w*)\s*:\s*([a-zA-Z_]\w*)").unwrap();
     for cap in struct_header_re.captures_iter(content) {
         let doc = cap
@@ -154,8 +154,8 @@ pub fn scan_document(content: &str) -> (Vec<ScannedVar>, Vec<ScannedStruct>) {
         parts
     }
 
-    // Scan for impls: `impl Name { fn method(...) { ... } }`
-    let impl_header_re = Regex::new(r"impl\s+([a-zA-Z_]\w*)\s*\{").unwrap();
+    // Scan for impls: `impl Name { fn method(...) { ... } }` or `impl Circle: Drawable { ... }` or `impl<T> Box<T> { ... }`
+    let impl_header_re = Regex::new(r#"impl(?:\s*<[^>]*>)?\s+([a-zA-Z_]\w*)(?:\s*<[^>]*>)?(?:\s*:\s*[^{]+)?\s*\{"#).unwrap();
     let fn_start_re =
         Regex::new(r#"(?:@Docs\s*\(\s*(?:"([^"]*)"|'([^']*)')\s*\)\s*)?fn\s+([a-zA-Z_]\w*)\s*\("#)
             .unwrap();

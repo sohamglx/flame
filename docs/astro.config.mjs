@@ -93,6 +93,7 @@ export default defineConfig({
                     { label: 'Impl & Methods', slug: 'types-and-traits/impl-and-methods' },
                     { label: 'Enums & Patterns', slug: 'types-and-traits/enums' },
                     { label: 'Traits & Interfaces', slug: 'types-and-traits/traits' },
+                    { label: 'Generics & Type Parameters', slug: 'types-and-traits/generics' },
                 ],
             },
             {

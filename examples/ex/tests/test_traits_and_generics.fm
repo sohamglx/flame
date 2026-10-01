@@ -1,0 +1,152 @@
+trait Drawable {
+    fn draw(&self) -> String
+    fn area(&self) -> Float
+}
+
+trait Describable {
+    default fn describe(&self) -> String {
+        return "default object description"
+    }
+}
+
+trait Shape = Drawable and Describable
+
+struct Box<T> {
+    value: T
+}
+
+impl<T> Box<T> {
+    fn unwrap(self) -> T {
+        return self.value
+    }
+
+    fn get_ref(&self) -> &T {
+        return &self.value
+    }
+
+    fn set_value(&mut self, new_val: T) {
+        self.value = new_val
+    }
+}
+
+enum MyOption<T> {
+    Some(T),
+    None,
+}
+
+struct Circle {
+    radius: Float
+}
+
+impl Circle: Drawable, Describable {
+    fn draw(&self) -> String {
+        return "Drawing Circle"
+    }
+
+    fn area(&self) -> Float {
+        return 3.14159 * self.radius * self.radius
+    }
+}
+
+struct Rectangle {
+    width: Float,
+    height: Float
+}
+
+impl Rectangle: Shape {
+    fn draw(&self) -> String {
+        return "Drawing Rectangle"
+    }
+
+    fn area(&self) -> Float {
+        return self.width * self.height
+    }
+
+    fn describe(&self) -> String {
+        return "custom rectangle description"
+    }
+}
+
+fn identity<T>(x: T) -> T {
+    return x
+}
+
+fn borrow_val<T>(val: &T) -> &T {
+    return val
+}
+
+fn mutate_box<T>(b: &mut Box<T>, new_val: T) {
+    b.value = new_val
+}
+
+fn swap_boxes<T>(a: &mut Box<T>, b: &mut Box<T>) {
+    let tmp = a.value
+    a.value = b.value
+    b.value = tmp
+}
+
+@Test
+fn test_semantic_traits() {
+    let c = Circle {radius: 2.0}
+
+    c.draw().assertEq("Drawing Circle")
+    let a = c.area()
+    let ok = a > 12.5 and a < 12.6
+    ok.assertEq(true)
+
+    // Inherited default method from Describable
+    c.describe().assertEq("default object description")
+}
+
+@Test
+fn test_composed_trait_and_override() {
+    let r = Rectangle {width: 3.0, height: 4.0}
+
+    r.draw().assertEq("Drawing Rectangle")
+    r.area().assertEq(12.0)
+    // Overridden default method
+    r.describe().assertEq("custom rectangle description")
+}
+
+@Test
+fn test_generics_struct_and_enum() {
+    let int_box = Box {value: 42}
+    int_box.unwrap().assertEq(42)
+
+    let str_box = Box {value: "hello flame"}
+    str_box.unwrap().assertEq("hello flame")
+
+    let opt_some = MyOption.Some(100)
+    match opt_some {
+        MyOption.Some(v) => v.assertEq(100),
+        MyOption.None => false.assertEq(true),
+    }
+
+    let id_val = identity(999)
+    id_val.assertEq(999)
+
+    let id_str = identity("generics work")
+    id_str.assertEq("generics work")
+}
+
+@Test
+fn test_generics_borrow_and_mutable() {
+    let mut b1 = Box {value: 10}
+    let r = borrow_val(&b1.value)
+    r.assertEq(10)
+
+    let mut b2 = Box {value: 20}
+    swap_boxes(&mut b1, &mut b2)
+    b1.value.assertEq(20)
+    b2.value.assertEq(10)
+
+    mutate_box(&mut b1, 99)
+    b1.value.assertEq(99)
+
+    let mut str_box = Box {value: "flame"}
+    let s_ref = str_box.get_ref()
+    s_ref.assertEq("flame")
+
+    str_box.set_value("blaze")
+    str_box.unwrap().assertEq("blaze")
+}

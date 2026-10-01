@@ -576,7 +576,7 @@ pub fn analyze_file_for_json(
         }
     }
 
-    let impl_re = regex::Regex::new(r"impl\s+([a-zA-Z_]\w*)").unwrap();
+    let impl_re = regex::Regex::new(r"impl(?:\s*<[^>]*>)?\s+([a-zA-Z_]\w*)").unwrap();
     let mut current_impl = None;
     for cap in impl_re.captures_iter(&content) {
         if let Some(m) = cap.get(0) {
@@ -3415,6 +3415,29 @@ pub fn analyze_file_for_json(
                         label: word_under_cursor.clone(),
                         documentation: Some(final_doc),
                     });
+                } else if let Some(t_info) = tc
+                    .traits
+                    .iter()
+                    .find(|(k, _)| {
+                        k == &&word_under_cursor || k.ends_with(&format!(".{}", word_under_cursor))
+                    })
+                    .map(|(_, v)| v)
+                {
+                    let super_str = if t_info.super_traits.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" = {}", t_info.super_traits.join(" and "))
+                    };
+                    let doc = t_info.hover_doc.clone().unwrap_or_default();
+                    let final_doc = if doc.is_empty() {
+                        format!("```flame\ntrait {}{}\n```", word_under_cursor, super_str)
+                    } else {
+                        format!("```flame\ntrait {}{}\n```\n{}", word_under_cursor, super_str, doc)
+                    };
+                    hover_found = Some(JsonHover {
+                        label: word_under_cursor.clone(),
+                        documentation: Some(final_doc),
+                    });
                 } else if let Some(f) = tc
                     .functions
                     .iter()
@@ -3520,6 +3543,22 @@ pub fn analyze_file_for_json(
                             });
                             break;
                         }
+                    }
+                }
+            }
+
+            if hover_found.is_none() {
+                // Check if word_under_cursor is a generic parameter in the file
+                let gen_re_str = format!(r"<[^>]*\b{}\b[^>]*>", regex::escape(&word_under_cursor));
+                if let Ok(gen_re) = regex::Regex::new(&gen_re_str) {
+                    if gen_re.is_match(&content) {
+                        hover_found = Some(JsonHover {
+                            label: format!("type {}", word_under_cursor),
+                            documentation: Some(format!(
+                                "```flame\ntype {}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}`.",
+                                word_under_cursor, word_under_cursor
+                            )),
+                        });
                     }
                 }
             }
@@ -3776,25 +3815,51 @@ pub fn analyze_file_for_json(
                 workspace_types.insert(var_name.clone());
             }
         }
+        for trait_name in tc.traits.keys() {
+            workspace_types.insert(trait_name.clone());
+        }
+        for struct_name in tc.structs.keys() {
+            workspace_types.insert(struct_name.clone());
+        }
     }
-    let search_roots = [manifest_dir.join("src"), manifest_dir.clone()];
-    for root in &search_roots {
-        if let Ok(entries) = fs::read_dir(root) {
+
+    fn scan_fm_types(dir: &std::path::Path, workspace_types: &mut std::collections::HashSet<String>, depth: usize) {
+        if depth > 8 { return; }
+        if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
-                if p.is_file() && p.extension().map_or(false, |ext| ext == "fm") {
+                if p.is_dir() {
+                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if !name.starts_with('.') && name != "target" && name != "node_modules" {
+                        scan_fm_types(&p, workspace_types, depth + 1);
+                    }
+                } else if p.is_file() && p.extension().map_or(false, |ext| ext == "fm") {
                     if let Ok(text) = fs::read_to_string(&p) {
-                        for cap in Regex::new(r"(?:struct|enum)\s+([a-zA-Z_]\w*)")
-                            .unwrap()
-                            .captures_iter(&text)
-                        {
-                            workspace_types.insert(cap[1].to_string());
+                        if let Ok(re) = Regex::new(r"(?:struct|enum|trait)\s+([a-zA-Z_]\w*)") {
+                            for cap in re.captures_iter(&text) {
+                                workspace_types.insert(cap[1].to_string());
+                            }
+                        }
+                        if let Ok(comp_re) = Regex::new(r"trait\s+[a-zA-Z_]\w*\s*=\s*([^\n;{]+)") {
+                            if let Ok(id_re) = Regex::new(r"\b[A-Z][a-zA-Z0-9_]*\b") {
+                                for cap in comp_re.captures_iter(&text) {
+                                    if let Some(rhs) = cap.get(1) {
+                                        for id_cap in id_re.captures_iter(rhs.as_str()) {
+                                            let name = id_cap[0].to_string();
+                                            if name != "True" && name != "False" {
+                                                workspace_types.insert(name);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
     }
+    scan_fm_types(&manifest_dir, &mut workspace_types, 0);
 
     let tokens = ide::get_semantic_tokens_with_types(&content, Some(&workspace_types));
 

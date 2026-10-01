@@ -1373,11 +1373,17 @@ impl TypeChecker {
 
             Type::Struct(ref struct_name)
             | Type::Named(ref struct_name)
-                if self.structs.contains_key(struct_name) || self.methods.contains_key(struct_name) =>
+                if self.structs.contains_key(struct_name)
+                    || self.methods.contains_key(struct_name)
+                    || self.structs.contains_key(struct_name.split('<').next().unwrap().trim())
+                    || self.methods.contains_key(struct_name.split('<').next().unwrap().trim())
+                    || self.traits.contains_key(struct_name.split('<').next().unwrap().trim()) =>
             {
+                let base_name = struct_name.split('<').next().unwrap().trim();
                 let found_field = self
                     .structs
                     .get(struct_name)
+                    .or_else(|| self.structs.get(base_name))
                     .and_then(|info| info.fields.iter().find(|(name, _)| name == member).map(|(_, ty)| ty.clone()));
                 if let Some(ty) = found_field {
                     let formatted_ty = self.format_type(&ty);
@@ -1396,8 +1402,21 @@ impl TypeChecker {
                 let found_sig = self
                     .methods
                     .get(struct_name)
+                    .or_else(|| self.methods.get(base_name))
+                    .or_else(|| {
+                        self.methods.iter().find_map(|(k, v)| {
+                            if k.split('<').next().unwrap().trim() == base_name {
+                                Some(v)
+                            } else {
+                                None
+                            }
+                        })
+                    })
                     .and_then(|methods| methods.get(member))
-                    .cloned();
+                    .cloned()
+                    .or_else(|| {
+                        self.traits.get(base_name).and_then(|t| t.methods.get(member)).cloned()
+                    });
                 if let Some(sig) = found_sig {
                     let mut params_str = Vec::new();
                     for p in &sig.params {
@@ -1996,16 +2015,39 @@ impl TypeChecker {
 
             let struct_name_opt = match &inner_ty {
                 Type::Struct(name) => Some(name.clone()),
-                Type::Named(name) if self.methods.contains_key(name) || self.structs.contains_key(name) => Some(name.clone()),
+                Type::Named(name) => {
+                    let base = name.split('<').next().unwrap().trim();
+                    if self.methods.contains_key(name) || self.structs.contains_key(name) {
+                        Some(name.clone())
+                    } else if self.methods.contains_key(base) || self.structs.contains_key(base) || self.traits.contains_key(base) {
+                        Some(base.to_string())
+                    } else {
+                        None
+                    }
+                }
                 _ => None,
             };
 
             if let Some(ref struct_name) = struct_name_opt {
+                let base_name = struct_name.split('<').next().unwrap().trim();
                 let sig_opt = self
                     .methods
                     .get(struct_name)
+                    .or_else(|| self.methods.get(base_name))
+                    .or_else(|| {
+                        self.methods.iter().find_map(|(k, v)| {
+                            if k.split('<').next().unwrap().trim() == base_name {
+                                Some(v)
+                            } else {
+                                None
+                            }
+                        })
+                    })
                     .and_then(|methods| methods.get(member))
-                    .cloned();
+                    .cloned()
+                    .or_else(|| {
+                        self.traits.get(base_name).and_then(|t| t.methods.get(member)).cloned()
+                    });
 
                 if let Some(sig) = sig_opt {
                     let params_to_check = if sig.is_static {

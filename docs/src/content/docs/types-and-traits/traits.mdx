@@ -8,73 +8,125 @@ import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 A **`trait`** defines a contract—a collection of method signatures that multiple structs or enums can implement to provide polymorphic behavior.
 
+Flame features semantic trait relationships (`impl Type: Trait`), strict compile-time contract enforcement, explicit `default fn` implementations, trait composition via `and`, and full generics `<T>` support across functions, structs, and enums.
+
 ---
 
 ## Declaring a Trait
 
+Trait declarations specify required methods and optional default implementations:
+
 ```flame
-trait Describable {
-    fn describe(&self) -> String
+trait Drawable {
+    fn draw(&self) -> String
+    fn area(&self) -> Float
 }
 
-trait Drawable {
-    fn draw(&self)
-    fn area(&self) -> Float
+trait Describable {
+    // Explicit default method implementation
+    default fn describe(&self) -> String {
+        return "default object description"
+    }
 }
 ```
 
+<Aside type="tip">
+Default methods must use the `default` keyword. Missing implementations of required methods are caught at compile-time with descriptive errors.
+</Aside>
+
 ---
 
-## Implementing Traits for Types
+## Semantic Implementation Syntax: `impl Type: Trait`
 
-Use `impl Trait for Type` to satisfy a trait interface:
+Flame uses intuitive semantic syntax `impl Type: Trait` (instead of verbose `impl Trait for Type`):
 
 ```flame
 struct Circle {
     radius: Float
 }
 
-impl Drawable for Circle {
-    fn draw(&self) {
-        print($"Drawing circle with radius {self.radius}")
+// Implement multiple traits with comma separation or 'and'
+impl Circle: Drawable, Describable {
+    fn draw(&self) -> String {
+        return $"Drawing circle with radius {self.radius}"
     }
 
     fn area(&self) -> Float {
         return 3.14159 * self.radius * self.radius
     }
+    // 'describe' is automatically inherited from Describable
 }
+```
+
+---
+
+## Trait Composition
+
+Traits can be composed into combined contracts using `and`:
+
+```flame
+// Shape requires both Drawable and Describable contracts
+trait Shape = Drawable and Describable
 
 struct Rectangle {
     width: Float,
     height: Float
 }
 
-impl Drawable for Rectangle {
-    fn draw(&self) {
-        print($"Drawing rectangle {self.width}x{self.height}")
+impl Rectangle: Shape {
+    fn draw(&self) -> String {
+        return $"Drawing rectangle {self.width}x{self.height}"
     }
 
     fn area(&self) -> Float {
         return self.width * self.height
+    }
+
+    // You can override default methods
+    fn describe(&self) -> String {
+        return $"Custom Rectangle {self.width}x{self.height}"
     }
 }
 ```
 
 ---
 
-## Using Trait Polymorphism
+## Generics with Traits and Types
 
-You can write generic functions or receive traits as parameters:
+Flame supports type parameters `<T>` with Rust-like ownership and borrow semantics across functions, structs, enums, and impl blocks:
 
 ```flame
-fn render_shape(shape: &Drawable) {
-    shape.draw()
-    print($"Shape area: {shape.area()}")
+// Generic struct
+struct Box<T> {
+    value: T
 }
 
-let circle = Circle { radius: 5.0 }
-let rect = Rectangle { width: 4.0, height: 6.0 }
+// Generic impl block
+impl<T> Box<T> {
+    fn unwrap(self) -> T {
+        return self.value
+    }
+}
 
-render_shape(&circle)
-render_shape(&rect)
+// Generic enum
+enum MyOption<T> {
+    Some(T),
+    None,
+}
+
+// Generic function
+fn identity<T>(x: T) -> T {
+    return x
+}
 ```
+
+---
+
+## Contract Enforcement
+
+If a struct implements a trait but omits a required method without a default, the compiler provides clear diagnostics:
+
+```flame
+incomplete implementation of trait 'Drawable': 'Circle' implements 'Drawable' but is missing required method: 'area(&self) -> Float'
+```
+

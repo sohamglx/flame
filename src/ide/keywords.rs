@@ -22,11 +22,15 @@ const KEYWORDS: &[(&str, &str)] = &[
     ),
     (
         "trait",
-        "Declares a trait (interface). Example: `trait Drawable { fn draw(); }`",
+        "Declares a trait (interface/contract) or trait composition. Example:\n```flame\ntrait Drawable {\n    fn draw(&self)\n    default fn description(&self) -> String {\n        \"shape\"\n    }\n}\ntrait Shape = Drawable and Describable\n```",
     ),
     (
         "impl",
-        "Implements methods for a struct. Example: `impl Point { fn new() -> Point {} }`",
+        "Implements methods or traits for a type. Example:\n```flame\nimpl Circle: Drawable {\n    fn draw(&self) { ... }\n}\n```",
+    ),
+    (
+        "default",
+        "Declares a default method implementation inside a trait. Example:\n```flame\ntrait Describable {\n    default fn describe(&self) -> String {\n        \"default description\"\n    }\n}\n```",
     ),
     (
         "if",

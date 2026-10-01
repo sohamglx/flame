@@ -37,6 +37,7 @@ pub enum TokenKind {
     True,
     False,
     Nil,
+    Default,
     Comment,
     Newline,
 
@@ -118,6 +119,24 @@ pub struct Span {
     pub line: usize,
     pub col: usize,
 }
+
+impl Span {
+    pub fn dummy() -> Self {
+        Self {
+            start: 0,
+            end: 0,
+            line: 1,
+            col: 1,
+        }
+    }
+}
+
+impl Default for Span {
+    fn default() -> Self {
+        Self::dummy()
+    }
+}
+
 
 #[derive(Debug, Clone)]
 pub struct Token {
@@ -844,6 +863,7 @@ impl<'a> Lexer<'a> {
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             "nil" => TokenKind::Nil,
+            "default" => TokenKind::Default,
             "and" => TokenKind::Ampersand2,
             "or" => TokenKind::Pipe2,
             "not" => TokenKind::Exclamation,

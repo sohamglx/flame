@@ -681,6 +681,7 @@ pub fn format_code(source: &str) -> String {
                         | TokenKind::Struct
                         | TokenKind::Enum
                         | TokenKind::Trait
+                        | TokenKind::Default
                         | TokenKind::Impl
                         | TokenKind::Export
                         | TokenKind::Import
@@ -715,6 +716,7 @@ pub fn format_code(source: &str) -> String {
                         | TokenKind::Struct
                         | TokenKind::Enum
                         | TokenKind::Trait
+                        | TokenKind::Default
                         | TokenKind::Impl
                         | TokenKind::Export
                         | TokenKind::Import

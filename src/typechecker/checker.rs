@@ -30,6 +30,8 @@ pub struct TypeChecker {
     pub strict_closures: bool,
     pub rust_plugins_mode: crate::utils::manifest::RustPluginsMode,
     pub declared_native_plugins: HashSet<String>,
+    pub traits: HashMap<String, TraitInfo>,
+    pub trait_impls: HashMap<String, HashSet<String>>,
 }
 
 
@@ -131,9 +133,52 @@ impl TypeChecker {
             strict_closures,
             rust_plugins_mode,
             declared_native_plugins,
+            traits: HashMap::new(),
+            trait_impls: HashMap::new(),
         };
         checker.register_builtins();
         checker
+    }
+
+    pub fn implements_trait(&self, struct_name: &str, trait_name: &str) -> bool {
+        let base_struct = struct_name.split('<').next().unwrap_or(struct_name).trim();
+        let base_trait = trait_name.split('<').next().unwrap_or(trait_name).trim();
+
+        if let Some(impls) = self.trait_impls.get(base_struct) {
+            if impls.contains(base_trait) {
+                return true;
+            }
+            for imp in impls {
+                if self.trait_extends(imp, base_trait) {
+                    return true;
+                }
+            }
+        }
+
+        if let Some(tr_info) = self.traits.get(base_trait) {
+            if !tr_info.super_traits.is_empty() {
+                return tr_info
+                    .super_traits
+                    .iter()
+                    .all(|st| self.implements_trait(base_struct, st));
+            }
+        }
+
+        false
+    }
+
+    pub fn trait_extends(&self, child_trait: &str, parent_trait: &str) -> bool {
+        if child_trait == parent_trait {
+            return true;
+        }
+        if let Some(tr_info) = self.traits.get(child_trait) {
+            for st in &tr_info.super_traits {
+                if self.trait_extends(st, parent_trait) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     pub fn with_strict_closures(mut self, strict: bool) -> Self {

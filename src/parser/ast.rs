@@ -65,6 +65,13 @@ pub struct Param {
     pub is_mut: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct GenericParam {
+    pub name: String,
+    pub bounds: Vec<String>,
+    pub span: Span,
+}
+
 #[derive(Debug, Clone)]
 pub struct Annotation {
     pub name: String,
@@ -216,6 +223,8 @@ pub enum Stmt {
         annotations: Vec<Annotation>,
         span: Span,
         name_span: Span,
+        generic_params: Vec<GenericParam>,
+        is_default: bool,
     },
     AnnotationDecl {
         name: String,
@@ -232,6 +241,7 @@ pub enum Stmt {
         annotations: Vec<Annotation>,
         span: Span,
         name_span: Span,
+        generic_params: Vec<GenericParam>,
     },
     EnumDecl {
         name: String,
@@ -239,15 +249,23 @@ pub enum Stmt {
         annotations: Vec<Annotation>,
         span: Span,
         name_span: Span,
+        generic_params: Vec<GenericParam>,
     },
     TraitDecl {
         name: String,
-        signatures: Vec<String>,
+        generic_params: Vec<GenericParam>,
+        super_traits: Vec<String>,
+        methods: Vec<Stmt>,
+        associated_types: Vec<String>,
+        annotations: Vec<Annotation>,
         span: Span,
+        name_span: Span,
     },
     ImplDecl {
         target_type: String,
         trait_name: Option<String>,
+        traits: Vec<String>,
+        generic_params: Vec<GenericParam>,
         methods: Vec<Stmt>,
         annotations: Vec<Annotation>,
         span: Span,
