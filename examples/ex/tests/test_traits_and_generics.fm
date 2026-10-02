@@ -150,3 +150,41 @@ fn test_generics_borrow_and_mutable() {
     str_box.set_value("blaze")
     str_box.unwrap().assertEq("blaze")
 }
+
+trait Mapable<K, V> {
+    fn get(&self, key: K) -> V
+    fn set(&mut self, key: K, value: V)
+}
+
+struct Buffer<T> {
+    data: [T]
+}
+
+struct Map<K, V> {
+    keys: Buffer<K>
+    values: Buffer<V>
+}
+
+impl Map<K, V>: Mapable<K, V> {
+    fn get(&self, key: K) -> V {
+        self.values.data[self.keys.data.index(key)]
+    }
+
+    fn set(&mut self, key: K, value: V) {
+        self.values.data[self.keys.data.index(key)] = value
+    }
+}
+
+@Test
+fn test_mapable_trait_with_buffer() {
+    let mut map = Map {
+        keys: Buffer {data: ["a", "b", "c"]},
+        values: Buffer {data: [10, 20, 30]}
+    }
+    map.get("a").assertEq(10)
+    map.get("b").assertEq(20)
+    map.get("c").assertEq(30)
+
+    map.set("b", 999)
+    map.get("b").assertEq(999)
+}

@@ -1,10 +1,10 @@
 [package]
 name = "flamelang"
-version = "0.6.6"
+version = "0.6.7"
 edition = "2024"
 description = "A statically typed, fast, and modern programming language built in Rust."
 license = "ISC"
-repository = "https://github.com/shoya-129/flame"
+repository = "https://github.com/sohamglx/flame"
 documentation = "https://flamelang.vercel.app/"
 keywords = ["compiler", "flame", "language", "scripting"]
 categories = ["command-line-utilities", "compilers"]

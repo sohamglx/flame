@@ -3,8 +3,58 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import flameGrammar from './src/syntax/flame.tmLanguage.json' with { type: 'json' };
 import fmiGrammar from './src/syntax/fmi.tmLanguage.json' with { type: 'json' };
+import githubDark from '@shikijs/themes/github-dark';
+import githubLight from '@shikijs/themes/github-light';
+import { ExpressiveCodeTheme } from '@expressive-code/core';
 
 import react from '@astrojs/react';
+
+const operatorScopes = [
+    'keyword.operator',
+    'keyword.operator.flame',
+    'keyword.operator.arithmetic.flame',
+    'keyword.operator.comparison.flame',
+    'keyword.operator.assignment.flame',
+    'keyword.operator.assignment.compound.flame',
+    'keyword.operator.logical.flame',
+    'keyword.operator.bitwise.flame',
+    'keyword.operator.bitwise.shift.flame',
+    'keyword.operator.increment.flame',
+    'keyword.operator.decrement.flame',
+    'keyword.operator.arrow.flame',
+    'keyword.operator.arrow.fat.flame',
+    'keyword.operator.pipe.flame',
+    'keyword.operator.range.flame',
+    'keyword.operator.nil.flame'
+];
+
+const flameDarkTheme = new ExpressiveCodeTheme({
+    ...githubDark,
+    name: 'github-dark',
+    tokenColors: [
+        ...(githubDark.tokenColors || []),
+        {
+            scope: operatorScopes,
+            settings: {
+                foreground: '#FF453A'
+            }
+        }
+    ]
+});
+
+const flameLightTheme = new ExpressiveCodeTheme({
+    ...githubLight,
+    name: 'github-light',
+    tokenColors: [
+        ...(githubLight.tokenColors || []),
+        {
+            scope: operatorScopes,
+            settings: {
+                foreground: '#D73A49'
+            }
+        }
+    ]
+});
 
 // https://astro.build/config
 export default defineConfig({
@@ -39,8 +89,7 @@ export default defineConfig({
             Hero: './src/components/CustomHero.astro',
         },
         expressiveCode: {
-            themes: ['github-dark', 'github-light'],
-
+            themes: [flameDarkTheme, flameLightTheme],
         },
         logo: {
             src: './src/assets/flame.png',
@@ -57,7 +106,7 @@ export default defineConfig({
         ],
         customCss: ['./src/styles/custom.css'],
         social: [
-            { icon: 'github', label: 'GitHub', href: 'https://github.com/shoya-129/flame' }
+            { icon: 'github', label: 'GitHub', href: 'https://github.com/sohamglx/flame' }
         ],
         sidebar: [
             {

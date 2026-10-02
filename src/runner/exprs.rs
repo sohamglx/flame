@@ -593,68 +593,61 @@ impl Runner {
                             env.lock().unwrap().move_var(src_name);
                         }
                         return Ok(r_val);
-                    } else if let Expr::Dot(inner, member, _) = &**left {
-                        if let Expr::Identifier(owner, _) = &**inner {
-                            let mut r_val = self.eval_expr(right, env.clone())?;
+                    } else if let Some((root_name, steps)) = decompose_lvalue(self, left, env.clone())? {
+                        if steps.is_empty() {
+                            return Err("unexpected empty lvalue steps".to_string());
+                        }
 
-                            if *op != BinaryOp::Assign {
-                                let l_val = self.eval_expr(left, env.clone())?;
-                                r_val = compute_compound(op, l_val, &r_val)?;
+                        let mut r_val = self.eval_expr(right, env.clone())?;
+                        if *op != BinaryOp::Assign {
+                            let l_val = self.eval_expr(left, env.clone())?;
+                            r_val = compute_compound(op, l_val, &r_val)?;
+                        }
+
+                        let current = {
+                            let e = env.lock().unwrap();
+                            e.get(&root_name)
+                        };
+
+                        if let Some(Value::RefPath(path, mutable)) = current {
+                            if !mutable {
+                                return Err(format!(
+                                    "cannot assign through immutable reference '{}'",
+                                    root_name
+                                ));
                             }
 
-                            self.write_back(
-                                env.clone(),
-                                RefPath::Field {
-                                    owner: owner.clone(),
-                                    member: member.clone(),
-                                    env: env.clone(),
-                                },
-                                r_val.clone(),
-                            )?;
+                            let mut root_val = self.read_target(env.clone(), path.clone())?;
+                            apply_lvalue_mutation(self, env.clone(), &mut root_val, &steps, r_val.clone())?;
+                            self.write_back(env.clone(), path, root_val)?;
+
                             if let Expr::Identifier(src_name, _) = &**right {
                                 env.lock().unwrap().move_var(src_name);
                             }
+
                             return Ok(r_val);
-                        } else if let Expr::Index(inner, idx, _) = &**left {
-                            if let Expr::Identifier(owner, _) = &**inner {
-                                let idx_val = self.eval_expr(idx, env.clone())?;
-                                let idx_int = if let Value::Int(i) = idx_val {
-                                    i as usize
-                                } else {
-                                    return Err("Index must be an integer".to_string());
-                                };
-                                let mut r_val = self.eval_expr(right, env.clone())?;
-
-                                if *op != BinaryOp::Assign {
-                                    let l_val = self.eval_expr(left, env.clone())?;
-                                    r_val = compute_compound(op, l_val, &r_val)?;
-                                }
-
-                                self.write_back(
-                                    env.clone(),
-                                    crate::vm::RefPath::Index {
-                                        owner: owner.clone(),
-                                        index: idx_int,
-                                        env: env.clone(),
-                                    },
-                                    r_val.clone(),
-                                )?;
-                                if let Expr::Identifier(src_name, _) = &**right {
-                                    env.lock().unwrap().move_var(src_name);
-                                }
-                                return Ok(r_val);
-                            } else {
-                                return Err("left-hand side assignment must be a variable array"
-                                    .to_string());
-                            }
-                        } else {
-                            return Err(
-                                "left-hand side assignment must be a variable or variable field"
-                                    .to_string(),
-                            );
                         }
+
+                        let mut root_val = current.ok_or_else(|| {
+                            format!("variable '{}' not found for assignment", root_name)
+                        })?;
+
+                        apply_lvalue_mutation(self, env.clone(), &mut root_val, &steps, r_val.clone())?;
+                        env.lock().unwrap().assign(root_name, root_val)?;
+
+                        if let Expr::Identifier(src_name, _) = &**right {
+                            env.lock().unwrap().move_var(src_name);
+                        }
+
+                        return Ok(r_val);
+                    } else {
+                        return Err(
+                            "left-hand side assignment must be a variable, field, or index"
+                                .to_string(),
+                        );
                     }
                 }
+
 
                 if *op == BinaryOp::NilCoalesce {
                     let l = self.eval_expr(left, env.clone())?;
@@ -2242,8 +2235,246 @@ impl Runner {
                         ref val if val.as_tuple().is_some() => {
                             let vec = val.as_tuple().unwrap();
                             match member.as_str() {
-                                "len" => return Ok(Value::Int(vec.len() as i64)),
-                                "isEmpty" => return Ok(Value::Bool(vec.is_empty())),
+                                "len" | "length" => return Ok(Value::Int(vec.len() as i64)),
+                                "isEmpty" | "is_empty" => return Ok(Value::Bool(vec.is_empty())),
+                                "first" => return Ok(vec.first().cloned().unwrap_or(Value::Nil)),
+                                "last" => return Ok(vec.last().cloned().unwrap_or(Value::Nil)),
+                                "get" => {
+                                    if let Some((_, arg_expr)) = args.first() {
+                                        let idx_val = self.eval_expr(arg_expr, env.clone())?;
+                                        if let Value::Int(i) = idx_val {
+                                            let idx = if i < 0 {
+                                                (vec.len() as i64) + i
+                                            } else {
+                                                i
+                                            };
+                                            if idx >= 0 && (idx as usize) < vec.len() {
+                                                return Ok(vec[idx as usize].clone());
+                                            }
+                                        }
+                                    }
+                                    return Ok(Value::Nil);
+                                }
+                                "index" => {
+                                    if let Some((_, arg_expr)) = args.first() {
+                                        let arg_val = self.eval_expr(arg_expr, env.clone())?;
+                                        if matches!(arg_val, Value::Function { .. }) {
+                                            for (i, item) in vec.iter().enumerate() {
+                                                let res = self.invoke_closure(&arg_val, item.clone())?;
+                                                if res.is_truthy() {
+                                                    return Ok(Value::Int(i as i64));
+                                                }
+                                            }
+                                        } else {
+                                            for (i, item) in vec.iter().enumerate() {
+                                                if values_equal(item, &arg_val) {
+                                                    return Ok(Value::Int(i as i64));
+                                                }
+                                            }
+                                        }
+                                    }
+                                    return Ok(Value::Int(-1));
+                                }
+                                "contains" => {
+                                    if let Some((_, arg_expr)) = args.first() {
+                                        let target = self.eval_expr(arg_expr, env.clone())?;
+                                        let found = vec.iter().any(|item| values_equal(item, &target));
+                                        return Ok(Value::Bool(found));
+                                    }
+                                    return Ok(Value::Bool(false));
+                                }
+                                "any" => {
+                                    if let Some((_, arg_expr)) = args.first() {
+                                        let cb_val = self.eval_expr(arg_expr, env.clone())?;
+                                        if matches!(cb_val, Value::Function { .. }) {
+                                            for item in vec {
+                                                let res = self.invoke_closure(&cb_val, item.clone())?;
+                                                if res.is_truthy() {
+                                                    return Ok(Value::Bool(true));
+                                                }
+                                            }
+                                        }
+                                    }
+                                    return Ok(Value::Bool(false));
+                                }
+                                "all" => {
+                                    if let Some((_, arg_expr)) = args.first() {
+                                        let cb_val = self.eval_expr(arg_expr, env.clone())?;
+                                        if matches!(cb_val, Value::Function { .. }) {
+                                            for item in vec {
+                                                let res = self.invoke_closure(&cb_val, item.clone())?;
+                                                if !res.is_truthy() {
+                                                    return Ok(Value::Bool(false));
+                                                }
+                                            }
+                                            return Ok(Value::Bool(true));
+                                        }
+                                    }
+                                    return Ok(Value::Bool(true));
+                                }
+                                "find" => {
+                                    if let Some((_, arg_expr)) = args.first() {
+                                        let cb_val = self.eval_expr(arg_expr, env.clone())?;
+                                        if matches!(cb_val, Value::Function { .. }) {
+                                            for item in vec {
+                                                let res = self.invoke_closure(&cb_val, item.clone())?;
+                                                if res.is_truthy() {
+                                                    return Ok(item.clone());
+                                                }
+                                            }
+                                        }
+                                    }
+                                    return Ok(Value::Nil);
+                                }
+                                "count" => {
+                                    if let Some((_, arg_expr)) = args.first() {
+                                        let arg_val = self.eval_expr(arg_expr, env.clone())?;
+                                        if matches!(arg_val, Value::Function { .. }) {
+                                            let mut count = 0i64;
+                                            for item in vec {
+                                                let res = self.invoke_closure(&arg_val, item.clone())?;
+                                                if res.is_truthy() {
+                                                    count += 1;
+                                                }
+                                            }
+                                            return Ok(Value::Int(count));
+                                        } else {
+                                            let mut count = 0i64;
+                                            for item in vec {
+                                                if values_equal(item, &arg_val) {
+                                                    count += 1;
+                                                }
+                                            }
+                                            return Ok(Value::Int(count));
+                                        }
+                                    } else {
+                                        return Ok(Value::Int(vec.len() as i64));
+                                    }
+                                }
+                                "reverse" => {
+                                    let mut reversed = vec.to_vec();
+                                    reversed.reverse();
+                                    return Ok(Value::Tuple(reversed));
+                                }
+                                "sort" => {
+                                    let mut sorted = vec.to_vec();
+                                    sorted.sort_by(compare_values);
+                                    return Ok(Value::Tuple(sorted));
+                                }
+                                "min" => {
+                                    if vec.is_empty() {
+                                        return Ok(Value::Nil);
+                                    }
+                                    let mut min_val = &vec[0];
+                                    for item in &vec[1..] {
+                                        if compare_values(item, min_val) == std::cmp::Ordering::Less {
+                                            min_val = item;
+                                        }
+                                    }
+                                    return Ok(min_val.clone());
+                                }
+                                "max" => {
+                                    if vec.is_empty() {
+                                        return Ok(Value::Nil);
+                                    }
+                                    let mut max_val = &vec[0];
+                                    for item in &vec[1..] {
+                                        if compare_values(item, max_val) == std::cmp::Ordering::Greater {
+                                            max_val = item;
+                                        }
+                                    }
+                                    return Ok(max_val.clone());
+                                }
+                                "sum" => {
+                                    let mut is_float = false;
+                                    let mut int_sum: i64 = 0;
+                                    let mut float_sum: f64 = 0.0;
+                                    for item in vec {
+                                        match item {
+                                            Value::Int(i) => {
+                                                int_sum += i;
+                                                float_sum += *i as f64;
+                                            }
+                                            Value::Float(f) => {
+                                                is_float = true;
+                                                float_sum += f;
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    if is_float {
+                                        return Ok(Value::Float(float_sum));
+                                    } else {
+                                        return Ok(Value::Int(int_sum));
+                                    }
+                                }
+                                "join" => {
+                                    let sep = if let Some((_, arg_expr)) = args.first() {
+                                        let sep_val = self.eval_expr(arg_expr, env.clone())?;
+                                        match sep_val {
+                                            Value::String(s) => s,
+                                            _ => sep_val.to_string(),
+                                        }
+                                    } else {
+                                        "".to_string()
+                                    };
+                                    let joined = vec.iter().map(|item| match item {
+                                        Value::String(s) => s.clone(),
+                                        _ => item.to_string(),
+                                    }).collect::<Vec<_>>().join(&sep);
+                                    return Ok(Value::String(joined));
+                                }
+                                "equals" => {
+                                    if let Some((_, arg_expr)) = args.first() {
+                                        let other_val = self.eval_expr(arg_expr, env.clone())?;
+                                        if let Some(other_slice) = other_val.as_tuple() {
+                                            if vec.len() == other_slice.len() {
+                                                let eq = vec.iter().zip(other_slice.iter()).all(|(a, b)| values_equal(a, b));
+                                                return Ok(Value::Bool(eq));
+                                            }
+                                        }
+                                    }
+                                    return Ok(Value::Bool(false));
+                                }
+                                "concat" => {
+                                    if let Some((_, arg_expr)) = args.first() {
+                                        let other_val = self.eval_expr(arg_expr, env.clone())?;
+                                        let mut new_vec = vec.to_vec();
+                                        if let Some(other_slice) = other_val.as_tuple() {
+                                            new_vec.extend_from_slice(other_slice);
+                                        } else {
+                                            new_vec.push(other_val);
+                                        }
+                                        return Ok(Value::Tuple(new_vec));
+                                    }
+                                    return Ok(Value::Tuple(vec.to_vec()));
+                                }
+                                "slice" => {
+                                    if !args.is_empty() {
+                                        let start_val = self.eval_expr(&args[0].1, env.clone())?;
+                                        let start = match start_val {
+                                            Value::Int(i) => i.max(0) as usize,
+                                            _ => 0,
+                                        };
+                                        let len = if args.len() > 1 {
+                                            let len_val = self.eval_expr(&args[1].1, env.clone())?;
+                                            match len_val {
+                                                Value::Int(l) => l.max(0) as usize,
+                                                _ => vec.len(),
+                                            }
+                                        } else {
+                                            vec.len().saturating_sub(start)
+                                        };
+                                        let end = (start + len).min(vec.len());
+                                        let sub = if start < vec.len() {
+                                            vec[start..end].to_vec()
+                                        } else {
+                                            Vec::new()
+                                        };
+                                        return Ok(Value::Tuple(sub));
+                                    }
+                                    return Ok(Value::Tuple(vec.to_vec()));
+                                }
                                 "push" => {
                                     if !args.is_empty() {
                                         let val = self.eval_expr(&args[0].1, env.clone())?;
@@ -2271,37 +2502,11 @@ impl Runner {
                                 "filter" => {
                                     if !args.is_empty() {
                                         let cb_val = self.eval_expr(&args[0].1, env.clone())?;
-                                        if let Value::Function {
-                                            params,
-                                            body,
-                                            env: closure_env,
-                                            ..
-                                        } = cb_val
-                                        {
+                                        if matches!(cb_val, Value::Function { .. }) {
                                             let mut res = Vec::new();
                                             for item in vec {
-                                                let child_env = Arc::new(Mutex::new(Env::new_child(
-                                                    closure_env.clone(),
-                                                )));
-                                                if !params.is_empty() {
-                                                    self.bind_param(
-                                                        child_env.clone(),
-                                                        &params[0],
-                                                        item.clone(),
-                                                    );
-                                                }
-                                                let mut matched = false;
-                                                for stmt in &body {
-                                                    let stmt_res = self
-                                                        .execute_statement(stmt, child_env.clone())?;
-                                                    if let Value::Return(ret_val) = stmt_res {
-                                                        if let Value::Bool(b) = *ret_val {
-                                                            matched = b;
-                                                        }
-                                                        break;
-                                                    }
-                                                }
-                                                if matched {
+                                                let r = self.invoke_closure(&cb_val, item.clone())?;
+                                                if r.is_truthy() {
                                                     res.push(item.clone());
                                                 }
                                             }
@@ -2313,35 +2518,10 @@ impl Runner {
                                 "map" => {
                                     if !args.is_empty() {
                                         let cb_val = self.eval_expr(&args[0].1, env.clone())?;
-                                        if let Value::Function {
-                                            params,
-                                            body,
-                                            env: closure_env,
-                                            ..
-                                        } = cb_val
-                                        {
+                                        if matches!(cb_val, Value::Function { .. }) {
                                             let mut res = Vec::new();
                                             for item in vec {
-                                                let child_env = Arc::new(Mutex::new(Env::new_child(
-                                                    closure_env.clone(),
-                                                )));
-                                                if !params.is_empty() {
-                                                    self.bind_param(
-                                                        child_env.clone(),
-                                                        &params[0],
-                                                        item.clone(),
-                                                    );
-                                                }
-                                                let mut map_res = Value::Nil;
-                                                for stmt in &body {
-                                                    let stmt_res = self
-                                                        .execute_statement(stmt, child_env.clone())?;
-                                                    if let Value::Return(ret_val) = stmt_res {
-                                                        map_res = *ret_val;
-                                                        break;
-                                                    }
-                                                    map_res = stmt_res;
-                                                }
+                                                let map_res = self.invoke_closure(&cb_val, item.clone())?;
                                                 res.push(map_res);
                                             }
                                             return Ok(Value::Tuple(res));
@@ -4423,5 +4603,185 @@ impl Runner {
         }
     }
 
-
+    pub(crate) fn invoke_closure(
+        &mut self,
+        cb_val: &Value,
+        arg: Value,
+    ) -> Result<Value, String> {
+        if let Value::Function {
+            params,
+            body,
+            env: closure_env,
+            ..
+        } = cb_val
+        {
+            let child_env = Arc::new(Mutex::new(Env::new_child(closure_env.clone())));
+            if !params.is_empty() {
+                self.bind_param(child_env.clone(), &params[0], arg);
+            }
+            let mut last_res = Value::Nil;
+            for stmt in body {
+                let stmt_res = self.execute_statement(stmt, child_env.clone())?;
+                if let Value::Return(ret_val) = stmt_res {
+                    return Ok(*ret_val);
+                }
+                last_res = stmt_res;
+            }
+            Ok(last_res)
+        } else {
+            Ok(Value::Nil)
+        }
+    }
 }
+
+pub(crate) fn values_equal(a: &Value, b: &Value) -> bool {
+    if let (Some(x), Some(y)) = (a.as_tuple(), b.as_tuple()) {
+        return x.len() == y.len() && x.iter().zip(y.iter()).all(|(i1, i2)| values_equal(i1, i2));
+    }
+    match (a, b) {
+        (Value::Int(x), Value::Int(y)) => x == y,
+        (Value::Float(x), Value::Float(y)) => x == y,
+        (Value::Int(x), Value::Float(y)) => (*x as f64) == *y,
+        (Value::Float(x), Value::Int(y)) => *x == (*y as f64),
+        (Value::String(x), Value::String(y)) => x == y,
+        (Value::Bool(x), Value::Bool(y)) => x == y,
+        (Value::Nil, Value::Nil) => true,
+        (Value::Byte(x), Value::Byte(y)) => x == y,
+        (Value::Bytes(x), Value::Bytes(y)) => x == y,
+        _ => false,
+    }
+}
+
+pub(crate) fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
+    match (a, b) {
+        (Value::Int(x), Value::Int(y)) => x.cmp(y),
+        (Value::Float(x), Value::Float(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Int(x), Value::Float(y)) => (*x as f64).partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Float(x), Value::Int(y)) => x.partial_cmp(&(*y as f64)).unwrap_or(std::cmp::Ordering::Equal),
+        (Value::String(x), Value::String(y)) => x.cmp(y),
+        (Value::Bool(x), Value::Bool(y)) => x.cmp(y),
+        (Value::Byte(x), Value::Byte(y)) => x.cmp(y),
+        _ => std::cmp::Ordering::Equal,
+    }
+}
+
+pub(crate) enum LValueStep {
+    Field(String),
+    Index(usize),
+}
+
+pub(crate) fn decompose_lvalue(
+    runner: &mut Runner,
+    expr: &Expr,
+    env: Arc<Mutex<Env>>,
+) -> Result<Option<(String, Vec<LValueStep>)>, String> {
+    match expr {
+        Expr::Identifier(name, _) => Ok(Some((name.clone(), Vec::new()))),
+        Expr::Dot(inner, member, _) => {
+            if let Some((root, mut steps)) = decompose_lvalue(runner, inner, env)? {
+                steps.push(LValueStep::Field(member.clone()));
+                Ok(Some((root, steps)))
+            } else {
+                Ok(None)
+            }
+        }
+        Expr::Index(inner, idx_expr, _) => {
+            let idx_val = runner.eval_expr(idx_expr, env.clone())?;
+            let idx_int = match idx_val {
+                Value::Int(i) => {
+                    if i < 0 {
+                        0
+                    } else {
+                        i as usize
+                    }
+                }
+                _ => return Err("Index must be an integer".to_string()),
+            };
+            if let Some((root, mut steps)) = decompose_lvalue(runner, inner, env)? {
+                steps.push(LValueStep::Index(idx_int));
+                Ok(Some((root, steps)))
+            } else {
+                Ok(None)
+            }
+        }
+        _ => Ok(None),
+    }
+}
+
+pub(crate) fn apply_lvalue_mutation(
+    runner: &mut Runner,
+    env: Arc<Mutex<Env>>,
+    target: &mut Value,
+    steps: &[LValueStep],
+    new_val: Value,
+) -> Result<(), String> {
+    if steps.is_empty() {
+        *target = new_val;
+        return Ok(());
+    }
+    if let Value::RefPath(path, _) = target {
+        let mut inner_val = runner.read_target(env.clone(), path.clone())?;
+        apply_lvalue_mutation(runner, env.clone(), &mut inner_val, steps, new_val)?;
+        runner.write_back(env.clone(), path.clone(), inner_val)?;
+        return Ok(());
+    }
+    match &steps[0] {
+        LValueStep::Field(field_name) => {
+            match target {
+                Value::StructInstance { fields, .. } | Value::Formula(fields) | Value::Object(fields) => {
+                    let field_val = fields.get_mut(field_name).ok_or_else(|| {
+                        format!("field '{}' not found", field_name)
+                    })?;
+                    apply_lvalue_mutation(runner, env, field_val, &steps[1..], new_val)?;
+                }
+                Value::SharedObject(fields) => {
+                    let map = std::sync::Arc::make_mut(fields);
+                    let field_val = map.get_mut(field_name).ok_or_else(|| {
+                        format!("field '{}' not found", field_name)
+                    })?;
+                    apply_lvalue_mutation(runner, env, field_val, &steps[1..], new_val)?;
+                }
+                _ => return Err(format!("cannot access field '{}' on non-object", field_name)),
+            }
+        }
+        LValueStep::Index(idx) => {
+            match target {
+                Value::Tuple(items) => {
+                    if *idx < items.len() {
+                        apply_lvalue_mutation(runner, env, &mut items[*idx], &steps[1..], new_val)?;
+                    } else {
+                        return Err(format!("Index out of bounds: {}", idx));
+                    }
+                }
+                Value::SharedTuple(items) => {
+                    let vec = std::sync::Arc::make_mut(items);
+                    if *idx < vec.len() {
+                        apply_lvalue_mutation(runner, env, &mut vec[*idx], &steps[1..], new_val)?;
+                    } else {
+                        return Err(format!("Index out of bounds: {}", idx));
+                    }
+                }
+                Value::Bytes(bytes) => {
+                    if steps.len() == 1 {
+                        let b = match new_val {
+                            Value::Byte(b) => b,
+                            Value::Int(n) if (0..=255).contains(&n) => n as u8,
+                            _ => return Err(format!("expected Byte or Int (0..255) for Bytes index assignment, found {}", new_val.type_name())),
+                        };
+                        if *idx < bytes.len() {
+                            bytes[*idx] = b;
+                        } else {
+                            return Err(format!("Index out of bounds: {}", idx));
+                        }
+                    } else {
+                        return Err("cannot index further into byte".to_string());
+                    }
+                }
+                _ => return Err(format!("cannot index into non-array value")),
+            }
+        }
+    }
+    Ok(())
+}
+
+

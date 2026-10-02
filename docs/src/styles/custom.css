@@ -482,3 +482,28 @@ starlight-theme-select {
 .monaco-editor .suggest-widget .monaco-list-row:hover:not(.focused) {
 	background-color: rgba(255, 255, 255, 0.08) !important;
 }
+
+/* ==========================================================================
+   Flame Operator Red Color Styling Across Documentation & Tables
+   ========================================================================== */
+
+/* Operator code badges in tables (Table Column 1 and Column 3) */
+.sl-markdown-content table td:first-child code,
+.sl-markdown-content table td:first-child strong,
+.sl-markdown-content table td:first-child strong code,
+.sl-markdown-content table td:nth-child(3) code,
+.sl-markdown-content h2 code,
+.sl-markdown-content h3 code,
+.sl-markdown-content code.operator-pill,
+.operator-red {
+	color: #FF453A !important;
+	font-weight: 700 !important;
+}
+
+.sl-markdown-content table td:first-child code,
+.sl-markdown-content table td:nth-child(3) code {
+	background-color: rgba(255, 69, 58, 0.1) !important;
+	border: 1px solid rgba(255, 69, 58, 0.3) !important;
+	border-radius: 6px !important;
+	padding: 0.18rem 0.45rem !important;
+}

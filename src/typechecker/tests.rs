@@ -249,7 +249,7 @@ fn check_source(src: &str) -> Result<(), Vec<crate::diagnostics::Diagnostic>> {
         let res = check_source(src);
         assert!(res.is_err(), "Incomplete trait implementation should fail");
         let diags = res.unwrap_err();
-        assert!(diags.iter().any(|d| d.message.contains("incomplete implementation of trait 'Drawable': 'Circle' implements 'Drawable' but is missing required method: 'area(&self) -> Float'")));
+        assert!(diags.iter().any(|d| d.message.contains("not all trait items implemented, missing: `area`")));
     }
 
     #[test]
@@ -296,8 +296,97 @@ fn check_source(src: &str) -> Result<(), Vec<crate::diagnostics::Diagnostic>> {
         let res = check_source(src);
         assert!(res.is_err(), "Missing method from composed trait should fail");
         let diags = res.unwrap_err();
-        assert!(diags.iter().any(|d| d.message.contains("missing required method: 'bar(&self)'")));
+        assert!(diags.iter().any(|d| d.message.contains("not all trait items implemented, missing: `bar`")));
     }
+
+    #[test]
+    fn test_trait_strictness_detached_impl_fails() {
+        let src = r#"
+        trait Greetable {
+            fn greet(&self) -> String
+        }
+
+        struct Person {
+            name: String
+        }
+
+        impl Person {
+            fn greet(&self) -> String {
+                return "Hello " + self.name
+            }
+        }
+
+        impl Person: Greetable {
+            // greet is in another detached impl block, which is not allowed under strict trait impl rules!
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_err(), "Detached impl should not satisfy trait requirements in separate impl block");
+        let diags = res.unwrap_err();
+        assert!(diags.iter().any(|d| d.message.contains("not all trait items implemented, missing: `greet`")));
+    }
+
+    #[test]
+    fn test_concrete_type_generic_bound_warns_and_does_not_fail() {
+        let src = r#"
+        fn process<T: String>(val: T) -> T {
+            return val
+        }
+
+        struct Box<T: Int> {
+            val: T
+        }
+        "#;
+        let mut lexer = Lexer::new(src);
+        let mut tokens = Vec::new();
+        loop {
+            let tok = lexer.next_token();
+            let is_eof = tok.kind == crate::lexer::TokenKind::EOF;
+            tokens.push(tok);
+            if is_eof {
+                break;
+            }
+        }
+        let mut parser = Parser::new(tokens, "test.fm".to_string());
+        let stmts = parser.parse().expect("Failed to parse");
+        let (res, tc) = TypeChecker::new("test.fm".to_string()).check_program(&stmts);
+        assert!(res.is_ok(), "Concrete type bounds should produce warnings, NOT block compilation: {:?}", res.err());
+        assert_eq!(tc.diagnostics.len(), 2, "Expected 2 warnings for String and Int bounds");
+        for d in &tc.diagnostics {
+            assert_eq!(d.severity, crate::diagnostics::DiagnosticSeverity::Warning);
+            assert!(d.message.contains("bounds on generic parameters are traits, not concrete types"));
+            assert!(d.note.as_ref().unwrap().contains("has no effect"));
+        }
+    }
+
+    #[test]
+    fn test_trait_generic_bound_does_not_warn() {
+        let src = r#"
+        trait Printable {
+            fn print(&self)
+        }
+
+        fn display<T: Printable>(val: T) {
+            val.print()
+        }
+        "#;
+        let mut lexer = Lexer::new(src);
+        let mut tokens = Vec::new();
+        loop {
+            let tok = lexer.next_token();
+            let is_eof = tok.kind == crate::lexer::TokenKind::EOF;
+            tokens.push(tok);
+            if is_eof {
+                break;
+            }
+        }
+        let mut parser = Parser::new(tokens, "test.fm".to_string());
+        let stmts = parser.parse().expect("Failed to parse");
+        let (res, tc) = TypeChecker::new("test.fm".to_string()).check_program(&stmts);
+        assert!(res.is_ok());
+        assert!(tc.diagnostics.is_empty(), "Actual trait bound should not produce any warnings: {:?}", tc.diagnostics);
+    }
+
 
 
 

@@ -1203,6 +1203,37 @@ impl TypeChecker {
         {
             inner_ty = *ref_inner;
         }
+
+        if let Type::Struct(struct_name) | Type::Named(struct_name) = &inner_ty {
+            let base_name = struct_name.split('<').next().unwrap().trim();
+            let found_field = self
+                .structs
+                .get(struct_name)
+                .or_else(|| self.structs.get(base_name))
+                .and_then(|info| {
+                    info.fields
+                        .iter()
+                        .find(|(name, _)| name == member)
+                        .map(|(_, ty)| ty.clone())
+                });
+            if let Some(ty) = found_field {
+                let formatted_ty = self.format_type(&ty);
+                let member_span = Span {
+                    start: span.end.saturating_sub(member.len()),
+                    end: span.end,
+                    line: span.line,
+                    col: span.col + (span.end - span.start).saturating_sub(member.len()),
+                };
+                let doc = format!(
+                    "```flame\n{}.{}: {}\n```\nProperty of `{}`",
+                    struct_name, member, formatted_ty, struct_name
+                );
+                self.insert_hover_info(member_span, doc.clone());
+                self.insert_hover_info(span.clone(), doc);
+                return ty;
+            }
+        }
+
         match member {
             "toString" | "toChar" | "trim" | "toUpperCase" | "toLowerCase" | "replace" | "join"
             | "push_str" | "push" | "pop" | "clear" | "remove" | "insert" | "slice"
@@ -1497,8 +1528,46 @@ impl TypeChecker {
                     Type::Unknown
                 }
             }
-            Type::Vector(_)
-            | Type::String
+            Type::Vector(ref element_ty) => {
+                let member_span = Span {
+                    start: span.end.saturating_sub(member.len()),
+                    end: span.end,
+                    line: span.line,
+                    col: span.col + (span.end - span.start).saturating_sub(member.len()),
+                };
+                let (hover_sig, hover_desc) = match member {
+                    "push" => (format!("fn push(&mut self, item: {})", self.format_type(element_ty)), "Appends an element to the end of the array."),
+                    "pop" => (format!("fn pop(&mut self) -> {}", self.format_type(element_ty)), "Removes and returns the last element of the array."),
+                    "len" | "length" => ("fn len(&self) -> Int".to_string(), "Returns the number of elements in the array."),
+                    "isEmpty" | "is_empty" => ("fn isEmpty(&self) -> Bool".to_string(), "Returns `true` if the array contains no elements."),
+                    "first" => (format!("fn first(&self) -> {}?", self.format_type(element_ty)), "Returns the first element of the array, or `nil` if empty."),
+                    "last" => (format!("fn last(&self) -> {}?", self.format_type(element_ty)), "Returns the last element of the array, or `nil` if empty."),
+                    "get" => (format!("fn get(&self, index: Int) -> {}?", self.format_type(element_ty)), "Returns the element at index (supports negative indexing)."),
+                    "contains" => (format!("fn contains(&self, item: {}) -> Bool", self.format_type(element_ty)), "Returns `true` if the array contains the specified element."),
+                    "index" => (format!("fn index(&self, predicate_or_item: {}) -> Int", self.format_type(element_ty)), "Returns the 0-based index of the first matching element or predicate, or `-1` if not found."),
+                    "filter" => (format!("fn filter(&self, predicate: (item: {}) -> Bool) -> [{}]", self.format_type(element_ty), self.format_type(element_ty)), "Returns a new array containing all elements that satisfy the predicate closure."),
+                    "map" => (format!("fn map<R>(&self, transform: (item: {}) -> R) -> [R]", self.format_type(element_ty)), "Returns a new array with the results of applying the closure to each element."),
+                    "any" => (format!("fn any(&self, predicate: (item: {}) -> Bool) -> Bool", self.format_type(element_ty)), "Returns `true` if at least one element satisfies the predicate closure."),
+                    "all" => (format!("fn all(&self, predicate: (item: {}) -> Bool) -> Bool", self.format_type(element_ty)), "Returns `true` if all elements satisfy the predicate closure."),
+                    "find" => (format!("fn find(&self, predicate: (item: {}) -> Bool) -> {}?", self.format_type(element_ty), self.format_type(element_ty)), "Returns the first element that satisfies the predicate closure, or `nil` if none match."),
+                    "count" => ("fn count(&self, target_or_predicate = nil) -> Int".to_string(), "Returns the total number of elements, count of matching values, or count of predicate matches."),
+                    "reverse" => (format!("fn reverse(&self) -> [{}]", self.format_type(element_ty)), "Returns a new array with elements in reversed order."),
+                    "sort" => (format!("fn sort(&self) -> [{}]", self.format_type(element_ty)), "Returns a new sorted array."),
+                    "min" => (format!("fn min(&self) -> {}", self.format_type(element_ty)), "Returns the minimum value in the array."),
+                    "max" => (format!("fn max(&self) -> {}", self.format_type(element_ty)), "Returns the maximum value in the array."),
+                    "sum" => (format!("fn sum(&self) -> {}", if **element_ty == Type::Float { "Float" } else { "Int" }), "Returns the sum of all numerical elements in the array."),
+                    "join" => ("fn join(&self, separator: String = \"\") -> String".to_string(), "Joins all elements into a single string separated by `separator`."),
+                    "equals" => (format!("fn equals(&self, other: [{}]) -> Bool", self.format_type(element_ty)), "Returns `true` if this array has equal length and identical elements to `other`."),
+                    "concat" => (format!("fn concat(&self, other: [{}]) -> [{}]", self.format_type(element_ty), self.format_type(element_ty)), "Concatenates two arrays into a new array."),
+                    "slice" => (format!("fn slice(&self, start: Int, end: Int) -> [{}]", self.format_type(element_ty)), "Returns a sub-slice of elements from `start` up to `end`."),
+                    _ => (format!("fn {}(...)", member), "Built-in array method."),
+                };
+                let hover_doc = format!("```flame\n{}\n```\n{}", hover_sig, hover_desc);
+                self.insert_hover_info(member_span, hover_doc.clone());
+                self.insert_hover_info(span.clone(), hover_doc);
+                Type::Named("Function".into())
+            }
+            Type::String
             | Type::Int
             | Type::Float
             | Type::Bool
@@ -2160,6 +2229,44 @@ impl TypeChecker {
             }
 
             if let Type::Vector(element_ty) = &inner_ty {
+                let callee_span = callee.span();
+                let dot_member_span = Span {
+                    start: callee_span.end.saturating_sub(member.len()),
+                    end: callee_span.end,
+                    line: callee_span.line,
+                    col: callee_span.col + (callee_span.end - callee_span.start).saturating_sub(member.len()),
+                };
+                let (hover_sig, hover_desc) = match member.as_str() {
+                    "push" => (format!("fn push(&mut self, item: {})", self.format_type(element_ty)), "Appends an element to the end of the array."),
+                    "pop" => (format!("fn pop(&mut self) -> {}", self.format_type(element_ty)), "Removes and returns the last element of the array."),
+                    "len" | "length" => ("fn len(&self) -> Int".to_string(), "Returns the number of elements in the array."),
+                    "isEmpty" | "is_empty" => ("fn isEmpty(&self) -> Bool".to_string(), "Returns `true` if the array contains no elements."),
+                    "first" => (format!("fn first(&self) -> {}?", self.format_type(element_ty)), "Returns the first element of the array, or `nil` if empty."),
+                    "last" => (format!("fn last(&self) -> {}?", self.format_type(element_ty)), "Returns the last element of the array, or `nil` if empty."),
+                    "get" => (format!("fn get(&self, index: Int) -> {}?", self.format_type(element_ty)), "Returns the element at index (supports negative indexing)."),
+                    "contains" => (format!("fn contains(&self, item: {}) -> Bool", self.format_type(element_ty)), "Returns `true` if the array contains the specified element."),
+                    "index" => (format!("fn index(&self, predicate_or_item: {}) -> Int", self.format_type(element_ty)), "Returns the 0-based index of the first matching element or predicate, or `-1` if not found."),
+                    "filter" => (format!("fn filter(&self, predicate: (item: {}) -> Bool) -> [{}]", self.format_type(element_ty), self.format_type(element_ty)), "Returns a new array containing all elements that satisfy the predicate closure."),
+                    "map" => (format!("fn map<R>(&self, transform: (item: {}) -> R) -> [R]", self.format_type(element_ty)), "Returns a new array with the results of applying the closure to each element."),
+                    "any" => (format!("fn any(&self, predicate: (item: {}) -> Bool) -> Bool", self.format_type(element_ty)), "Returns `true` if at least one element satisfies the predicate closure."),
+                    "all" => (format!("fn all(&self, predicate: (item: {}) -> Bool) -> Bool", self.format_type(element_ty)), "Returns `true` if all elements satisfy the predicate closure."),
+                    "find" => (format!("fn find(&self, predicate: (item: {}) -> Bool) -> {}?", self.format_type(element_ty), self.format_type(element_ty)), "Returns the first element that satisfies the predicate closure, or `nil` if none match."),
+                    "count" => ("fn count(&self, target_or_predicate = nil) -> Int".to_string(), "Returns the total number of elements, count of matching values, or count of predicate matches."),
+                    "reverse" => (format!("fn reverse(&self) -> [{}]", self.format_type(element_ty)), "Returns a new array with elements in reversed order."),
+                    "sort" => (format!("fn sort(&self) -> [{}]", self.format_type(element_ty)), "Returns a new sorted array."),
+                    "min" => (format!("fn min(&self) -> {}", self.format_type(element_ty)), "Returns the minimum value in the array."),
+                    "max" => (format!("fn max(&self) -> {}", self.format_type(element_ty)), "Returns the maximum value in the array."),
+                    "sum" => (format!("fn sum(&self) -> {}", if **element_ty == Type::Float { "Float" } else { "Int" }), "Returns the sum of all numerical elements in the array."),
+                    "join" => ("fn join(&self, separator: String = \"\") -> String".to_string(), "Joins all elements into a single string separated by `separator`."),
+                    "equals" => (format!("fn equals(&self, other: [{}]) -> Bool", self.format_type(element_ty)), "Returns `true` if this array has equal length and identical elements to `other`."),
+                    "concat" => (format!("fn concat(&self, other: [{}]) -> [{}]", self.format_type(element_ty), self.format_type(element_ty)), "Concatenates two arrays into a new array."),
+                    "slice" => (format!("fn slice(&self, start: Int, end: Int) -> [{}]", self.format_type(element_ty)), "Returns a sub-slice of elements from `start` up to `end`."),
+                    _ => (format!("fn {}(...)", member), "Built-in array method."),
+                };
+                let hover_doc = format!("```flame\n{}\n```\n{}", hover_sig, hover_desc);
+                self.insert_hover_info(dot_member_span, hover_doc.clone());
+                self.insert_hover_info(callee_span, hover_doc);
+
                 match member.as_str() {
                     "push" => {
                         if let Expr::Identifier(var_name, id_span) = &**inner {
@@ -2204,9 +2311,60 @@ impl TypeChecker {
                         self.check_call_args(&[], args, span, member);
                         return *element_ty.clone();
                     }
-                    "len" => {
+                    "len" | "length" => {
                         self.check_call_args(&[], args, span, member);
                         return Type::Int;
+                    }
+                    "isEmpty" | "is_empty" => {
+                        self.check_call_args(&[], args, span, member);
+                        return Type::Bool;
+                    }
+                    "first" | "last" => {
+                        self.check_call_args(&[], args, span, member);
+                        return *element_ty.clone();
+                    }
+                    "get" => {
+                        self.check_call_args(
+                            &[ParamInfo {
+                                name: "index".into(),
+                                ty: Type::Int,
+                                is_ref: false,
+                                is_mut: false,
+                                has_default: false,
+                            }],
+                            args,
+                            span,
+                            member,
+                        );
+                        return *element_ty.clone();
+                    }
+                    "index" => {
+                        if let Some((_, arg)) = args.first() {
+                            if matches!(arg, Expr::Closure { .. }) {
+                                let cb_ty = Type::Function(vec![*element_ty.clone()], Box::new(Type::Bool));
+                                self.check_call_args(
+                                    &[ParamInfo {
+                                        name: "predicate".into(),
+                                        ty: cb_ty,
+                                        is_ref: false,
+                                        is_mut: false,
+                                        has_default: false,
+                                    }],
+                                    args,
+                                    span,
+                                    member,
+                                );
+                            } else {
+                                self.infer_expr_type(arg);
+                            }
+                        }
+                        return Type::Int;
+                    }
+                    "contains" => {
+                        if let Some((_, arg)) = args.first() {
+                            self.infer_expr_type(arg);
+                        }
+                        return Type::Bool;
                     }
                     "filter" => {
                         let cb_ty = Type::Function(vec![*element_ty.clone()], Box::new(Type::Bool));
@@ -2233,7 +2391,95 @@ impl TypeChecker {
                         }
                         return Type::Unknown;
                     }
-                    "type" | "toHex" | "toBase64" | "concat" | "assertEq" => {
+                    "any" | "all" => {
+                        let cb_ty = Type::Function(vec![*element_ty.clone()], Box::new(Type::Bool));
+                        self.check_call_args(
+                            &[ParamInfo {
+                                name: "predicate".into(),
+                                ty: cb_ty,
+                                is_ref: false,
+                                is_mut: false,
+                                has_default: false,
+                            }],
+                            args,
+                            span,
+                            member,
+                        );
+                        return Type::Bool;
+                    }
+                    "find" => {
+                        let cb_ty = Type::Function(vec![*element_ty.clone()], Box::new(Type::Bool));
+                        self.check_call_args(
+                            &[ParamInfo {
+                                name: "predicate".into(),
+                                ty: cb_ty,
+                                is_ref: false,
+                                is_mut: false,
+                                has_default: false,
+                            }],
+                            args,
+                            span,
+                            member,
+                        );
+                        return *element_ty.clone();
+                    }
+                    "count" => {
+                        if let Some((_, arg)) = args.first() {
+                            if matches!(arg, Expr::Closure { .. }) {
+                                let cb_ty = Type::Function(vec![*element_ty.clone()], Box::new(Type::Bool));
+                                self.check_call_args(
+                                    &[ParamInfo {
+                                        name: "predicate".into(),
+                                        ty: cb_ty,
+                                        is_ref: false,
+                                        is_mut: false,
+                                        has_default: false,
+                                    }],
+                                    args,
+                                    span,
+                                    member,
+                                );
+                            } else {
+                                self.infer_expr_type(arg);
+                            }
+                        }
+                        return Type::Int;
+                    }
+                    "reverse" | "sort" => {
+                        self.check_call_args(&[], args, span, member);
+                        return Type::Vector(element_ty.clone());
+                    }
+                    "min" | "max" => {
+                        self.check_call_args(&[], args, span, member);
+                        return *element_ty.clone();
+                    }
+                    "sum" => {
+                        self.check_call_args(&[], args, span, member);
+                        if **element_ty == Type::Float {
+                            return Type::Float;
+                        } else {
+                            return Type::Int;
+                        }
+                    }
+                    "join" => {
+                        if let Some((_, arg)) = args.first() {
+                            self.infer_expr_type(arg);
+                        }
+                        return Type::String;
+                    }
+                    "equals" => {
+                        if let Some((_, arg)) = args.first() {
+                            self.infer_expr_type(arg);
+                        }
+                        return Type::Bool;
+                    }
+                    "concat" | "slice" => {
+                        for (_, arg) in args {
+                            self.infer_expr_type(arg);
+                        }
+                        return Type::Vector(element_ty.clone());
+                    }
+                    "type" | "toHex" | "toBase64" | "assertEq" => {
                         return Type::Unknown;
                     }
                     _ => {

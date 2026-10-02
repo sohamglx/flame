@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use crate::lexer::Span;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiagnosticSeverity {
     Error,
     Warning,

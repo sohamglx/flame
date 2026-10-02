@@ -124,9 +124,14 @@ fn identity<T>(x: T) -> T {
 
 ## Contract Enforcement
 
-If a struct implements a trait but omits a required method without a default, the compiler provides clear diagnostics:
+If a struct implements a trait but omits a required method without a default, the compiler provides clear compile-time diagnostics:
 
 ```flame
-incomplete implementation of trait 'Drawable': 'Circle' implements 'Drawable' but is missing required method: 'area(&self) -> Float'
+error: not all trait items implemented, missing: `area`
+  --> src/main.fm:12:1
+   |
+12 | impl Circle: Drawable {
+   | ^^^^^^^^^^^^^^^^^^^^^ missing `area` in implementation
+   = help: implement the missing trait method(s) for 'Drawable'
 ```
 

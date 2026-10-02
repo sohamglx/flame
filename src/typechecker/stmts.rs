@@ -680,7 +680,20 @@ impl TypeChecker {
                                     ));
                                     ParamInfo {
                                         name: param.name.clone(),
-                                        ty: self.parse_type_name(&param.type_name),
+                                        ty: if param.name == "self" {
+                                            let base_target = target_type.split('<').next().unwrap().trim().to_string();
+                                            let struct_ty = Type::Struct(base_target);
+                                            if param.is_ref || param.type_name.starts_with('&') {
+                                                Type::Reference {
+                                                    inner: Box::new(struct_ty),
+                                                    mutable: param.is_mut || param.type_name.contains("mut"),
+                                                }
+                                            } else {
+                                                struct_ty
+                                            }
+                                        } else {
+                                            self.parse_type_name(&param.type_name)
+                                        },
                                         is_ref: param.is_ref,
                                         is_mut: param.is_mut,
                                         has_default: param.default_val.is_some()
@@ -2016,8 +2029,10 @@ impl TypeChecker {
                 annotations,
                 span: _span,
                 name_span,
+                generic_params,
                 ..
             } => {
+                self.check_generic_param_bounds(generic_params);
                 let func_type = Type::Function(
                     params
                         .iter()
@@ -2124,13 +2139,32 @@ impl TypeChecker {
                     name,
                     type_name,
                     is_mut,
+                    is_ref,
                     ..
                 } in params
                 {
+                    let param_ty = if name == "self" {
+                        if let Some(target) = &self.current_impl_target {
+                            let base_target = target.split('<').next().unwrap().trim().to_string();
+                            let struct_ty = Type::Struct(base_target);
+                            if *is_ref || type_name.starts_with('&') {
+                                Type::Reference {
+                                    inner: Box::new(struct_ty),
+                                    mutable: *is_mut || type_name.contains("mut"),
+                                }
+                            } else {
+                                struct_ty
+                            }
+                        } else {
+                            self.parse_type_name(type_name)
+                        }
+                    } else {
+                        self.parse_type_name(type_name)
+                    };
                     self.define_var(
                         name.clone(),
                         VarInfo {
-                            ty: self.parse_type_name(type_name),
+                            ty: param_ty,
                             is_mut: *is_mut,
                             hover_doc: None,
                         },
@@ -2496,14 +2530,26 @@ impl TypeChecker {
                     }
                 }
             }
-            Stmt::StructDecl { .. }
-            | Stmt::EnumDecl { .. }
-            | Stmt::Break(_)
+            Stmt::StructDecl { generic_params, .. } => {
+                self.check_generic_param_bounds(generic_params);
+            }
+            Stmt::EnumDecl { generic_params, .. } => {
+                self.check_generic_param_bounds(generic_params);
+            }
+            Stmt::Break(_)
             | Stmt::Continue(_)
             | Stmt::PackageDecl { .. }
             | Stmt::PluginDecl { .. } => {}
-            Stmt::TraitDecl { methods, .. } => {
+            Stmt::TraitDecl {
+                generic_params,
+                methods,
+                ..
+            } => {
+                self.check_generic_param_bounds(generic_params);
                 for method in methods {
+                    if let Stmt::FuncDecl { generic_params: m_gen, .. } = method {
+                        self.check_generic_param_bounds(m_gen);
+                    }
                     if let Stmt::FuncDecl { body: Some(_), .. } = method {
                         self.check_stmt(method);
                     }
@@ -2514,8 +2560,15 @@ impl TypeChecker {
                 traits,
                 methods,
                 span,
+                generic_params,
                 ..
             } => {
+                self.check_generic_param_bounds(generic_params);
+                for method in methods {
+                    if let Stmt::FuncDecl { generic_params: m_gen, .. } = method {
+                        self.check_generic_param_bounds(m_gen);
+                    }
+                }
                 for tr in traits {
                     let mut required = Vec::new();
                     let mut default_to_inherit = Vec::new();
@@ -2540,60 +2593,33 @@ impl TypeChecker {
                         }
                     }
 
-                    for (req_name, req_sig) in required {
+                    let mut missing = Vec::new();
+                    for (req_name, _req_sig) in required {
                         let implemented = methods.iter().any(|m| match m {
                             Stmt::FuncDecl { name, .. } => name == &req_name,
                             _ => false,
-                        }) || self
-                            .methods
-                            .get(target_type)
-                            .map_or(false, |m| m.contains_key(&req_name));
+                        });
 
                         if !implemented {
-                            let mut params_str = String::new();
-                            for (i, p) in req_sig.params.iter().enumerate() {
-                                if i > 0 {
-                                    params_str.push_str(", ");
-                                }
-                                if p.name == "self" {
-                                    if p.is_ref {
-                                        if p.is_mut {
-                                            params_str.push_str("&mut self");
-                                        } else {
-                                            params_str.push_str("&self");
-                                        }
-                                    } else {
-                                        params_str.push_str("self");
-                                    }
-                                } else {
-                                    let ref_mut = match (p.is_ref, p.is_mut) {
-                                        (true, true) => "&mut ",
-                                        (true, false) => "&",
-                                        (false, true) => "mut ",
-                                        _ => "",
-                                    };
-                                    params_str
-                                        .push_str(&format!("{}{}: {}", ref_mut, p.name, p.ty));
-                                }
-                            }
-                            let ret_str = match &req_sig.return_type {
-                                Type::Nil => String::new(),
-                                ty => format!(" -> {}", ty),
-                            };
-                            let missing_sig = format!("{}({}){}", req_name, params_str, ret_str);
-
-                            self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
-                                format!(
-                                    "incomplete implementation of trait '{}': '{}' implements '{}' but is missing required method: '{}'",
-                                    tr, target_type, tr, missing_sig
-                                ),
-                                self.filepath.clone(),
-                                span.clone(),
-                                None,
-                                None,
-                            ));
+                            missing.push(req_name);
                         }
                     }
+
+                    if !missing.is_empty() {
+                        let missing_str = missing
+                            .iter()
+                            .map(|m| format!("`{}`", m))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
+                            format!("not all trait items implemented, missing: {}", missing_str),
+                            self.filepath.clone(),
+                            span.clone(),
+                            None,
+                            Some(format!("implement the missing trait method(s) for '{}'", tr)),
+                        ));
+                    }
+
 
                     let base_target = target_type.split('<').next().unwrap().trim().to_string();
                     for (def_name, def_sig) in default_to_inherit {
@@ -2617,9 +2643,12 @@ impl TypeChecker {
                     }
                 }
 
+                let prev_impl_target = self.current_impl_target.take();
+                self.current_impl_target = Some(target_type.clone());
                 for method in methods {
                     self.check_stmt(method);
                 }
+                self.current_impl_target = prev_impl_target;
             }
         }
     }

@@ -202,8 +202,12 @@ export default function FlamePlayground() {
       ],
       constants: ['true', 'false', 'nil', 'self'],
       operators: [
-        '=', '+=', '-=', '*=', '/=', '%=', '==', '!=', '<', '<=', '>', '>=',
-        '+', '-', '*', '/', '%', '->', '=>', '..', '..=', '...'
+        '=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<=', '>>=',
+        '==', '!=', '===', '!==', '<', '<=', '>', '>=',
+        '+', '++', '-', '--', '*', '/', '%',
+        '&', '|', '^', '~', '<<', '>>',
+        '&&', '||', '!', '?.', '?:',
+        '->', '=>', '|>', '..', '..=', '...'
       ],
       tokenizer: {
         root: [
@@ -241,11 +245,11 @@ export default function FlamePlayground() {
 
           // Delimiters and operators
           [/[{}()\[\]]/, '@brackets'],
-          [/->|=>|\.\.=?/, 'delimiter'],
+          [/->|=>|\|>|\.\.=?/, 'operator'],
           [/[=><!~?:&|+\-*\/\^%]+/, {
             cases: {
               '@operators': 'operator',
-              '@default': ''
+              '@default': 'operator'
             }
           }],
         ],
@@ -766,7 +770,7 @@ export default function FlamePlayground() {
         { token: 'number.hex', foreground: '79c0ff' },
         { token: 'number.float', foreground: '79c0ff' },
         { token: 'comment', foreground: '8b949e', fontStyle: 'italic' },
-        { token: 'operator', foreground: 'ff7b72' },
+        { token: 'operator', foreground: 'ff453a', fontStyle: 'bold' },
         { token: 'delimiter', foreground: 'c9d1d9' },
         { token: 'identifier', foreground: 'e6edf3' },
         { token: 'constant', foreground: '79c0ff' },

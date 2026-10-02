@@ -659,6 +659,13 @@ impl TypeChecker {
         label: Option<String>,
         suggestion: Option<String>,
     ) {
+        if self.diagnostics.iter().any(|d| {
+            d.filepath == self.filepath
+                && d.span.line == span.line
+                && d.message == message
+        }) {
+            return;
+        }
         self.diagnostics.push(Diagnostic::new_error(
             message,
             self.filepath.clone(),
@@ -676,6 +683,13 @@ impl TypeChecker {
         suggestion: Option<String>,
         note: Option<String>,
     ) {
+        if self.diagnostics.iter().any(|d| {
+            d.filepath == self.filepath
+                && d.span.line == span.line
+                && d.message == message
+        }) {
+            return;
+        }
         let mut diag = Diagnostic::new_warning(
             message,
             self.filepath.clone(),
@@ -685,6 +699,63 @@ impl TypeChecker {
         );
         diag.note = note;
         self.diagnostics.push(diag);
+    }
+
+    pub(crate) fn is_concrete_type_name(name: &str) -> bool {
+        let base = name.split('<').next().unwrap_or(name).trim();
+        matches!(
+            base,
+            "String" | "string"
+            | "Int" | "int"
+            | "Num" | "num"
+            | "Float" | "float"
+            | "Bool" | "bool"
+            | "Byte" | "byte"
+            | "Char" | "char"
+            | "Array" | "array"
+            | "Map" | "map"
+            | "Option" | "option"
+            | "Result" | "result"
+            | "Vector" | "vector"
+            | "Void" | "void"
+            | "Any" | "any"
+            | "Never" | "never"
+            | "Nil" | "nil"
+            | "Self" | "self"
+        )
+    }
+
+    pub(crate) fn check_generic_param_bounds(&mut self, generic_params: &[crate::parser::GenericParam]) {
+        for p in generic_params {
+            for bound in &p.bounds {
+                let base_bound = bound.split('<').next().unwrap_or(bound).trim();
+                // If the bound is a registered trait, it is valid!
+                if self.traits.contains_key(base_bound) {
+                    continue;
+                }
+
+                let is_concrete = Self::is_concrete_type_name(base_bound)
+                    || self.structs.contains_key(base_bound)
+                    || self.enums.contains_key(base_bound);
+
+                if is_concrete {
+                    let msg = format!(
+                        "bounds on generic parameters are traits, not concrete types: '{}' is a type, not a trait",
+                        bound
+                    );
+                    let label = Some("bounds here must be traits, not concrete types".to_string());
+                    let suggestion = Some(format!(
+                        "remove concrete type bound ': {}' or use a trait instead",
+                        bound
+                    ));
+                    let note = Some(format!(
+                        "bounding generic parameter `{}` with concrete type `{}` has no effect; bounds only constrain traits",
+                        p.name, bound
+                    ));
+                    self.warning(msg, p.span.clone(), label, suggestion, note);
+                }
+            }
+        }
     }
 
     pub(crate) fn parse_command_annotation(

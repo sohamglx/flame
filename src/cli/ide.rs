@@ -408,13 +408,17 @@ pub fn analyze_file_for_json(
                         crate::diagnostics::DiagnosticSeverity::Warning => "warning".to_string(),
                         crate::diagnostics::DiagnosticSeverity::Info => "info".to_string(),
                     };
-                    diagnostics.push(JsonDiagnostic {
-                        severity: sev,
-                        message: d.message,
-                        file: d.filepath,
-                        line: d.span.line,
-                        column: d.span.col,
-                    });
+                    if !diagnostics.iter().any(|existing: &JsonDiagnostic| {
+                        existing.line == d.span.line && existing.message == d.message
+                    }) {
+                        diagnostics.push(JsonDiagnostic {
+                            severity: sev,
+                            message: d.message,
+                            file: d.filepath,
+                            line: d.span.line,
+                            column: d.span.col,
+                        });
+                    }
                 }
             }
         }
@@ -576,19 +580,62 @@ pub fn analyze_file_for_json(
         }
     }
 
-    let impl_re = regex::Regex::new(r"impl(?:\s*<[^>]*>)?\s+([a-zA-Z_]\w*)").unwrap();
+    let impl_block_re = regex::Regex::new(r"impl(?:\s*<[^>]*>)?\s+([a-zA-Z_]\w*(?:<[^>]*>)?)(?:\s*:\s*([^{]+))?\s*\{").unwrap();
     let mut current_impl = None;
-    for cap in impl_re.captures_iter(&content) {
-        if let Some(m) = cap.get(0) {
-            if m.start() <= cursor_byte_idx {
-                current_impl = Some(cap[1].to_string());
+    let mut current_impl_traits: Vec<String> = Vec::new();
+    let mut is_inside_impl_body = false;
+
+    for stmt in &parsed_stmts {
+        if let crate::parser::Stmt::ImplDecl { target_type, traits, span, .. } = stmt {
+            if cursor_byte_idx >= span.start && (span.end == 0 || cursor_byte_idx <= span.end) {
+                current_impl = Some(target_type.clone());
+                current_impl_traits = traits.clone();
+                is_inside_impl_body = true;
             }
         }
     }
+
+    for cap in impl_block_re.captures_iter(&content) {
+        if let Some(m) = cap.get(0) {
+            let brace_idx = m.end() - 1;
+            if brace_idx <= cursor_byte_idx {
+                let mut depth = 0;
+                let mut in_str = false;
+                let mut prev = ' ';
+                for c in content[brace_idx..cursor_byte_idx].chars() {
+                    if c == '"' && prev != '\\' {
+                        in_str = !in_str;
+                    } else if !in_str {
+                        if c == '{' { depth += 1; }
+                        else if c == '}' { depth -= 1; }
+                    }
+                    prev = c;
+                }
+                if depth > 0 {
+                    is_inside_impl_body = true;
+                    current_impl = Some(cap[1].to_string());
+                    if let Some(tr_match) = cap.get(2) {
+                        let tr_str = tr_match.as_str();
+                        let parsed_tr: Vec<String> = tr_str
+                            .split(|c| c == ',' || c == '+')
+                            .flat_map(|part| part.split(" and "))
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                        if !parsed_tr.is_empty() {
+                            current_impl_traits = parsed_tr;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if let Some(ref impl_name) = current_impl {
+        let base_name = impl_name.split('<').next().unwrap_or(impl_name).trim().to_string();
         scanned_vars.push(crate::ide::ScannedVar {
             name: "self".to_string(),
-            typ: Some(impl_name.clone()),
+            typ: Some(base_name),
             doc: None,
         });
     }
@@ -1354,7 +1401,14 @@ pub fn analyze_file_for_json(
                             if typ.starts_with('[') || typ.starts_with("Vec<") {
                                 let array_methods = [
                                     ("len", "Returns the number of elements in the array"),
+                                    ("length", "Returns the number of elements in the array"),
                                     ("isEmpty", "Returns true if the array contains no elements"),
+                                    ("is_empty", "Returns true if the array contains no elements"),
+                                    ("first", "Returns the first element of the array, or nil if empty"),
+                                    ("last", "Returns the last element of the array, or nil if empty"),
+                                    ("get", "Returns the element at the specified index (supports negative indexing)"),
+                                    ("index", "Returns the index of the first element matching a value or predicate closure, or -1"),
+                                    ("contains", "Returns true if the array contains the specified element"),
                                     ("push", "Appends an element to the end of the array"),
                                     ("pop", "Removes and returns the last element of the array"),
                                     (
@@ -1365,11 +1419,19 @@ pub fn analyze_file_for_json(
                                         "filter",
                                         "Returns a new array with elements that satisfy the predicate",
                                     ),
-                                    ("concat", "Concatenates this array with another array"),
+                                    ("any", "Returns true if at least one element satisfies the predicate closure"),
+                                    ("all", "Returns true if all elements satisfy the predicate closure"),
+                                    ("find", "Returns the first element that satisfies the predicate closure, or nil"),
+                                    ("count", "Returns the count of matching elements (or array length if no arguments)"),
                                     ("reverse", "Reverses the order of elements in the array"),
-                                    ("slice", "Returns a sub-slice of elements (start, len)"),
+                                    ("sort", "Returns a new sorted array"),
+                                    ("min", "Returns the minimum element in the array, or nil"),
+                                    ("max", "Returns the maximum element in the array, or nil"),
+                                    ("sum", "Returns the sum of numeric elements in the array"),
                                     ("join", "Joins string elements with the given separator"),
-                                    ("get", "Returns the element at the specified index"),
+                                    ("equals", "Returns true if this array deeply equals another array"),
+                                    ("concat", "Concatenates this array with another array"),
+                                    ("slice", "Returns a sub-slice of elements (start, len)"),
                                 ];
                                 for (m_name, m_doc) in array_methods {
                                     if member_prefix
@@ -3093,7 +3155,31 @@ pub fn analyze_file_for_json(
                             "len",
                             "Returns the length in bytes (String) or elements (Array)",
                         ),
+                        ("length", "Returns the length of the collection"),
                         ("isEmpty", "Returns true if empty"),
+                        ("is_empty", "Returns true if empty"),
+                        ("first", "Returns the first element of the array or nil"),
+                        ("last", "Returns the last element of the array or nil"),
+                        ("get", "Returns the element at index"),
+                        ("index", "Returns index of element or matching predicate"),
+                        ("contains", "Returns true if containing item or substring"),
+                        ("any", "Returns true if any element satisfies predicate"),
+                        ("all", "Returns true if all elements satisfy predicate"),
+                        ("find", "Returns first element matching predicate"),
+                        ("count", "Returns number of elements or matches"),
+                        ("reverse", "Returns reversed elements"),
+                        ("sort", "Returns sorted elements"),
+                        ("min", "Returns minimum element"),
+                        ("max", "Returns maximum element"),
+                        ("sum", "Returns sum of elements"),
+                        ("join", "Joins elements into a string"),
+                        ("equals", "Returns true if deeply equal"),
+                        ("push", "Appends an element to the end of the array"),
+                        ("pop", "Removes and returns the last element of the array"),
+                        ("filter", "Returns a new array with elements that satisfy the predicate"),
+                        ("map", "Transforms each element of the array using closure"),
+                        ("concat", "Concatenates this array with another array"),
+                        ("slice", "Returns a sub-slice of elements from start to end"),
                     ];
 
                     for (method, doc) in &builtin_methods {
@@ -3132,6 +3218,156 @@ pub fn analyze_file_for_json(
             &word_under_cursor,
             tc_opt.as_ref(),
         ));
+
+        if is_inside_impl_body && !current_impl_traits.is_empty() {
+            let mut implemented_methods = std::collections::HashSet::new();
+            for stmt in &parsed_stmts {
+                if let crate::parser::Stmt::ImplDecl { target_type, methods, span, .. } = stmt {
+                    if Some(target_type) == current_impl.as_ref()
+                        && (span.start <= cursor_byte_idx && (span.end == 0 || cursor_byte_idx <= span.end))
+                    {
+                        for m in methods {
+                            if let crate::parser::Stmt::FuncDecl { name, .. } = m {
+                                implemented_methods.insert(name.clone());
+                            }
+                        }
+                    }
+                }
+            }
+
+            for raw_tr in &current_impl_traits {
+                let tr = raw_tr.split('<').next().unwrap().trim();
+                let mut trait_methods: Vec<(String, String, String, bool, Option<String>)> = Vec::new();
+                let mut visited_traits = std::collections::HashSet::new();
+                let mut queue = vec![tr.to_string()];
+
+                if let Some(ref tc) = tc_opt {
+                    while let Some(current_tr) = queue.pop() {
+                        if !visited_traits.insert(current_tr.clone()) {
+                            continue;
+                        }
+                        if let Some(t_info) = tc.traits.get(&current_tr) {
+                            for (m_name, m_sig) in &t_info.methods {
+                                let is_default = t_info.default_methods.contains_key(m_name);
+                                let mut params_str = String::new();
+                                for (i, p) in m_sig.params.iter().enumerate() {
+                                    if i > 0 { params_str.push_str(", "); }
+                                    if p.name == "self" {
+                                        if p.is_ref {
+                                            if p.is_mut { params_str.push_str("&mut self"); }
+                                            else { params_str.push_str("&self"); }
+                                        } else { params_str.push_str("self"); }
+                                    } else {
+                                        let ref_mut = match (p.is_ref, p.is_mut) {
+                                            (true, true) => "&mut ",
+                                            (true, false) => "&",
+                                            (false, true) => "mut ",
+                                            _ => "",
+                                        };
+                                        params_str.push_str(&format!("{}{}: {}", ref_mut, p.name, p.ty));
+                                    }
+                                }
+                                let ret_str = match &m_sig.return_type {
+                                    crate::typechecker::Type::Nil => String::new(),
+                                    ty => format!(" -> {}", ty),
+                                };
+                                trait_methods.push((m_name.clone(), params_str, ret_str, is_default, m_sig.hover_doc.clone()));
+                            }
+                            for parent in &t_info.super_traits {
+                                queue.push(parent.clone());
+                            }
+                        }
+                    }
+                }
+
+                if trait_methods.is_empty() {
+                    for decl in &all_decls {
+                        if let crate::parser::Stmt::TraitDecl { name: t_name, methods, .. } = decl {
+                            if t_name == tr {
+                                for m in methods {
+                                    if let crate::parser::Stmt::FuncDecl { name: m_name, params, return_type, body, .. } = m {
+                                        let is_default = body.is_some();
+                                        let mut params_str = String::new();
+                                        for (i, p) in params.iter().enumerate() {
+                                            if i > 0 { params_str.push_str(", "); }
+                                            if p.name == "self" {
+                                                if p.is_ref {
+                                                    if p.is_mut { params_str.push_str("&mut self"); }
+                                                    else { params_str.push_str("&self"); }
+                                                } else { params_str.push_str("self"); }
+                                            } else {
+                                                let ref_mut = match (p.is_ref, p.is_mut) {
+                                                    (true, true) => "&mut ",
+                                                    (true, false) => "&",
+                                                    (false, true) => "mut ",
+                                                    _ => "",
+                                                };
+                                                params_str.push_str(&format!("{}{}: {}", ref_mut, p.name, p.type_name));
+                                            }
+                                        }
+                                        let ret_str = match return_type.as_deref() {
+                                            None | Some("") | Some("nil") | Some("Nil") => String::new(),
+                                            Some(ty) => format!(" -> {}", ty),
+                                        };
+                                        trait_methods.push((m_name.clone(), params_str, ret_str, is_default, None));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                for (m_name, params_str, ret_str, is_default, hover_doc) in trait_methods {
+                    let is_implemented = implemented_methods.contains(&m_name);
+                    let sig_label = format!("fn {}({}){}", m_name, params_str, ret_str);
+
+                    let matches_cursor = word_under_cursor.is_empty()
+                        || word_under_cursor == "fn"
+                        || m_name.starts_with(&word_under_cursor)
+                        || sig_label.starts_with(&word_under_cursor);
+
+                    if matches_cursor {
+                        let status_tag = if is_implemented {
+                            "(implemented)"
+                        } else if is_default {
+                            "(default)"
+                        } else {
+                            "(required)"
+                        };
+
+                        let doc_text = if let Some(d) = hover_doc {
+                            format!("```flame\n{}\n```\n\n{}", sig_label, d)
+                        } else {
+                            format!("```flame\n{}\n```", sig_label)
+                        };
+
+                        let sort_prefix = if !is_implemented && !is_default {
+                            "0_0_"
+                        } else if !is_implemented && is_default {
+                            "0_1_"
+                        } else {
+                            "0_2_"
+                        };
+
+                        completions.push(JsonCompletion {
+                            sort_text: Some(format!("{}{}", sort_prefix, m_name)),
+                            label: sig_label,
+                            kind: "snippet".to_string(),
+                            detail: format!("{} trait method {}::{}", status_tag, tr, m_name),
+                            documentation: Some(doc_text.clone()),
+                        });
+
+                        completions.push(JsonCompletion {
+                            sort_text: Some(format!("{}{}_b", sort_prefix, m_name)),
+                            label: m_name.clone(),
+                            kind: "method".to_string(),
+                            detail: format!("{} trait method {}::{}", status_tag, tr, m_name),
+                            documentation: Some(doc_text),
+                        });
+                    }
+                }
+            }
+        }
 
         if !word_under_cursor.is_empty() {
             if let Some(doc) = crate::blaze::get_std_module_doc(&word_under_cursor) {

@@ -13,8 +13,5 @@ Rich IDE syntax highlighting and configuration for the Flame programming languag
 
 ## Repository
 
-[GitHub Repository](https://github.com/shoya-129/flame)
+[GitHub Repository](https://github.com/sohamglx/flame)
 
-## License
-
-ISC

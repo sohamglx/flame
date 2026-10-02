@@ -23,7 +23,7 @@ export fn assertEq(actual: Unknown, expected: Unknown, message: String = "") {
 export fn assertNe(actual: Unknown, unexpected: Unknown, message: String = "") {
 }
 
-@Docs("Asserts that `condition` is `true`.\n\n**Example:**\n```flame\nassertTrue(list.is_empty())\n```")
+@Docs("Asserts that `condition` is `true`.\n\n**Example:**\n```flame\nassertTrue(list.isEmpty())\n```")
 export fn assertTrue(condition: Bool, message: String = "") {
 }
 
@@ -72,3 +72,16 @@ export struct Error {
     message: String,
     code: Int,
 }
+
+@Docs("Returns the number of elements in an array or collection.\n\n**Example:**\n```flame\nlet count = len(items)\n```")
+export fn len(items: Unknown) -> Int {
+}
+
+@Docs("Returns the number of elements in an array or collection.\n\n**Example:**\n```flame\nlet count = length(items)\n```")
+export fn length(items: Unknown) -> Int {
+}
+
+@Docs("Returns `true` if the collection contains no elements.\n\n**Example:**\n```flame\nif isEmpty(items) { print(\"empty\") }\n```")
+export fn isEmpty(items: Unknown) -> Bool {
+}
+

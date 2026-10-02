@@ -1,0 +1,136 @@
+@Test
+fn test_array_basic_info() {
+    let arr = [10, 20, 30]
+    arr.len().assertEq(3)
+    arr.length().assertEq(3)
+    arr.isEmpty().assertEq(false)
+
+    let empty_arr: [Int] = []
+    empty_arr.len().assertEq(0)
+    empty_arr.length().assertEq(0)
+    empty_arr.isEmpty().assertEq(true)
+}
+
+@Test
+fn test_array_access_and_search() {
+    let fruits = ["apple", "banana", "cherry"]
+    fruits.first().assertEq("apple")
+    fruits.last().assertEq("cherry")
+    fruits.get(0).assertEq("apple")
+    fruits.get(1).assertEq("banana")
+    fruits.get(-1).assertEq("cherry")
+    fruits.get(-2).assertEq("banana")
+    fruits.get(10).assertEq(nil)
+
+    fruits.contains("banana").assertEq(true)
+    fruits.contains("mango").assertEq(false)
+
+    // index with value
+    fruits.index("banana").assertEq(1)
+    fruits.index("mango").assertEq(-1)
+
+    // index with predicate closure
+    let numbers = [5, 12, 8, 130, 44]
+    numbers.index(
+        (x: Int) -> Bool {x > 10}
+    ).assertEq(1)
+    numbers.index(
+        (x: Int) -> Bool {x > 200}
+    ).assertEq(-1)
+}
+
+@Test
+fn test_array_functional_methods() {
+    let nums = [1, 2, 3, 4, 5]
+
+    // map
+    let doubled = nums.map(
+        (x: Int) -> Int {x * 2}
+    )
+    doubled.len().assertEq(5)
+    doubled.get(0).assertEq(2)
+    doubled.get(4).assertEq(10)
+
+    // filter
+    let evens = nums.filter(
+        (x: Int) -> Bool {x % 2 == 0}
+    )
+    evens.len().assertEq(2)
+    evens.get(0).assertEq(2)
+    evens.get(1).assertEq(4)
+
+    // any and all
+    nums.any(
+        (x: Int) -> Bool {x == 3}
+    ).assertEq(true)
+    nums.any(
+        (x: Int) -> Bool {x > 10}
+    ).assertEq(false)
+    nums.all(
+        (x: Int) -> Bool {x > 0}
+    ).assertEq(true)
+    nums.all(
+        (x: Int) -> Bool {x > 2}
+    ).assertEq(false)
+
+    // find
+    nums.find(
+        (x: Int) -> Bool {x > 3}
+    ).assertEq(4)
+    nums.find(
+        (x: Int) -> Bool {x > 10}
+    ).assertEq(nil)
+
+    // count
+    nums.count().assertEq(5)
+    nums.count(3).assertEq(1)
+    nums.count(
+        (x: Int) -> Bool {x % 2 != 0}
+    ).assertEq(3)
+}
+
+@Test
+fn test_array_transformations_and_math() {
+    let list = [3, 1, 4, 1, 5, 9, 2]
+
+    // reverse
+    let rev = list.reverse()
+    rev.get(0).assertEq(2)
+    rev.get(1).assertEq(9)
+    rev.last().assertEq(3)
+
+    // sort
+    let sorted = list.sort()
+    sorted.get(0).assertEq(1)
+    sorted.get(1).assertEq(1)
+    sorted.get(2).assertEq(2)
+    sorted.last().assertEq(9)
+
+    // min and max
+    list.min().assertEq(1)
+    list.max().assertEq(9)
+
+    // sum
+    let ints = [10, 20, 30]
+    ints.sum().assertEq(60)
+
+    // join
+    let words = ["Flame", "is", "awesome"]
+    words.join(" ").assertEq("Flame is awesome")
+    words.join("-").assertEq("Flame-is-awesome")
+
+    // equals
+    let a1 = [1, 2, 3]
+    let a2 = [1, 2, 3]
+    let a3 = [1, 2, 4]
+    a1.equals(a2).assertEq(true)
+    a1.equals(a3).assertEq(false)
+
+    // concat and slice
+    let combined = a1.concat([4, 5])
+    combined.len().assertEq(5)
+    combined.equals([1, 2, 3, 4, 5]).assertEq(true)
+
+    let sliced = combined.slice(1, 3)
+    sliced.equals([2, 3, 4]).assertEq(true)
+}

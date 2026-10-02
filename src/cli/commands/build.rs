@@ -27,9 +27,18 @@ pub fn parse_file_stmts(path: &Path, content: &str) -> Result<Vec<Stmt>, Diagnos
 }
 
 pub fn typecheck_file_stmts(path: &Path, stmts: &[Stmt]) -> Result<(), Vec<Diagnostic>> {
-    TypeChecker::new(path.to_string_lossy().to_string())
-        .check_program(stmts)
-        .0
+    let (res, tc) = TypeChecker::new(path.to_string_lossy().to_string())
+        .check_program(stmts);
+    if res.is_ok() {
+        if let Ok(content) = fs::read_to_string(path) {
+            for diag in &tc.diagnostics {
+                if diag.severity == crate::diagnostics::DiagnosticSeverity::Warning {
+                    diag.print(&content);
+                }
+            }
+        }
+    }
+    res
 }
 
 pub fn build_project(args: &[String]) -> Option<PathBuf> {

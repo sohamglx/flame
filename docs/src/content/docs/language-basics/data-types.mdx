@@ -124,6 +124,34 @@ print(doubled)  // [20, 40, 60]
 print(filtered) // [20, 30]
 ```
 
+#### Vector Methods Reference
+
+| Method | Description | Flame Example |
+| :--- | :--- | :--- |
+| `.len()` / `.length()` | Element count | `arr.length()` |
+| `.isEmpty()` | Returns `true` if length is 0 | `arr.isEmpty()` |
+| `.first()` | First item or `nil` | `arr.first()` |
+| `.last()` | Last item or `nil` | `arr.last()` |
+| `.get(i)` | Index access (supports negative indices) | `arr.get(-1)` |
+| `.contains(x)` | Checks membership | `arr.contains(42)` |
+| `.index(val_or_closure)` | Position of item or predicate match (`-1` if missing) | `arr.index((x: Int) { return x > 10 })` |
+| `.map(closure)` | Transforms each element | `arr.map((x: Int) { return x * 2 })` |
+| `.filter(closure)` | Retains elements matching predicate | `arr.filter((x: Int) { return x % 2 == 0 })` |
+| `.any(closure)` | True if any element matches predicate | `arr.any((x: Int) { return x > 5 })` |
+| `.all(closure)` | True if all elements match predicate | `arr.all((x: Int) { return x > 0 })` |
+| `.find(closure)` | First item matching predicate or `nil` | `arr.find((x: Int) { return x > 3 })` |
+| `.count([val_or_closure])` | Total count, value matches, or predicate matches | `arr.count((x: Int) { return x % 2 != 0 })` |
+| `.reverse()` | Returns reversed vector | `arr.reverse()` |
+| `.sort()` | Returns sorted vector | `arr.sort()` |
+| `.min()` | Minimum value | `arr.min()` |
+| `.max()` | Maximum value | `arr.max()` |
+| `.sum()` | Sum of numeric items | `arr.sum()` |
+| `.join(sep)` | Joins elements into a string | `arr.join(", ")` |
+| `.equals(other)` | Value equality comparison | `arr.equals([1, 2, 3])` |
+| `.concat(other)` | Concatenates two vectors | `arr.concat([4, 5])` |
+| `.slice(start, end)` | Slices a range of elements | `arr.slice(1, 3)` |
+
+
 ### Tuples
 
 Ordered collections of fixed size that can contain distinct types:

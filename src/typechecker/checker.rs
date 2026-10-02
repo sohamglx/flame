@@ -32,6 +32,7 @@ pub struct TypeChecker {
     pub declared_native_plugins: HashSet<String>,
     pub traits: HashMap<String, TraitInfo>,
     pub trait_impls: HashMap<String, HashSet<String>>,
+    pub(crate) current_impl_target: Option<String>,
 }
 
 
@@ -135,6 +136,7 @@ impl TypeChecker {
             declared_native_plugins,
             traits: HashMap::new(),
             trait_impls: HashMap::new(),
+            current_impl_target: None,
         };
         checker.register_builtins();
         checker
@@ -197,7 +199,19 @@ impl TypeChecker {
             self.check_stmt(stmt);
         }
 
-        let res = if self.diagnostics.is_empty() {
+        let mut unique: Vec<Diagnostic> = Vec::new();
+        for d in self.diagnostics {
+            if !unique.iter().any(|u| u.filepath == d.filepath && u.span.line == d.span.line && u.message == d.message) {
+                unique.push(d);
+            }
+        }
+        self.diagnostics = unique;
+
+        let has_errors = self
+            .diagnostics
+            .iter()
+            .any(|d| d.severity == crate::diagnostics::DiagnosticSeverity::Error);
+        let res = if !has_errors {
             Ok(())
         } else {
             Err(self.diagnostics.clone())

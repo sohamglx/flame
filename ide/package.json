@@ -2,11 +2,11 @@
   "name": "flame-language-support",
   "displayName": "Flame",
   "description": "Rich IDE syntax highlighting and configuration for the Flame programming language.",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "icon": "flame.png",
   "publisher": "ezet-galaxy",
   "license": "ISC",
-  "repository": "https://github.com/shoya-129/flame",
+  "repository": "https://github.com/sohamglx/flame",
   "engines": {
     "vscode": "^1.60.0"
   },
@@ -86,7 +86,8 @@
           "interface": ["support.type.flame"],
           "typeParameter": ["support.type.flame"],
           "class": ["support.type.flame"],
-          "enumMember": ["constant.language.flame", "variable.other.enummember.flame"]
+          "enumMember": ["constant.language.flame", "variable.other.enummember.flame"],
+          "operator": ["keyword.operator.flame"]
         }
       }
     ],
@@ -117,6 +118,40 @@
       "explorer.autoRevealExclude": {
         "**/.flame": true,
         "**/.flame/**": true
+      },
+      "[flame]": {
+        "editor.tokenColorCustomizations": {
+          "textMateRules": [
+            {
+              "scope": [
+                "keyword.operator",
+                "keyword.operator.flame",
+                "keyword.operator.arithmetic.flame",
+                "keyword.operator.comparison.flame",
+                "keyword.operator.assignment.flame",
+                "keyword.operator.assignment.compound.flame",
+                "keyword.operator.logical.flame",
+                "keyword.operator.bitwise.flame",
+                "keyword.operator.bitwise.shift.flame",
+                "keyword.operator.increment.flame",
+                "keyword.operator.decrement.flame",
+                "keyword.operator.arrow.flame",
+                "keyword.operator.arrow.fat.flame",
+                "keyword.operator.pipe.flame",
+                "keyword.operator.range.flame",
+                "keyword.operator.nil.flame"
+              ],
+              "settings": {
+                "foreground": "#FF453A"
+              }
+            }
+          ]
+        },
+        "editor.semanticTokenColorCustomizations": {
+          "rules": {
+            "operator": "#FF453A"
+          }
+        }
       }
     }
   }

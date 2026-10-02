@@ -2,6 +2,66 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.6.7] - 2026-10-02 (Codename: *Seventh Spark*)
+
+### ⚠️ Generic Parameter Bounds Lint & Warning System (`T: String` vs Traits)
+
+- **Concrete Type Bound Detection & Warning**:
+  - Implemented a compiler diagnostic warning when concrete/normal types are used as bounds on generic type parameters (e.g. `fn foo<T: String>(val: T)` or `struct Box<T: Int>`).
+  - Follows Rust's design philosophy: generic bounds are intended strictly for traits (e.g. `T: Printable`).
+  - Emits an explicit, non-blocking warning diagnostic:
+    ```text
+    warning: bounds on generic parameters are traits, not concrete types: 'String' is a type, not a trait
+      = label: bounds here must be traits, not concrete types
+      = help: remove concrete type bound ': String' or use a trait instead
+      = note: bounding generic parameter `T` with concrete type `String` has no effect; bounds only constrain traits
+    ```
+  - **Non-Blocking Compilation**: Ensures programs compile and execute cleanly with zero friction (`flame run`, `flame build`, and `flame check`) while educating developers on correct trait-based generic contracts.
+  - Automatically identifies all primitive types (`Int`, `String`, `Float`, `Bool`, `Array`, `Map`, `Option`, etc.) as well as user-defined `struct` and `enum` types.
+
+### 🔴 Universal Red Operator Highlighting Across IDE & Documentation
+
+- **TextMate Syntax Grammar (`flame.tmLanguage.json`)**:
+  - Added a comprehensive `#operators` grammar pattern matching all Flame operators in both the VS Code extension and the documentation syntax engine:
+    - **Arithmetic**: `+`, `-`, `*`, `/`, `%`
+    - **Increment & Decrement**: `++`, `--`
+    - **Compound Assignment**: `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`
+    - **Assignment**: `=`
+    - **Comparison & Relational**: `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`, `>=`
+    - **Logical**: `&&`, `||`, `!`, and keyword operators `and`, `or`, `not`
+    - **Bitwise & Shift**: `&`, `|`, `^`, `~`, `<<`, `>>`
+    - **Nil Safety**: `?.`, `?:`
+    - **Arrows & Ranges**: `->`, `=>`, `|>`, `..`, `..=`
+- **VS Code Extension (`flame-language-support-0.3.8`)**:
+  - Added language-specific `configurationDefaults` for `[flame]` in `package.json`, enforcing `#FF453A` (vivid red) for all operator scopes via `editor.tokenColorCustomizations` textMateRules and `editor.semanticTokenColorCustomizations`.
+  - Added `operator` token type to `extension.js` semantic tokens legend and mapped `semanticTokenScopes` operator to `keyword.operator.flame`.
+  - Packaged and published the updated VSIX extension (`flame-language-support-0.3.7.vsix`).
+- **Documentation Styling & Code Blocks (`docs/src/styles/custom.css`, `docs/astro.config.mjs`)**:
+  - Integrated custom Shiki Expressive Code themes enforcing `#FF453A` (dark) and `#D73A49` (light) for all operator scopes across all documentation code snippets.
+  - Added dedicated styling for operator cells in markdown tables (`.sl-markdown-content table td:first-child code`, `td:nth-child(3) code`) featuring red color, subtle red badge backgrounds, and borders.
+  - Added red accent styling for inline operator codes and headings on the Operators & Expressions guide (`/language-basics/operators`).
+- **Interactive Playground (`docs/src/components/FlamePlayground.tsx`)**:
+  - Updated Monaco monarch tokenizer to capture all compound, bitwise, shift, nil-safety, and arrow operators.
+  - Configured Monaco editor theme with bold `#ff453a` foreground for `operator` tokens.
+
+### 🔗 Canonical Repository URL Migration (`sohamglx/flame`)
+
+- Updated repository links to canonical repository `https://github.com/sohamglx/flame` across:
+  - IDE extension manifest (`ide/package.json`) and documentation (`ide/README.md`)
+  - Documentation social link and config (`docs/astro.config.mjs`)
+  - Installation scripts and documentation (`docs/src/content/docs/getting-started/installation.mdx`, `install.sh`, `install.ps1`, `README.md`)
+  - URL standard library documentation (`docs/src/content/docs/std/net.mdx`)
+  - Cargo manifests (`Cargo.toml`, `macro/Cargo.toml`, `binder/Cargo.toml`)
+
+### 🔍 Diagnostic Deduplication & Array Method Documentation
+
+- **Diagnostic Deduplication**:
+  - Completely resolved compiler issue where type mismatch errors on arguments or closures could be emitted multiple times.
+  - Added file, line, and message deduplication filters in `src/typechecker/helpers.rs`, `src/typechecker/checker.rs`, and `src/cli/ide.rs`.
+- **Standard Library Array Methods & Hover Docs**:
+  - Added full IDE hover documentation, autocompletion signatures, and docs for array methods (`push`, `pop`, `map`, `filter`, `reduce`, `find`, `any`, `all`, `join`, `slice`, `concat`, `reverse`, `clone`, `len`, `clear`).
+  - Registered built-in signatures in AST hover tables and standard library files (`Blaze/std/builtins.fm`, `docs/src/content/docs/language-basics/data-types.mdx`).
+
 ## [0.6.6] - 2026-10-01 (Codename: *Sixth Spark*)
 
 ### 🧬 First-Class Traits & Composition System (`trait`)
