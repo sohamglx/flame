@@ -265,6 +265,12 @@ impl TypeChecker {
 
         match (expected, actual) {
             (Type::Float, Type::Int) => true,
+            (Type::Float, Type::Quantity(_)) => true,
+            (Type::Float, Type::Unit(_)) => true,
+            (Type::Float, Type::Named(n)) if n == "Quantity" || n == "Unit" => true,
+            (Type::Quantity(_), Type::Float) => true,
+            (Type::Unit(_), Type::Float) => true,
+            (Type::Named(n), Type::Float) if n == "Quantity" || n == "Unit" => true,
             (Type::Byte, Type::Int) => true,
             (Type::Int, Type::Byte) => true,
             (Type::Enum(expected_name), Type::EnumVariant { enum_name, .. }) => {

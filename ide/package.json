@@ -86,8 +86,7 @@
           "interface": ["support.type.flame"],
           "typeParameter": ["support.type.flame"],
           "class": ["support.type.flame"],
-          "enumMember": ["constant.language.flame", "variable.other.enummember.flame"],
-          "operator": ["keyword.operator.flame"]
+          "enumMember": ["constant.language.flame", "variable.other.enummember.flame"]
         }
       }
     ],
@@ -124,18 +123,15 @@
           "textMateRules": [
             {
               "scope": [
-                "keyword.operator",
                 "keyword.operator.flame",
                 "keyword.operator.arithmetic.flame",
                 "keyword.operator.comparison.flame",
-                "keyword.operator.assignment.flame",
                 "keyword.operator.assignment.compound.flame",
                 "keyword.operator.logical.flame",
                 "keyword.operator.bitwise.flame",
                 "keyword.operator.bitwise.shift.flame",
                 "keyword.operator.increment.flame",
                 "keyword.operator.decrement.flame",
-                "keyword.operator.arrow.flame",
                 "keyword.operator.arrow.fat.flame",
                 "keyword.operator.pipe.flame",
                 "keyword.operator.range.flame",
@@ -144,13 +140,21 @@
               "settings": {
                 "foreground": "#FF453A"
               }
+            },
+            {
+              "scope": [
+                "punctuation.separator.arrow.flame",
+                "punctuation.definition.tag.flame",
+                "punctuation.definition.typeparameters.begin.flame",
+                "punctuation.definition.typeparameters.end.flame",
+                "punctuation.definition.borrow.flame",
+                "punctuation.separator.assignment.flame"
+              ],
+              "settings": {
+                "foreground": "#E1E4E8"
+              }
             }
           ]
-        },
-        "editor.semanticTokenColorCustomizations": {
-          "rules": {
-            "operator": "#FF453A"
-          }
         }
       }
     }

@@ -10,22 +10,28 @@ import { ExpressiveCodeTheme } from '@expressive-code/core';
 import react from '@astrojs/react';
 
 const operatorScopes = [
-    'keyword.operator',
     'keyword.operator.flame',
     'keyword.operator.arithmetic.flame',
     'keyword.operator.comparison.flame',
-    'keyword.operator.assignment.flame',
     'keyword.operator.assignment.compound.flame',
     'keyword.operator.logical.flame',
     'keyword.operator.bitwise.flame',
     'keyword.operator.bitwise.shift.flame',
     'keyword.operator.increment.flame',
     'keyword.operator.decrement.flame',
-    'keyword.operator.arrow.flame',
     'keyword.operator.arrow.fat.flame',
     'keyword.operator.pipe.flame',
     'keyword.operator.range.flame',
     'keyword.operator.nil.flame'
+];
+
+const whitePunctuationScopes = [
+    'punctuation.separator.arrow.flame',
+    'punctuation.definition.tag.flame',
+    'punctuation.definition.typeparameters.begin.flame',
+    'punctuation.definition.typeparameters.end.flame',
+    'punctuation.definition.borrow.flame',
+    'punctuation.separator.assignment.flame'
 ];
 
 const flameDarkTheme = new ExpressiveCodeTheme({
@@ -37,6 +43,12 @@ const flameDarkTheme = new ExpressiveCodeTheme({
             scope: operatorScopes,
             settings: {
                 foreground: '#FF453A'
+            }
+        },
+        {
+            scope: whitePunctuationScopes,
+            settings: {
+                foreground: '#E1E4E8'
             }
         }
     ]
@@ -51,6 +63,12 @@ const flameLightTheme = new ExpressiveCodeTheme({
             scope: operatorScopes,
             settings: {
                 foreground: '#D73A49'
+            }
+        },
+        {
+            scope: whitePunctuationScopes,
+            settings: {
+                foreground: '#24292E'
             }
         }
     ]
@@ -90,12 +108,37 @@ export default defineConfig({
         },
         expressiveCode: {
             themes: [flameDarkTheme, flameLightTheme],
+            styleOverrides: {
+                codeFontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
+            },
         },
         logo: {
             src: './src/assets/flame.png',
             alt: 'Flame Logo',
         },
         head: [
+            {
+                tag: 'link',
+                attrs: {
+                    rel: 'preconnect',
+                    href: 'https://fonts.googleapis.com',
+                },
+            },
+            {
+                tag: 'link',
+                attrs: {
+                    rel: 'preconnect',
+                    href: 'https://fonts.gstatic.com',
+                    crossorigin: '',
+                },
+            },
+            {
+                tag: 'link',
+                attrs: {
+                    rel: 'stylesheet',
+                    href: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,500&display=swap',
+                },
+            },
             {
                 tag: 'meta',
                 attrs: {

@@ -20,10 +20,19 @@
       "include": "#imports"
     },
     {
+      "include": "#arrow"
+    },
+    {
+      "include": "#borrows"
+    },
+    {
       "include": "#types"
     },
     {
       "include": "#keywords"
+    },
+    {
+      "include": "#assignment"
     },
     {
       "include": "#operators"
@@ -67,6 +76,59 @@
       ]
     },
 
+    "arrow": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.arrow.flame",
+          "match": "->"
+        }
+      ]
+    },
+
+    "assignment": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.assignment.flame",
+          "match": "(?<![=><!~?:&|+\\-*\\/\\^%])=(?![=><!~?:&|+\\-*\\/\\^%])"
+        }
+      ]
+    },
+
+    "borrows": {
+      "patterns": [
+        {
+          "match": "(&)\\s*(mut)\\b",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.borrow.flame"
+            },
+            "2": {
+              "name": "keyword.declaration.flame"
+            }
+          }
+        },
+        {
+          "match": "(&)\\s*(self|Self)\\b",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.borrow.flame"
+            },
+            "2": {
+              "name": "variable.language.flame"
+            }
+          }
+        },
+        {
+          "match": "(&)(?![&=])",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.borrow.flame"
+            }
+          }
+        }
+      ]
+    },
+
     "decorators": {
       "patterns": [
         {
@@ -83,7 +145,7 @@
         },
 
         {
-          "match": "\\b(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s*<\\s*([A-Z][a-zA-Z0-9_]*)\\s*>)?",
+          "match": "\\b(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s*(<)\\s*([A-Za-z0-9_,\\s:]+)\\s*(>))?",
           "captures": {
             "1": {
               "name": "keyword.declaration.flame"
@@ -92,7 +154,13 @@
               "name": "entity.name.function.flame"
             },
             "3": {
+              "name": "punctuation.definition.typeparameters.begin.flame"
+            },
+            "4": {
               "name": "support.type.flame"
+            },
+            "5": {
+              "name": "punctuation.definition.typeparameters.end.flame"
             }
           }
         },
@@ -128,15 +196,48 @@
     "jsx": {
       "patterns": [
         {
+          "include": "#jsx-fragment"
+        },
+        {
           "include": "#jsx-tag-in-expression"
         }
       ]
     },
 
-    "jsx-tag-in-expression": {
-      "begin": "(?<!\\+\\+|--)(?<=[({\\[,?=>:*]|&&|\\|\\||\\?|\\*\\/|^return|\\breturn|^await|\\bawait|^yield|\\byield|^)\\s*(?=(<)\\s*([a-zA-Z_][a-zA-Z0-9_-]*)(?:\\s+|(?=/?>)|>))",
-      "end": "(?!(<)\\s*([a-zA-Z_][a-zA-Z0-9_-]*)(?:\\s+|(?=/?>)|>))",
+    "jsx-fragment": {
       "patterns": [
+        {
+          "match": "(</)\\s*(>)",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.tag.flame"
+            },
+            "2": {
+              "name": "punctuation.definition.tag.flame"
+            }
+          }
+        },
+        {
+          "match": "(<)\\s*(>)",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.tag.flame"
+            },
+            "2": {
+              "name": "punctuation.definition.tag.flame"
+            }
+          }
+        }
+      ]
+    },
+
+    "jsx-tag-in-expression": {
+      "begin": "(?<!\\+\\+|--)(?<=[({\\[,?=>:*]|&&|\\|\\||\\?|\\*\\/|^return|\\breturn|^await|\\bawait|^yield|\\byield|^)\\s*(?=(<)\\s*(?:([a-zA-Z_][a-zA-Z0-9_-]*)|>))",
+      "end": "(?!(<)\\s*(?:([a-zA-Z_][a-zA-Z0-9_-]*)|>))",
+      "patterns": [
+        {
+          "include": "#jsx-fragment"
+        },
         {
           "include": "#jsx-tag"
         }
@@ -200,6 +301,9 @@
     "jsx-children": {
       "patterns": [
         {
+          "include": "#jsx-fragment"
+        },
+        {
           "include": "#jsx-tag"
         },
         {
@@ -260,13 +364,16 @@
           "include": "#strings"
         },
         {
+          "include": "#borrows"
+        },
+        {
+          "include": "#types"
+        },
+        {
           "include": "#keywords"
         },
         {
           "include": "#operators"
-        },
-        {
-          "include": "#types"
         },
         {
           "include": "#numbers"
@@ -275,7 +382,7 @@
           "include": "#identifiers"
         },
         {
-          "include": "#jsx-tag-in-expression"
+          "include": "#jsx"
         }
       ]
     },
@@ -407,7 +514,7 @@
               "name": "support.type.flame"
             },
             "3": {
-              "name": "keyword.operator.assignment.flame"
+              "name": "punctuation.separator.assignment.flame"
             },
             "4": {
               "name": "support.type.flame"
@@ -421,7 +528,7 @@
           }
         },
         {
-          "match": "\\b(struct)\\s+([A-Z][a-zA-Z0-9_]*)(?:\\s*<\\s*([A-Z][a-zA-Z0-9_]*)\\s*>)?",
+          "match": "\\b(struct)\\s+([A-Z][a-zA-Z0-9_]*)(?:\\s*(<)\\s*([A-Za-z0-9_,\\s:&*+]+)\\s*(>))?",
           "captures": {
             "1": {
               "name": "keyword.declaration.flame"
@@ -430,58 +537,95 @@
               "name": "support.type.flame"
             },
             "3": {
-              "name": "support.type.flame"
-            }
-          }
-        },
-        {
-          "match": "\\b(enum)\\s+([A-Z][a-zA-Z0-9_]*)(?:\\s*<\\s*([A-Z][a-zA-Z0-9_]*)\\s*>)?",
-          "captures": {
-            "1": {
-              "name": "keyword.declaration.flame"
-            },
-            "2": {
-              "name": "support.type.flame"
-            },
-            "3": {
-              "name": "support.type.flame"
-            }
-          }
-        },
-        {
-          "match": "\\b(impl)(?:\\s*<\\s*([A-Z][a-zA-Z0-9_]*)\\s*>)?\\s+([A-Z][a-zA-Z0-9_]*)(?:\\s*<\\s*([A-Z][a-zA-Z0-9_]*)\\s*>)?(?:\\s*(:)\\s*([A-Z][a-zA-Z0-9_]*)(?:\\s*(,)\\s*([A-Z][a-zA-Z0-9_]*))*)?",
-          "captures": {
-            "1": {
-              "name": "keyword.declaration.flame"
-            },
-            "2": {
-              "name": "support.type.flame"
-            },
-            "3": {
-              "name": "support.type.flame"
+              "name": "punctuation.definition.typeparameters.begin.flame"
             },
             "4": {
               "name": "support.type.flame"
             },
             "5": {
-              "name": "punctuation.separator.flame"
-            },
-            "6": {
-              "name": "support.type.flame"
-            },
-            "7": {
-              "name": "punctuation.separator.flame"
-            },
-            "8": {
-              "name": "support.type.flame"
+              "name": "punctuation.definition.typeparameters.end.flame"
             }
           }
         },
         {
-          "match": "<\\s*([A-Z][a-zA-Z0-9_]*)\\s*>",
+          "match": "\\b(enum)\\s+([A-Z][a-zA-Z0-9_]*)(?:\\s*(<)\\s*([A-Za-z0-9_,\\s:&*+]+)\\s*(>))?",
           "captures": {
             "1": {
+              "name": "keyword.declaration.flame"
+            },
+            "2": {
               "name": "support.type.flame"
+            },
+            "3": {
+              "name": "punctuation.definition.typeparameters.begin.flame"
+            },
+            "4": {
+              "name": "support.type.flame"
+            },
+            "5": {
+              "name": "punctuation.definition.typeparameters.end.flame"
+            }
+          }
+        },
+        {
+          "match": "\\b(impl)(?:\\s*(<)\\s*([A-Za-z0-9_,\\s:&*+]+)\\s*(>))?\\s+([A-Z][a-zA-Z0-9_]*)(?:\\s*(<)\\s*([A-Za-z0-9_,\\s:&*+]+)\\s*(>))?(?:\\s+(for)\\s+([A-Z][a-zA-Z0-9_]*)(?:\\s*(<)\\s*([A-Za-z0-9_,\\s:&*+]+)\\s*(>))?)?",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.flame"
+            },
+            "2": {
+              "name": "punctuation.definition.typeparameters.begin.flame"
+            },
+            "3": {
+              "name": "support.type.flame"
+            },
+            "4": {
+              "name": "punctuation.definition.typeparameters.end.flame"
+            },
+            "5": {
+              "name": "support.type.flame"
+            },
+            "6": {
+              "name": "punctuation.definition.typeparameters.begin.flame"
+            },
+            "7": {
+              "name": "support.type.flame"
+            },
+            "8": {
+              "name": "punctuation.definition.typeparameters.end.flame"
+            },
+            "9": {
+              "name": "keyword.declaration.flame"
+            },
+            "10": {
+              "name": "support.type.flame"
+            },
+            "11": {
+              "name": "punctuation.definition.typeparameters.begin.flame"
+            },
+            "12": {
+              "name": "support.type.flame"
+            },
+            "13": {
+              "name": "punctuation.definition.typeparameters.end.flame"
+            }
+          }
+        },
+        {
+          "name": "punctuation.separator.arrow.flame",
+          "match": "->"
+        },
+        {
+          "match": "(<)\\s*([A-Za-z0-9_,\\s:&*+]+)\\s*(>)",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.typeparameters.begin.flame"
+            },
+            "2": {
+              "name": "support.type.flame"
+            },
+            "3": {
+              "name": "punctuation.definition.typeparameters.end.flame"
             }
           }
         },
@@ -692,10 +836,6 @@
           "match": "\\.\\."
         },
         {
-          "name": "keyword.operator.arrow.flame",
-          "match": "->"
-        },
-        {
           "name": "keyword.operator.arrow.fat.flame",
           "match": "=>"
         },
@@ -721,7 +861,7 @@
         },
         {
           "name": "keyword.operator.comparison.flame",
-          "match": "===|!==|==|!=|<=|>=|<|>"
+          "match": "===|!==|==|!=|<=|>=|(?<!<)<(?![=>/A-Za-z0-9_])|(?<![<-])>(?![=])"
         },
         {
           "name": "keyword.operator.logical.flame",
@@ -733,15 +873,11 @@
         },
         {
           "name": "keyword.operator.bitwise.flame",
-          "match": "&|\\||\\^|~"
-        },
-        {
-          "name": "keyword.operator.assignment.flame",
-          "match": "="
+          "match": "\\||\\^|~"
         },
         {
           "name": "keyword.operator.arithmetic.flame",
-          "match": "\\+|-|\\*|/|%"
+          "match": "\\+|(?<!-)-(?!>|-|=)|\\*|/|%"
         }
       ]
     }

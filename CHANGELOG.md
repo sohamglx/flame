@@ -2,6 +2,36 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.6.8] - 2026-10-02 (Codename: *Eighth Spark*)
+
+### 📐 Standard Math Library Unit Propagation & Bidirectional Float Interoperability (`std.math`)
+
+- **Dimensional Unit Dimension Propagation**:
+  - **Square Root (`math.sqrt`)**: Accurately infers return unit dimensions by halving unit exponents for dimensional quantities (e.g. `math.sqrt(area)` with `m^2` produces `m`).
+  - **Exponential Power (`math.pow`)**: Accurately handles integer powers of quantities by multiplying unit exponents by the power factor (e.g. `math.pow(length, 3)` with `m` produces `m^3`).
+  - **Unit-Preserving Math Operations**: `math.abs`, `math.min`, `math.max`, `math.round`, `math.floor`, and `math.ceil` now preserve the full unit metadata (`Quantity<dims>` / `Unit<dims>`) instead of discarding dimensions or falling back to raw floats.
+- **Bidirectional Float & Quantity Compatibility**:
+  - Updated `TypeChecker::is_compatible` to support bidirectional compatibility between `Float` and `Quantity<...>` / `Unit<...>`.
+  - Math functions expecting `Float` arguments (such as `math.sin`, `math.cos`, `math.tan`, `math.atan2`, `math.log`, `math.exp`, `math.sqrt`, etc.) now seamlessly accept dimensional `Quantity` and `Unit` values (e.g. angle in degrees/radians, duration in seconds, length in meters) without requiring explicit type casting.
+  - Resolved compiler type-mismatch diagnostics across physics and unit-testing suites (including `examples/ex/tests/test_units.fm`).
+
+### ⚪ Delimiter & Operator Syntax Highlighting Precision (IDE & Documentation)
+
+- **Delimiter Punctuation Isolation**:
+  - Differentiated non-operator syntax and delimiters from active operators to render them in clean, default white (`#E1E4E8` / default foreground) across VS Code / Antigravity IDE and docs:
+    - **Function Return Arrows**: `->` is classified strictly as `punctuation.separator.arrow.flame` (normal white).
+    - **Standard Assignment**: Single `=` is classified as `punctuation.separator.assignment.flame` (normal white), separating it from compound assignment operators (`+=`, `-=`, `*=`, etc.).
+    - **Borrow & Reference Parameters**: Borrows (`&self`, `&mut self`, `&param`, `&mut param`, and `&Type` / `&mut Type`) are classified as `punctuation.definition.borrow.flame` (normal white), while bitwise AND (`a & b`), `&=`, and logical `&&` remain red.
+    - **JSX Fragments & Generics**: `<>`, `</>`, and `<T>` maintain delimiters in normal white.
+- **Operator Highlighting Integrity**:
+  - Maintained vibrant red (`#FF453A`) highlighting for all authentic operators: arithmetic (`+`, `-`, `*`, `/`, `%`), increment/decrement (`++`, `--`), logical (`&&`, `||`, `!`), bitwise/shift (`|`, `^`, `~`, `<<`, `>>`), comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), and lambda/fat arrows (`=>`).
+
+### 🔤 JetBrains Mono Code Block Typography
+
+- **Universal JetBrains Mono Integration**:
+  - Updated documentation (`docs/src/styles/custom.css`, `docs/astro.config.mjs`, `CustomHero.astro`, and `FlamePlayground.tsx`) to strictly use Google Fonts' **JetBrains Mono** font family with typographic ligatures enabled (`calt`, `liga`).
+  - Enforced across all documentation code snippet blocks, Expressive Code frames, inline code snippets, terminal outputs, and Monaco interactive playground editors.
+
 ## [0.6.7] - 2026-10-02 (Codename: *Seventh Spark*)
 
 ### ⚠️ Generic Parameter Bounds Lint & Warning System (`T: String` vs Traits)
@@ -19,30 +49,30 @@ All pre-release versions in the `0.x.x` series carry the official codename **Fla
   - **Non-Blocking Compilation**: Ensures programs compile and execute cleanly with zero friction (`flame run`, `flame build`, and `flame check`) while educating developers on correct trait-based generic contracts.
   - Automatically identifies all primitive types (`Int`, `String`, `Float`, `Bool`, `Array`, `Map`, `Option`, etc.) as well as user-defined `struct` and `enum` types.
 
-### 🔴 Universal Red Operator Highlighting Across IDE & Documentation
+### 🔴 Universal Operator Highlighting & Punctuation Precision Across IDE & Documentation
 
-- **TextMate Syntax Grammar (`flame.tmLanguage.json`)**:
-  - Added a comprehensive `#operators` grammar pattern matching all Flame operators in both the VS Code extension and the documentation syntax engine:
+- **Syntax Delimiter & Operator Separation**:
+  - Refined syntax highlighting rules so that non-operator delimiters and type syntax are rendered in clean, normal white (`#E1E4E8` / default foreground) rather than operator red:
+    - **JSX Fragments**: `<>` and `</>` are classified strictly as tag punctuation (`punctuation.definition.tag.flame`), keeping brackets normal white.
+    - **Generic Type Parameters & Arguments**: `<T>`, `<T, U>`, `<Int>`, `<Array<T>>` keep opening `<` and closing `>` as normal white type delimiters (`punctuation.definition.typeparameters.begin.flame`, `punctuation.definition.typeparameters.end.flame`).
+    - **Return & Function Arrows**: Return arrow `->` is treated strictly as punctuation separator (`punctuation.separator.arrow.flame`), keeping it normal white.
+    - **Standard Assignment**: Single assignment `=` is distinguished from compound assignments and rendered in normal white (`punctuation.separator.assignment.flame`).
+    - **Borrow & Reference Parameters**: Borrows `&self`, `&mut self`, `&param`, `&mut param`, and reference types `&Type`, `&mut Type` are classified as borrow punctuation (`punctuation.definition.borrow.flame`), keeping `&` in normal white while bitwise AND (`a & b`), `&=`, and `&&` stay red.
+- **Vibrant Red Operator Coverage**:
+  - Maintained rich red (`#FF453A`) highlighting across IDE and documentation for all genuine operators:
     - **Arithmetic**: `+`, `-`, `*`, `/`, `%`
     - **Increment & Decrement**: `++`, `--`
     - **Compound Assignment**: `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`
-    - **Assignment**: `=`
     - **Comparison & Relational**: `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`, `>=`
     - **Logical**: `&&`, `||`, `!`, and keyword operators `and`, `or`, `not`
-    - **Bitwise & Shift**: `&`, `|`, `^`, `~`, `<<`, `>>`
+    - **Bitwise & Shift**: `&` (infix binary), `|`, `^`, `~`, `<<`, `>>`
     - **Nil Safety**: `?.`, `?:`
-    - **Arrows & Ranges**: `->`, `=>`, `|>`, `..`, `..=`
+    - **Arrows & Ranges**: `=>` (fat arrow / lambda / match arm), `|>`, `..`, `..=`
 - **VS Code Extension (`flame-language-support-0.3.8`)**:
-  - Added language-specific `configurationDefaults` for `[flame]` in `package.json`, enforcing `#FF453A` (vivid red) for all operator scopes via `editor.tokenColorCustomizations` textMateRules and `editor.semanticTokenColorCustomizations`.
-  - Added `operator` token type to `extension.js` semantic tokens legend and mapped `semanticTokenScopes` operator to `keyword.operator.flame`.
-  - Packaged and published the updated VSIX extension (`flame-language-support-0.3.7.vsix`).
-- **Documentation Styling & Code Blocks (`docs/src/styles/custom.css`, `docs/astro.config.mjs`)**:
-  - Integrated custom Shiki Expressive Code themes enforcing `#FF453A` (dark) and `#D73A49` (light) for all operator scopes across all documentation code snippets.
-  - Added dedicated styling for operator cells in markdown tables (`.sl-markdown-content table td:first-child code`, `td:nth-child(3) code`) featuring red color, subtle red badge backgrounds, and borders.
-  - Added red accent styling for inline operator codes and headings on the Operators & Expressions guide (`/language-basics/operators`).
-- **Interactive Playground (`docs/src/components/FlamePlayground.tsx`)**:
-  - Updated Monaco monarch tokenizer to capture all compound, bitwise, shift, nil-safety, and arrow operators.
-  - Configured Monaco editor theme with bold `#ff453a` foreground for `operator` tokens.
+  - Updated language-specific `configurationDefaults` in `ide/package.json` to enforce `#FF453A` for operator scopes while assigning normal white (`#E1E4E8`) for non-operator punctuation.
+  - Re-packaged and published `flame-language-support-0.3.8.vsix` and synchronized directly to active IDE extensions directory.
+- **Documentation Styling & Interactive Playground (`docs/astro.config.mjs`, `FlamePlayground.tsx`)**:
+  - Updated Shiki Expressive Code themes and Monaco editor monarch tokenizer to classify `->`, `=`, `<>`, `</>`, `<T>`, and borrow `&`/`&mut` as normal white delimiters (`c9d1d9`).
 
 ### 🔗 Canonical Repository URL Migration (`sohamglx/flame`)
 

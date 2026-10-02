@@ -202,12 +202,12 @@ export default function FlamePlayground() {
       ],
       constants: ['true', 'false', 'nil', 'self'],
       operators: [
-        '=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<=', '>>=',
+        '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<=', '>>=',
         '==', '!=', '===', '!==', '<', '<=', '>', '>=',
         '+', '++', '-', '--', '*', '/', '%',
         '&', '|', '^', '~', '<<', '>>',
         '&&', '||', '!', '?.', '?:',
-        '->', '=>', '|>', '..', '..=', '...'
+        '=>', '|>', '..', '..=', '...'
       ],
       tokenizer: {
         root: [
@@ -243,15 +243,38 @@ export default function FlamePlayground() {
             }
           }],
 
-          // Delimiters and operators
+          // Delimiters & Non-Operator Punctuation (Normal White)
           [/[{}()\[\]]/, '@brackets'],
-          [/->|=>|\|>|\.\.=?/, 'operator'],
+          [/->/, 'delimiter'],
+          [/=(?![=><!~?:&|+\-*\/\^%])/, 'delimiter'],
+          [/&(?=\s*mut\b)/, 'delimiter'],
+          [/&(?=\s*(?:self|Self)\b)/, 'delimiter'],
+          [/(?<=[=(,\[{:]|^|\breturn\b|\byield\b|->|<)\s*&(?![&=])/, 'delimiter'],
+          [/<\s*>/, 'delimiter'],
+          [/<\/\s*>/, 'delimiter'],
+          [/<\s*(?=[A-Z][a-zA-Z0-9_,\s:&*+<>]*(?:>|$))/, 'delimiter', '@type_params'],
+
+          // Actual Operators (Red)
+          [/=>|\|>|\.\.=?/, 'operator'],
           [/[=><!~?:&|+\-*\/\^%]+/, {
             cases: {
               '@operators': 'operator',
               '@default': 'operator'
             }
           }],
+        ],
+
+        type_params: [
+          [/[A-Z][a-zA-Z0-9_]*/, 'type'],
+          [/[:,]/, 'delimiter'],
+          [/&(?=\s*mut\b)/, 'delimiter'],
+          [/&/, 'delimiter'],
+          [/\+/, 'delimiter'],
+          [/<\s*(?=[A-Z])/, 'delimiter', '@push'],
+          [/>/, 'delimiter', '@pop'],
+          [/[a-z_][a-zA-Z0-9_]*/, 'identifier'],
+          [/\s+/, 'white'],
+          [/$/, '', '@pop'],
         ],
 
         interpolated_string: [
@@ -653,24 +676,6 @@ export default function FlamePlayground() {
         let word = model.getWordAtPosition(position);
         const lineContent = model.getLineContent(position.lineNumber);
 
-        // Check if hovering directly on '@'
-        if (!word) {
-          if (lineContent.charAt(position.column - 1) === '@') {
-            const nextWord = model.getWordAtPosition({ lineNumber: position.lineNumber, column: position.column + 1 });
-            if (nextWord) {
-              const doc = HOVERS['@' + nextWord.word] || HOVERS[nextWord.word];
-              if (doc) return { contents: [{ value: doc }] };
-            }
-          }
-          return null;
-        }
-
-        const textBefore = lineContent.substring(0, word.startColumn - 1);
-        const dotMatch = textBefore.match(/([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\.$/);
-        const prefix = dotMatch ? dotMatch[1] : '';
-        const qualifiedName = prefix ? `${prefix}.${word.word}` : word.word;
-        const shortQualified = prefix.startsWith('std.') ? `${prefix.substring(4)}.${word.word}` : qualifiedName;
-
         const HOVERS: Record<string, string> = {
           '@Application': '```flame\nannotation @Application(features: ["String"])\n```\n**Application Entry Point**\n\nMarks this function as the application\'s entry point. The function is invoked automatically when the program starts.',
           Application: '```flame\nannotation @Application(features: ["String"])\n```\n**Application Entry Point**\n\nMarks this function as the application\'s entry point. The function is invoked automatically when the program starts.',
@@ -738,6 +743,26 @@ export default function FlamePlayground() {
           Window: '**Window**\n\nDesktop operating system window reference with properties like `title`, `appName`, `pid`, `bounds`.',
           Element: '**Element**\n\nWeb DOM element reference.',
         };
+
+        // Check if hovering directly on '@'
+        if (!word) {
+          if (lineContent.charAt(position.column - 1) === '@') {
+            const nextWord = model.getWordAtPosition({ lineNumber: position.lineNumber, column: position.column + 1 });
+            if (nextWord) {
+              const doc = HOVERS['@' + nextWord.word] || HOVERS[nextWord.word];
+              if (doc) return { contents: [{ value: doc }] };
+            }
+          }
+          return null;
+        }
+
+        const textBefore = lineContent.substring(0, word.startColumn - 1);
+        const dotMatch = textBefore.match(/([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\.$/);
+        const prefix = dotMatch ? dotMatch[1] : '';
+        const qualifiedName = prefix ? `${prefix}.${word.word}` : word.word;
+        const shortQualified = prefix.startsWith('std.') ? `${prefix.substring(4)}.${word.word}` : qualifiedName;
+
+
 
         const doc = STD_HOVERS[qualifiedName]
           || (shortQualified !== qualifiedName && STD_HOVERS[shortQualified])

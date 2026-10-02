@@ -1805,6 +1805,59 @@ impl TypeChecker {
                 }
             }
 
+            // Propagate unit dimensions for math functions
+            if let Expr::Dot(inner, member, _) = callee {
+                if let Expr::Identifier(mod_name, _) = &**inner {
+                    if mod_name == "math" {
+                        match member.as_str() {
+                            "sqrt" => {
+                                if let Some((_, arg)) = args.first() {
+                                    let ty = self.infer_expr_type(arg);
+                                    if let Type::Quantity(dims) | Type::Unit(dims) = ty {
+                                        let mut new_dims = HashMap::new();
+                                        for (u, p) in dims {
+                                            if p / 2 != 0 {
+                                                new_dims.insert(u, p / 2);
+                                            }
+                                        }
+                                        return Type::Quantity(new_dims);
+                                    }
+                                }
+                            }
+                            "abs" | "min" | "max" | "round" | "floor" | "ceil" => {
+                                if let Some((_, arg)) = args.first() {
+                                    let ty = self.infer_expr_type(arg);
+                                    if matches!(ty, Type::Quantity(_) | Type::Unit(_)) {
+                                        return ty;
+                                    }
+                                }
+                            }
+                            "pow" => {
+                                if let Some((_, base_arg)) = args.first() {
+                                    let base_ty = self.infer_expr_type(base_arg);
+                                    if let (Type::Quantity(dims) | Type::Unit(dims), Some((_, exp_arg))) = (base_ty, args.get(1)) {
+                                        let exp_val = match exp_arg {
+                                            Expr::Literal(LiteralValue::Int(v), _) => Some(*v as i32),
+                                            _ => None,
+                                        };
+                                        if let Some(exp) = exp_val {
+                                            let mut new_dims = HashMap::new();
+                                            for (u, p) in dims {
+                                                if p * exp != 0 {
+                                                    new_dims.insert(u, p * exp);
+                                                }
+                                            }
+                                            return Type::Quantity(new_dims);
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
             return *ret.clone();
         }
 
