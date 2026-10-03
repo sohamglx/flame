@@ -5,22 +5,23 @@ description: Asynchronous concurrency on multi-threaded Tokio worker pools, lazy
 
 import { Aside, Tabs, TabItem, Card, CardGrid } from '@astrojs/starlight/components';
 
-Flame provides a high-performance asynchronous execution runtime designed specifically for high-concurrency non-blocking I/O operations—such as handling thousands of incoming HTTP requests, database queries, and socket streams—without sacrificing multi-core CPU utilization.
+Flame provides an asynchronous programming model designed for non-blocking I/O operations—such as network requests, file access, and socket streams—powered under the hood by Rust's multi-threaded Tokio runtime.
 
 ---
 
-## Tokio Worker Pools vs. Single-Thread Loops
+## The Asynchronous Execution Model
 
-Unlike legacy runtimes (such as Node.js) that bottleneck asynchronous I/O onto a single thread, Flame executes asynchronous tasks across **Rust's native multi-threaded Tokio worker pools**.
+Flame integrates asynchronous non-blocking I/O with a multi-threaded task scheduler:
 
-- **Multi-Core Concurrency**: Asynchronous tasks are scheduled dynamically across all physical CPU cores.
-- **Deterministic State**: Worker threads process sockets in parallel and deliver structured event payloads over lock-free memory channels to Flame's execution engine.
+- **Non-Blocking Tasks**: Asynchronous tasks yield control during waiting periods (such as awaiting a remote HTTP response or socket readiness), allowing the underlying Tokio worker threads to process other tasks concurrently.
+- **Multi-Threaded Runtime**: Tasks are scheduled across Tokio's multi-threaded worker pool, distributing I/O event processing across available CPU cores.
+- **Prefix `await`**: Unlike Rust's postfix `.await`, Flame places `await` as a prefix operator before the expression (similar to JavaScript, Python, or C#).
 
 ---
 
 ## Anatomy of `async` and `await`
 
-When you define an `async fn`, it returns a **lazy future**:
+When you define an `async fn`, it returns a **lazy future** (represented in Flame as a `Promise`):
 
 ```flame
 async fn fetch_user_data(user_id: Int) -> String {
@@ -33,18 +34,18 @@ async fn fetch_user_data(user_id: Int) -> String {
 In Flame, `await` is a **prefix operator** (e.g., `let res = await task`), placed *before* the expression, unlike Rust's postfix `.await`.
 </Aside>
 
-### How `await` Executes Under the Hood:
-1. **Task Suspension Without Thread Blocking**: The OS thread is never locked. The future state machine simply pauses.
-2. **Worker Hand-off**: The underlying Tokio worker immediately handles other concurrent requests.
-3. **Reactive Wakeup**: When incoming I/O packets arrive, the OS interrupt reactively wakes the task and resumes execution right past the `await` boundary.
+### How `await` Executes:
+1. **Task Suspension**: When an asynchronous operation is awaited, the task yields execution without blocking the underlying OS thread.
+2. **Worker Scheduling**: While the task is awaiting I/O readiness, the runtime worker thread is free to drive other tasks forward.
+3. **Resumption**: Once the awaited future completes or data arrives, the scheduler reactively resumes the task immediately following the `await` boundary.
 
 ### The `Promise` Type
 In Flame, whenever you call an `async fn` or an asynchronous network module (like `http.get`), it does not immediately return the result. Instead, it returns a **`Promise`**.
 
-A `Promise` (often known as a *Future* in Rust) is a lightweight handle representing a value that will become available later once the background non-blocking task completes.
+A `Promise` (similar to a *Future* in Rust) is a handle representing a value that will become available once the background non-blocking operation completes.
 
-- You **cannot** access data properties directly from a `Promise`.
-- The **only** way to extract the concrete inner value from a `Promise` is by prefixing it with the `await` keyword.
+- You **cannot** access data properties directly from an unawaited `Promise`.
+- The concrete value is extracted by prefixing the promise expression with the `await` keyword.
 
 ---
 

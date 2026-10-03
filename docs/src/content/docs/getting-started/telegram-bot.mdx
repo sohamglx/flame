@@ -43,13 +43,13 @@ Before starting, ensure you have:
    Add `flamer` as a dependency by using the `flame add` command:
    
    ```powershell
-   fmp add https://github.com/shoya-129/flamer
+   fmp add https://github.com/sohamglx/flamer
    ```
    
    Alternatively, manually add it to your `flame.toml`:
    ```toml
    [dependencies]
-   flamer = "https://github.com/shoya-129/flamer"
+   flamer = "https://github.com/sohamglx/flamer"
    ```
 
 3. ### Setup the Application Entry Point
@@ -153,4 +153,5 @@ Before starting, ensure you have:
 </Steps>
 
 ## Congratulations!
-You've successfully built a concurrent, native-speed Telegram Bot using Flame. Because Flame integrates with standard asynchronous paradigms (`tokio` under the hood) and native non-blocking HTTP clients, your webhook handler easily handles thousands of concurrent requests natively without skipping a beat!
+
+You've now built a concurrent Telegram bot using Flame's native execution and asynchronous networking. Flame integrates with standard asynchronous paradigms (`tokio` under the hood) and native non-blocking HTTP clients, making it straightforward to handle concurrent webhooks and build reliable services.

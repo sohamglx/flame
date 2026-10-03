@@ -19,29 +19,56 @@ This document provides a comprehensive architectural analysis of Flame's compila
 >
 > Normal builds use the real filesystem. VFS is used only when the developer explicitly requests a self-contained single executable.
 
+<Aside type="note" title="What 'Runtime' Means in Flame">
+**Flame does not use a traditional bytecode VM or universal interpreter. “Runtime” refers to the native runtime components required by the application, which are compiled into the final native binary.**
+</Aside>
+
+### What Flame Is vs. What Flame Isn't
+
+Before diving into the compiler architecture, it is helpful to establish clear technical boundaries:
+
+| What Flame Is | What Flame Isn't |
+| :--- | :--- |
+| **A simpler, type-safe language built to work alongside Rust** | **Not a Rust replacement** (not meant for kernel-level or micro-optimized low-level systems) |
+| **A tool for high developer velocity, application logic, and scripting** | **Not a source-to-source Rust transpiler** |
+| **Specialized native runtime via Blaze dependency analysis** | **Not a universal bytecode VM or monolithic interpreter** (like Node.js, Python, or the JVM) |
+| **Deterministic memory safety via ownership, borrows, and references** | **Not a garbage-collected language** (no GC pauses or runtime sweeps) |
+| **Smart ABI plugin system (`.fmi`) for direct Rust interop** | **Not claiming unqualified "zero-cost" interop** without context |
+| **Leverages Rust, Cargo, and LLVM for native code generation** | **Not claiming to magically outperform hand-written Rust** |
+| **Super embeddable into existing Rust codebases** via `flamebinder` | **Not an isolated language silo** |
+
 ---
 
 ## 1. Application-Specific Runtime
 
 Flame is a **compiled language with application-specific native runtimes**. Rather than requiring a large, universal runtime that contains every language feature, standard library module, and package, Flame generates and configures a **tailored native runtime for each individual application**.
 
+Flame was built around a practical reality: **maintaining a massive, monolithic Rust codebase can be difficult and slow down iteration**. Writing high-level business logic, glue code, dynamic configurations, or scripting in low-level Rust often leads to borrow-checker friction and lengthy compilation cycles for simple tasks. Flame allows teams to write core systems and performance primitives in Rust, and use Flame for simpler application layers, glue code, and rapid scripting.
+
 The central compilation and runtime architecture operates as follows:
 
 ```text
-Flame Source
-     ↓
-   Blaze
-     ↓
-Dependency Analysis
-     ↓
-Application-Specific Runtime
-     ↓
-Rust / Cargo
-     ↓
-LLVM
-     ↓
-Native Binary
+             Flame source
+                  ↓
+                Blaze
+                  ↓
+          Dependency analysis
+                  ↓
+     ┌─────────────────────────┐
+     │ Application-specific    │
+     │ native runtime          │
+     │                         │
+     │ only required pieces    │
+     └─────────────────────────┘
+                  ↓
+             Rust / Cargo
+                  ↓
+                LLVM
+                  ↓
+            Native binary
 ```
+
+> **Flame analyzes the application's dependency graph, constructs a runtime containing the required native components, and builds that runtime into the application's native binary through Rust/Cargo/LLVM.**
 
 ### Dependency-Aware Runtime Construction
 
@@ -122,10 +149,10 @@ LLVM
 Native Machine Code
 ```
 
-This architecture means that Flame applications are **not** interpreted by a large generic runtime engine implemented as a slow scripting language loop. Instead:
-- The runtime is native and optimized specifically for the application's requirements.
-- The native Rust/Cargo/LLVM toolchain applies aggressive compiler passes: vectorization, instruction inlining, dead-code elimination, and fat Link-Time Optimization (`lto = "fat"`).
-- By avoiding unnecessary runtime components, Flame maximizes CPU cache locality and eliminates runtime dispatch overhead.
+**Flame does not rely on a universal bytecode interpreter or VM for application execution. The required runtime components are compiled into the native application.** Instead:
+- The runtime is native and specialized specifically for the application's requirements.
+- The native Rust/Cargo/LLVM toolchain applies compiler optimizations: dead-code elimination, inlining, and Link-Time Optimization (`lto = "fat"`).
+- By avoiding unnecessary runtime components, Flame keeps binaries lean, avoids universal VM initialization delays, and statically links native Rust plugins and Smart ABI bindings at compile time.
 
 <Aside type="note" title="Performance Reality">
 This architecture does not make Flame magically faster than every other language, but it guarantees that Flame avoids the bloat, initialization lag, and memory overhead of generic runtimes while letting LLVM generate optimal native machine instructions.
@@ -133,11 +160,16 @@ This architecture does not make Flame magically faster than every other language
 
 ---
 
-## 4. Native Rust Plugins
+## 4. Smart ABI Plugin System & Native Rust Interop
 
-Native Rust plugins are first-class citizens in Flame's runtime architecture. However, native Rust implementations are incorporated **only when required by the application's dependency graph**.
+Native Rust plugins and crates are first-class citizens in Flame's runtime architecture. Flame uses a **Smart ABI plugin system** powered by `.fmi` (Flame Module Interface) metadata to bridge Flame and Rust.
 
-Application developers **do not manually manage, assemble, or copy Rust plugin source code** into their applications:
+Flame was specifically designed to **work alongside Rust, not replace it**:
+- Maintaining a large codebase purely in Rust can become cumbersome when managing frequent changes to high-level application flows, web routing, or scripting hooks.
+- With Flame, you keep your high-performance engines, low-level data structures, and hardware interfaces in Rust crates or plugins, and wire them together using Flame's simpler, type-safe syntax.
+- The Smart ABI system allows Flame code to call native Rust functions, construct structs, and pass data across the plugin boundary using declared `.fmi` interface contracts.
+
+Native Rust implementations are incorporated **only when required by the application's dependency graph**:
 
 ```text
 Application
@@ -405,18 +437,16 @@ Developers never need to manually write Cargo files, copy Rust plugin source, or
 
 ## 13. Important Terminology
 
-To maintain clarity across documentation and tools, Flame uses the following canonical terminology:
+To maintain clarity across documentation, community discussions, and tools, Flame uses the following canonical terminology:
 
-| Prefer | Avoid / Inaccurate |
-| :--- | :--- |
-| **Application-Specific Runtime** | Universal runtime / Monolithic VM |
-| **Specialized Native Runtime** | Rust source-to-source transpiler |
-| **Dependency-Specific Runtime** | Large scripting language engine |
-| **Runtime Specialization** | Universal interpreter |
-| **Native Rust Runtime** | Pure bytecode VM |
-| **`.fmi` Interface Metadata** | Raw Rust source dependency |
-| **Normal Build** (Real Filesystem) | VFS-based runtime |
-| **Single Executable** (Embedded VFS) | Normal build with VFS |
+| Prefer | Avoid / Inaccurate | Why |
+| :--- | :--- | :--- |
+| **Application-Specific Runtime** | Universal runtime / Monolithic VM | Flame constructs a specialized native runtime with only the modules and plugins your app imports; it does not ship a large, generic interpreter engine. |
+| **Specialized Native Runtime** | Rust source-to-source transpiler | Blaze analyzes dependencies and orchestrates the native build pipeline via Cargo/LLVM rather than simply emitting raw `.rs` files for the user to compile. |
+| **Smart ABI Interface Metadata (`.fmi`)** | Raw Rust source dependency | Application developers consume typed `.fmi` contracts and interface definitions without having to manually copy or manage Rust crate trees. |
+| **Native Execution via LLVM** | Pure bytecode VM | Application execution occurs through native binaries compiled by Cargo and LLVM, rather than a generic bytecode VM interpreter loop. |
+| **Normal Build** (Real Filesystem) | VFS-based runtime | Normal builds (`fmp build` / `fmp build --release`) interact directly with the real host filesystem. |
+| **Single Executable** (Embedded VFS) | Normal build with VFS | VFS is an optional packaging mechanism used only when `--exe` or `--vfs` is explicitly requested. |
 
 ### The Central Architectural Distinction
 
@@ -458,8 +488,8 @@ Flame **does not have a garbage collector (GC)**. There are no stop-the-world pa
 </Aside>
 
 1. **Single Ownership**: Each allocated value has a single owning binding. When the owner exits its lexical scope, its resources are dropped immediately.
-2. **Borrow Checking**: Values can be borrowed immutably (`&T`) or mutably (`&mut T`). Concurrency boundaries enforce snapshot isolation (`Arc<Env>`), guaranteeing that pointer invalidation cannot occur.
-3. **Data-Race Free Concurrency**: Concurrency boundaries enforce isolated execution contexts, making data races impossible at compile time.
+2. **Borrow Checking**: Values can be borrowed immutably (`&T`) or mutably (`&mut T`). Concurrency boundaries enforce snapshot isolation (`Arc<Env>`), preventing pointer invalidation across execution contexts.
+3. **Data-Race Free Concurrency**: Concurrency boundaries enforce isolated execution contexts, preventing shared mutable data races across thread boundaries.
 
 ---
 

@@ -3,7 +3,7 @@ title: Flame Programming Language
 description: A fast, safe, and modern systems language powered by it's Blaze compiler that natively compiles Rust code.
 template: splash
 hero:
-  tagline: A fast, statically typed systems programming language with zero-cost Rust interop, native test runner, memory safety without GC, and tailored runtimes.
+  tagline: A type-safe language built to work alongside Rust — featuring Smart ABI interop, memory safety without GC, and application-specific native runtimes.
   actions:
     - text: Get Started
       link: /getting-started/introduction/
@@ -26,13 +26,13 @@ import { Trash2, Puzzle, Cpu, CheckCircle2, ShieldCheck, Box, Zap, Server } from
 ## Why Flame?
 
 <CardGrid>
-	<LucideCard title="Zero-Overhead Rust Interoperability">
+	<LucideCard title="Smart ABI Rust Interoperability">
 		<Puzzle slot="icon" />
-		Import any Rust crate directly in `flame.toml` with `import native.uuid` or `import native.axum`. Statically linked with zero FFI overhead.
+		Built to work alongside Rust. Import native crates or custom plugins directly with `import native.uuid` using Flame's typed Smart ABI.
 	</LucideCard>
 	<LucideCard title="No Garbage Collector, Pure Safety">
 		<Trash2 slot="icon" />
-		Rust-style Ownership and Borrowing system guarantees memory safety and data-race prevention at compile time with zero GC pauses.
+		Rust-style ownership and borrowing checks provide deterministic memory safety and data-race prevention without garbage collection pauses.
 	</LucideCard>
 	<LucideCard title="True Multithreaded Concurrency">
 		<Cpu slot="icon" />
@@ -40,7 +40,7 @@ import { Trash2, Puzzle, Cpu, CheckCircle2, ShieldCheck, Box, Zap, Server } from
 	</LucideCard>
 	<LucideCard title="Integrated Native Test Runner">
 		<CheckCircle2 slot="icon" />
-		PascalCase annotations like `@Test`, `@Setup`, `@Cleanup`, and `@Parameterized` with zero-cost production stripping during release builds.
+		PascalCase annotations like `@Test`, `@Setup`, `@Cleanup`, and `@Parameterized` with automatic stripping during release builds.
 	</LucideCard>
 </CardGrid>
 

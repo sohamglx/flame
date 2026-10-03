@@ -1,108 +1,168 @@
 ---
 title: Introduction to Flame
-description: Overview, core principles, and feature tour of the Flame programming language.
+description: Overview, core principles, feature tour, and the vision behind the Flame programming language.
 ---
 
 import { Aside, CardGrid, Tabs, TabItem, Badge } from '@astrojs/starlight/components';
 import LucideCard from '../../../components/LucideCard.astro';
-import { Trash2, Zap, Rocket, Code2 } from 'lucide-astro';
+import { Trash2, Zap, Rocket, Code2, ShieldCheck, Puzzle, Layers, Cpu } from 'lucide-astro';
 
 # What is Flame?
 
-**Flame** is a fast, safe, and modern systems programming language powered by the **Blaze compiler and VM**. It combines the ergonomics, expressive syntax, and developer velocity of modern scripting languages with the raw performance, deterministic memory management, and static safety of Rust.
+**Flame** is a type-safe, simpler programming and scripting language built to **work alongside Rust, not replace it**.
+
+Powered by the **Blaze compiler**, Flame combines the developer velocity, expressive syntax, and ergonomics of high-level scripting languages with the deterministic memory safety, ownership concepts, and native execution of the Rust ecosystem.
 
 ---
 
-## Core Philosophy
+## The Vision: Built to Work Alongside Rust
 
-Flame was built around the principle: **"Don't reinvent the wheel; just use Rust's."**
+Maintaining a large, monolithic Rust codebase is notoriously demanding. While Rust is unmatched for low-level systems programming, writing high-level application logic, glue code, rapid prototypes, dynamic configurations, or scripting in low-level Rust often introduces significant friction:
+- Steep compile times and frequent linking overhead.
+- Borrow checker battles for straightforward, high-level business tasks.
+- Heavy boilerplate for simple data manipulation and glue workflows.
 
-Instead of forcing developers to use a universal monolithic runtime containing every feature and package, Flame generates an **application-specific native runtime** for each project. When you declare dependencies in your project manifest (`flame.toml`), Flame resolves `.fmi` interface metadata, analyzes your imports, and configures a minimal, specialized runtime containing only what your application actually needs. The resulting runtime is built through Rust, Cargo, and LLVM into an optimized native executable.
+**Flame was created to solve this challenge:**
+
+> **Keep your core performance algorithms, hardware drivers, and low-level primitives in Rust. Use Flame for simpler application layers, rapid prototyping, and scripting where you need simplicity and developer velocity.**
+
+Flame adopts a Rust-inspired object model and type system:
+- **Familiar OOP**: Defines types using `struct` and methods using `impl`, with explicit `&self` receivers.
+- **Borrowing & References**: Employs compile-time ownership, borrowing, and reference checks inspired by Rust, avoiding the latency spikes of a garbage collector (GC).
+- **Super Embeddable**: Embed Flame scripts or complete packages directly into Rust host applications, game engines, and microservices using the `flamebinder` crate.
+- **Batteries-Included Standard Library**: Provides rich, out-of-the-box standard library modules (`std.fs`, `std.net.http`, `std.json`, `std.thread`) so you can build real-world applications without hunting down dozens of external crates.
 
 ---
 
-## Key Highlights
+## What Flame Is vs. What Flame Isn't
+
+To prevent misconceptions, here is how Flame is designed:
+
+| What Flame Is | What Flame Isn't |
+| :--- | :--- |
+| **A simpler, type-safe language built to work alongside Rust** | **Not a Rust replacement** (not meant for kernel-level or micro-optimized low-level systems) |
+| **Connected via a typed Smart ABI plugin system (`.fmi`)** | **Not claiming unqualified "zero-cost" interop** (FFI is statically linked and typed, but FFI boundaries exist) |
+| **Memory-safe via ownership, borrows, and references** | **Not a garbage-collected language** (no GC runtime, no stop-the-world pauses) |
+| **Constructs application-specific native runtimes** | **Not a universal bytecode VM or monolithic interpreter** (like Node.js, Python, or the JVM) |
+| **Uses Rust, Cargo, and LLVM as its native build pipeline** | **Not a source-to-source Rust transpiler** |
+| **Super embeddable into Rust applications** via `flamebinder` | **Not an isolated language silo** (designed for seamless multi-language cooperation) |
+| **Rich standard library** for real-world tasks | **Not an MVP without real-world libraries** (includes HTTP, JSON, FS, threads, and async) |
+
+<Aside type="note" title="What Does 'Runtime' Mean in Flame?">
+**Flame does not use a traditional bytecode VM or universal interpreter.** 
+
+In Flame, "runtime" refers to the **application-specific native runtime components** required by the application. Blaze analyzes your dependencies and compiles only the necessary native components directly into the final native binary through Rust, Cargo, and LLVM.
+</Aside>
+
+---
+
+## Core Pillars
 
 <CardGrid>
-  <LucideCard title="Specialized Native Runtime">
-    <Zap slot="icon" />
-    Tailored native execution containing only imported packages and native plugins. Zero universal runtime bloat.
+  <LucideCard title="Built Alongside Rust">
+    <Puzzle slot="icon" />
+    Complement Rust codebases. Keep complex systems in Rust, and use Flame for rapid application code, glue logic, and scripting.
   </LucideCard>
-  <LucideCard title="No Garbage Collector">
+  <LucideCard title="Smart ABI Plugin System">
+    <ShieldCheck slot="icon" />
+    Directly call native Rust crates and plugins using `.fmi` interface contracts. The Smart ABI system allows Flame to consume native Rust types and functions using structured interface metadata.
+  </LucideCard>
+  <LucideCard title="Deterministic Memory Safety">
     <Trash2 slot="icon" />
-    Compile-time ownership and borrow checking guarantees memory safety with zero runtime stutters or GC pause spikes.
+    Provides compile-time ownership, borrowing, and reference checks without the latency spikes or memory overhead of a garbage collector.
   </LucideCard>
-  <LucideCard title="Native Tokio & Multi-Core Threads">
-    <Rocket slot="icon" />
-    Combines asynchronous non-blocking I/O (`async`/`await`) with dedicated multi-core OS worker threads (`thread { ... }`).
-  </LucideCard>
-  <LucideCard title="First-Class IDE Intellisense">
+  <LucideCard title="Super Embeddable">
     <Code2 slot="icon" />
-    Automatic `.fmi` interface metadata generation powers VS Code autocomplete and hover documentation directly from dependencies.
+    Embed Flame scripts or entire packages directly into Rust host applications, game engines, and tools using the `flamebinder` crate.
   </LucideCard>
 </CardGrid>
 
-## Execution Model: Top-Level Execution
+---
 
-<Aside type="tip" title="No Automatic main() Invocation">
-Like **JavaScript and Python**, Flame executes code sequentially from top to bottom. There is **no automatic `main()` function magic**!
-- If you write statements directly at the top level, they execute immediately when the script runs.
-- If you define a `fn main() { ... }`, the compiler **will not** automatically invoke it. You must explicitly call `main()` or run statements at the top level.
-</Aside>
+## The Compilation Pipeline
+
+Instead of bundling a large, one-size-fits-all runtime engine, Flame builds an **application-specific native runtime** tailored to your project's exact dependency graph:
+
+```text
+             Flame source
+                  ↓
+                Blaze
+                  ↓
+          Dependency analysis
+                  ↓
+     ┌─────────────────────────┐
+     │ Application-specific    │
+     │ native runtime          │
+     │                         │
+     │ only required pieces    │
+     └─────────────────────────┘
+                  ↓
+             Rust / Cargo
+                  ↓
+                LLVM
+                  ↓
+            Native binary
+```
+
+Flame analyzes your application's imports, resolves the required `.fmi` interface contracts, extracts only the necessary native subsystems, and builds the specialized executable using Rust, Cargo, and LLVM.
 
 ---
 
 ## Language at a Glance
 
-Here is a quick overview of Flame's syntax and core features:
+Flame's syntax feels immediately familiar to Rust programmers, while offering the swift expressiveness of a modern scripting language:
 
 ```flame
 import std.fs
+import std.net.http
 import native.uuid
 
-// 1. Struct and Impl definition
-struct ServerConfig {
+// 1. Rust-style Struct and Impl definitions
+struct ServiceConfig {
     host: String,
     port: Int,
-    enabled: Bool
+    debug: Bool
 }
 
-impl ServerConfig {
-    fn new(host: String, port: Int) -> ServerConfig {
-        return ServerConfig {
+impl ServiceConfig {
+    // Static constructor
+    fn new(host: String, port: Int) -> ServiceConfig {
+        return ServiceConfig {
             host: host,
             port: port,
-            enabled: true
+            debug: false
         }
     }
 
-    fn describe(&self) -> String {
-        return $"Server listening on {self.host}:{self.port}"
+    // Method receiver with borrowed self
+    fn address(&self) -> String {
+        return $"{self.host}:{self.port}"
     }
 }
 
-// 2. Direct Top-Level Execution
-let config = ServerConfig.new("127.0.0.1", 8080)
-print(config.describe())
+// 2. Direct Top-Level Execution (no main boilerplate required)
+let config = ServiceConfig.new("127.0.0.1", 8080)
+println($"Starting service on http://{config.address()}")
 
-// Direct Rust crate usage
-let session_id = uuid.new_v4()
-print($"Session ID: {session_id}")
+// 3. Smart ABI: Call Rust crate directly
+let request_id = uuid.new_v4()
+println($"Request ID: {request_id}")
 
-// Map-like formula literals
-let response = formula {
+// 4. Lightweight formula literals (maps / records)
+let payload = formula {
+    id: request_id,
     status: 200,
-    ok: true,
-    data: ["items", "users"]
+    endpoints: ["/api/v1", "/health"]
 }
-print(response.toString())
+println(payload.toString())
 ```
 
 ---
 
+
 ## Next Steps
 
-- Follow the [Installation & Toolchain Guide](/getting-started/installation/) to setup Flame on your machine.
-- Read [Architecture & Analysis](/getting-started/architecture/) to learn how Flame achieves native speed and safety.
-- Explore [Language Basics](/language-basics/variables/) to start coding.
-
+- Follow the [Installation & Toolchain Guide](/getting-started/installation/) to install Flame and the Blaze compiler.
+- Read [Architecture & Analysis](/getting-started/architecture/) for an in-depth analysis of Flame's compilation model and runtime construction.
+- Learn about [Flame Binder (Rust Integration)](/packages-and-native/rust-integration/) to embed Flame into your Rust projects.
+- Explore [Native Plugins & Advanced FFI](/packages-and-native/native-plugins/) to write custom Rust extensions with Smart ABI.

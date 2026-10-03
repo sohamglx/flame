@@ -7,7 +7,13 @@ import { Aside, Steps, Tabs, TabItem, CardGrid } from '@astrojs/starlight/compon
 import LucideCard from '../../../components/LucideCard.astro';
 import { Box, Server, ShieldCheck, Zap } from 'lucide-astro';
 
-Flame's **application-specific native runtime** architecture enables lean, secure, and ultra-fast production deployments. Because the specialized runtime binary compiled by `flame build --release` already contains all native Rust plugins (such as `flamer`) and required runtime capabilities, **your production runtime container does not require Rust, Cargo, or any `.rs` source code**.
+Flame's **application-specific native runtime** architecture enables lean, secure, and fast production deployments. Flame uses standard multi-stage builds:
+- In the **builder stage**, Cargo and LLVM compile the application-specific native runtime binary containing all required native Rust plugins (such as `flamer`) and runtime subsystems.
+- In the **runner stage**, only the compiled native binary, the Flame application files, and `.flame/pkg/` (`.fm` source and `.fmi` interfaces) are included. **The production runner container does not need Rust, Cargo, or any `.rs` source code.**
+
+<Aside type="note" title="Multi-Stage Build Reality">
+Flame does not bypass Cargo for compilation—it relies on Cargo and LLVM during the build stage to generate an optimized native binary. The key benefit is that your production runtime container stays minimal and hardened, without needing the Rust compiler or build toolchain in production.
+</Aside>
 
 ---
 
@@ -27,7 +33,7 @@ Produces specialized native binary in target/release/my_server
 
 ──────────────────────────────────────────────────────────────
 
-Runner Stage (Production Container / Minimal VM)
+Runner Stage (Production Container)
 ├── my_server (Specialized Native Runtime Binary)
 ├── flame.toml
 ├── src/
@@ -53,7 +59,7 @@ name = "flame_server"
 version = "0.1.0"
 
 [dependencies]
-flamer = "https://github.com/shoya-129/flamer"
+flamer = "https://github.com/sohamglx/flamer"
 ```
 
 ### 2. Application Entry Point (`src/main.fm`)
@@ -191,7 +197,7 @@ curl http://localhost:8080/health
   </LucideCard>
   <LucideCard title="Minimal Image Size">
     <Box slot="icon" />
-    By excluding compilation tools and unused standard libraries, runner containers typically stay under 80MB.
+    By excluding compilation tools and unused standard libraries. Docker image size stay minimal.
   </LucideCard>
   <LucideCard title="Instant Boot Time">
     <Zap slot="icon" />

@@ -56,10 +56,6 @@ pub fn build_project(
         }
     }
 
-    if std::path::Path::new("/home/spidey/Projects/flame/Cargo.toml").exists() {
-        is_local_dev = true;
-        flame_source_dir = std::path::PathBuf::from("/home/spidey/Projects/flame");
-    }
     if let Ok(dev_path) = std::env::var("FLAME_DEV_PATH") {
         is_local_dev = true;
         flame_source_dir = std::path::PathBuf::from(dev_path);
@@ -702,11 +698,13 @@ panic = "abort"
             collect_vfs(&pkg_dir, &mut main_rs, &pkg_dir, ".flame/pkg");
         }
 
-        main_rs.push_str("    let mut base_runner = Runner::new(PathBuf::from(\"src/main.fm\"));\n");
+        main_rs
+            .push_str("    let mut base_runner = Runner::new(PathBuf::from(\"src/main.fm\"));\n");
         main_rs.push_str("    base_runner.vfs = Some(vfs);\n");
     } else {
         // Normal builds operate directly on the real filesystem without embedding VFS
-        main_rs.push_str("    let mut base_runner = Runner::new(PathBuf::from(\"src/main.fm\"));\n");
+        main_rs
+            .push_str("    let mut base_runner = Runner::new(PathBuf::from(\"src/main.fm\"));\n");
         main_rs.push_str("    base_runner.vfs = None;\n");
     }
 
@@ -782,7 +780,9 @@ panic = "abort"
         }
     }
 
-    main_rs.push_str("    flamelang::runner::set_global_native_methods(base_runner.native_methods.clone());\n");
+    main_rs.push_str(
+        "    flamelang::runner::set_global_native_methods(base_runner.native_methods.clone());\n",
+    );
     main_rs.push_str("    flamelang::runner::set_global_modules(base_runner.modules.clone());\n");
     main_rs.push_str("    flamelang::runner::set_global_granted_permissions(base_runner.granted_permissions.clone());\n");
     main_rs.push_str("    flamelang::runner::set_global_vfs(base_runner.vfs.clone());\n");
@@ -817,7 +817,9 @@ panic = "abort"
         if use_vfs {
             main_rs.push_str("        let src = base_runner.vfs.as_ref().and_then(|vfs| vfs.get(&file_path.to_string_lossy().replace(\"\\\\\", \"/\"))).cloned().unwrap_or_else(|| std::fs::read_to_string(&file_path).unwrap_or_default());\n");
         } else {
-            main_rs.push_str("        let src = std::fs::read_to_string(&file_path).unwrap_or_default();\n");
+            main_rs.push_str(
+                "        let src = std::fs::read_to_string(&file_path).unwrap_or_default();\n",
+            );
         }
         main_rs.push_str("        let mut lexer = flamelang::lexer::Lexer::new(&src);\n");
         main_rs.push_str("        let mut tokens = Vec::new();\n");
@@ -868,7 +870,9 @@ panic = "abort"
         if use_vfs {
             main_rs.push_str("    let src = runner.vfs.as_ref().and_then(|vfs| vfs.get(&entry_file)).cloned().unwrap_or_else(|| std::fs::read_to_string(&entry_file).unwrap_or_default());\n");
         } else {
-            main_rs.push_str("    let src = std::fs::read_to_string(&entry_file).unwrap_or_default();\n");
+            main_rs.push_str(
+                "    let src = std::fs::read_to_string(&entry_file).unwrap_or_default();\n",
+            );
         }
         main_rs.push_str("    let mut lexer = flamelang::lexer::Lexer::new(&src);\n");
         main_rs.push_str("    let mut tokens = Vec::new();\n");
@@ -978,13 +982,11 @@ panic = "abort"
     let target_exe = target_dir.join(&exe_name);
 
     if status.success() {
-        let cache_target_dir = build_cache
-            .join("target")
-            .join(if profile == "release" {
-                "release"
-            } else {
-                "debug"
-            });
+        let cache_target_dir = build_cache.join("target").join(if profile == "release" {
+            "release"
+        } else {
+            "debug"
+        });
 
         let mut compiled_exe = None;
         let candidates = [
@@ -1423,7 +1425,7 @@ fn generate_return_conversion_var(return_type: &str, s_name: &str, var_name: &st
 // Flame -> Blaze Web Target Compiler (Fine-Grained Reactive JS/HTML/CSS)
 // =========================================================================
 
-pub use crate::web::{build_web_project, WebCompiler};
+pub use crate::web::{WebCompiler, build_web_project};
 
 #[cfg(test)]
 mod web_compiler_tests {
@@ -1470,11 +1472,31 @@ mod web_compiler_tests {
 
         assert_eq!(compiler.port, 4200);
         assert_eq!(compiler.app_title, "Test Web App");
-        assert!(js.contains("_createSignal(\"count\""), "Generated JS must declare state: {}", js);
-        assert!(js.contains("document.createElement(\"main\")"), "Must create main: {}", js);
-        assert!(js.contains("document.createElement(\"h1\")"), "Must create h1: {}", js);
-        assert!(js.contains("document.createElement(\"button\")"), "Must create button: {}", js);
-        assert!(js.contains("_subscribe(\"count\""), "Must subscribe count to text node: {}", js);
+        assert!(
+            js.contains("_createSignal(\"count\""),
+            "Generated JS must declare state: {}",
+            js
+        );
+        assert!(
+            js.contains("document.createElement(\"main\")"),
+            "Must create main: {}",
+            js
+        );
+        assert!(
+            js.contains("document.createElement(\"h1\")"),
+            "Must create h1: {}",
+            js
+        );
+        assert!(
+            js.contains("document.createElement(\"button\")"),
+            "Must create button: {}",
+            js
+        );
+        assert!(
+            js.contains("_subscribe(\"count\""),
+            "Must subscribe count to text node: {}",
+            js
+        );
         assert!(js.contains("_routes"), "Must define client router: {}", js);
     }
 
