@@ -1137,7 +1137,12 @@ impl Runner {
             }
             Stmt::ReturnStmt(expr_opt, _) => {
                 if let Some(expr) = expr_opt {
-                    let val = self.eval_expr(expr, env)?;
+                    let val = self.eval_expr(expr, env.clone())?;
+                    if let Value::RefPath(crate::vm::RefPath::Var(name, var_env), _) = &val {
+                        if Arc::ptr_eq(var_env, &env) {
+                            return Err(format!("cannot return reference to local variable '{}'", name));
+                        }
+                    }
                     Ok(Value::Return(Box::new(val)))
                 } else {
                     Ok(Value::Return(Box::new(Value::Nil)))

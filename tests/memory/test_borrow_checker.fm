@@ -1,0 +1,54 @@
+@Test
+@ExpectPanic
+fn use_after_move() {
+    let a = "hello"
+    let b = a
+
+    println(a)
+}
+
+@Test
+@ExpectPanic
+fn return_reference_to_local_variable() -> &Int {
+    let x = 42
+
+    return &x
+}
+
+@Test
+@ExpectPanic
+fn mutable_immutable_borrow() {
+    let mut x = 10
+
+    let a = &x
+    let b = &mut x
+
+    println(a)
+    println(b)
+}
+
+@Test
+@ExpectPanic
+fn two_mutable_references() {
+    let mut x = 10
+
+    let a = &mut x
+    let b = &mut x
+
+    a += 1
+    b += 1
+}
+
+fn create_dangling_reference() -> &Int {
+    let x = 42
+
+    return &x
+}
+
+@Test
+@ExpectPanic
+fn reference_outlives_owner() {
+    let reference = create_dangling_reference()
+
+    println(reference)
+}

@@ -387,6 +387,120 @@ fn check_source(src: &str) -> Result<(), Vec<crate::diagnostics::Diagnostic>> {
         assert!(tc.diagnostics.is_empty(), "Actual trait bound should not produce any warnings: {:?}", tc.diagnostics);
     }
 
+    #[test]
+    fn test_struct_init_missing_field_fails() {
+        let src = r#"
+        struct User {
+            name: String,
+            age: Int
+        }
 
+        fn test() {
+            let u = User { name: "Alice" }
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_err(), "Struct init with missing field must fail");
+        let diags = res.unwrap_err();
+        assert!(diags.iter().any(|d| d.message.contains("missing field 'age' for struct 'User'")));
+        assert!(diags.iter().any(|d| d.message.contains("not all struct fields initialized, missing: `age`")));
+    }
 
+    #[test]
+    fn test_struct_constructor_missing_field_fails() {
+        let src = r#"
+        struct User {
+            name: String,
+            age: Int
+        }
 
+        fn test() {
+            let u = User(name: "Alice")
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_err(), "Struct constructor call with missing field must fail");
+        let diags = res.unwrap_err();
+        assert!(diags.iter().any(|d| d.message.contains("missing field 'age' for struct 'User'")));
+    }
+
+    #[test]
+    fn test_enum_variant_missing_field_fails() {
+        let src = r#"
+        enum Message {
+            Move { x: Int, y: Int }
+        }
+
+        fn test() {
+            let m = Message.Move { x: 10 }
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_err(), "Enum variant with missing struct field must fail");
+        let diags = res.unwrap_err();
+        assert!(diags.iter().any(|d| d.message.contains("missing field 'y' for variant 'Message.Move'")));
+        assert!(diags.iter().any(|d| d.message.contains("not all variant fields initialized, missing: `y`")));
+    }
+
+    #[test]
+    fn test_borrow_checker_mutable_and_immutable_borrow_fails() {
+        let src = r#"
+        fn test() {
+            let mut x = 10
+            let a = &x
+            let b = &mut x
+            println(a)
+            println(b)
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_err(), "Mutable borrow while immutably borrowed must fail borrow checker");
+        let diags = res.unwrap_err();
+        assert!(diags.iter().any(|d| d.message.contains("cannot borrow 'x' as mutable because it is also borrowed as immutable")));
+    }
+
+    #[test]
+    fn test_borrow_checker_two_mutable_borrows_fails() {
+        let src = r#"
+        fn test() {
+            let mut x = 10
+            let a = &mut x
+            let b = &mut x
+            a += 1
+            b += 1
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_err(), "Two active mutable borrows must fail borrow checker");
+        let diags = res.unwrap_err();
+        assert!(diags.iter().any(|d| d.message.contains("cannot borrow 'x' as mutable more than once at a time")));
+    }
+
+    #[test]
+    fn test_borrow_checker_return_reference_to_local_variable_fails() {
+        let src = r#"
+        fn test() -> &Int {
+            let x = 42
+            return &x
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_err(), "Returning reference to local variable must fail borrow checker");
+        let diags = res.unwrap_err();
+        assert!(diags.iter().any(|d| d.message.contains("cannot return reference to local variable 'x'")));
+    }
+
+    #[test]
+    fn test_borrow_checker_use_after_move_fails() {
+        let src = r#"
+        fn test() {
+            let a = "hello"
+            let b = a
+            println(a)
+        }
+        "#;
+        let res = check_source(src);
+        assert!(res.is_err(), "Use after move must fail borrow checker");
+        let diags = res.unwrap_err();
+        assert!(diags.iter().any(|d| d.message.contains("use of moved value: 'a'")));
+    }

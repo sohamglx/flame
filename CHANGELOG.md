@@ -2,7 +2,95 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
-## [0.6.8] - 2026-10-02 (Codename: *Eighth Spark*)
+## [0.6.9] - 2026-10-11 (Codename: *Sixth Spark*)
+
+### 🛡️ Rust-Style Ownership, Borrow Checking & Lifetime Safety System
+
+- **Static Borrow Checker (`src/typechecker/borrow.rs`)**:
+  - Implemented comprehensive compile-time borrow and ownership checking mirroring Rust's memory safety rules:
+    - **Simultaneous Mutable & Immutable Loans (`[E0502]`)**: Prevents borrowing a place as mutable while active immutable loans exist:
+      ```text
+      error[E0502]: cannot borrow 'x' as mutable because it is also borrowed as immutable
+        = first immutable borrow occurs here at line 23; first borrow later used at line 26
+        = second mutable borrow occurs here at line 24
+      ```
+    - **Multiple Mutable Loans (`[E0499]`)**: Enforces exclusivity of mutable references, rejecting concurrent `&mut` borrows of the same place:
+      ```text
+      error[E0499]: cannot borrow 'x' as mutable more than once at a time
+        = first mutable borrow occurs here at line 35; first borrow later used at line 38
+        = second mutable borrow occurs here at line 36
+      ```
+    - **Dangling Reference Prevention (`[E0515]`)**: Rejects returning references to function-local variables whose storage ends when the stack frame unwinds:
+      ```text
+      error[E0515]: cannot return reference to local variable 'x'
+        = returns a reference to data owned by the current function
+      ```
+    - **Use After Move Detection (`[E0382]`)**: Tracks ownership transfers on variable assignments and emits actionable compiler diagnostics:
+      ```text
+      error[E0382]: use of moved value 'a'. Value was moved. Use '&a' to borrow or 'a.clone()' to copy.
+      ```
+    - **Move / Reassignment While Borrowed (`[E0505]`, `[E0506]`)**: Prohibits moving or rebinding variables while active loans are held.
+  - Diagnostics are integrated seamlessly into `Stmt::FuncDecl` and `check_program`, while automatically permitting `@ExpectPanic` test harness functions to validate negative runtime paths.
+
+- **Auto-Deref Mutation & Immutable Reference Protection (`[E0594]`)**:
+  - Assigning or compound-assigning (`+=`, `-=`, etc.) through a reference automatically dereferences and writes to the underlying target.
+  - Mutating data through an immutable reference (`&T`) emits an explicit compiler error:
+    ```text
+    error[E0594]: cannot assign to data in a '&' reference
+    ```
+  - Mutating data through a mutable reference (`&mut T`) writes directly to the target value without falsely requiring the reference binding itself to be declared with `let mut`.
+
+- **Runtime Loan Lifecycle Management & Argument Borrow Guards**:
+  - **`CallBorrowGuard` in Runner**: Added automatic RAII lifecycle management for temporary borrows passed as arguments into function and method calls. Temporary loans (e.g. `swap_boxes(&mut b1, &mut b2)`) are active for the duration of the call and automatically released upon return, early exit, or error—unless the return value itself preserves the reference path.
+  - **Persistent Variable Borrows**: Borrows bound to variables (`let r = &mut x`) persist across subsequent statements throughout their scope.
+  - **Runtime Dangling Reference Guard**: Rejects returning references pointing to function-local environments at runtime (`cannot return reference to local variable '<var>'`).
+  - **5/5 Passing Memory Safety Test Suite**: Verified across all edge cases in `tests/memory/test_borrow_checker.fm` (`use_after_move`, `return_reference_to_local_variable`, `mutable_immutable_borrow`, `two_mutable_references`, `reference_outlives_owner`).
+
+### 🧩 Strict Missing Field Diagnostics for Structs and Enums
+
+- **Uniform Completeness Validation**:
+  - Aligned struct and enum initialization diagnostics with Flame's existing trait implementation completeness checks (`not all trait items implemented, missing: ...`).
+- **Struct Literal Validation (`Expr::StructInit`)**:
+  - Validates that all fields declared on a struct are fulfilled during instantiation.
+  - Emits specific field-level errors as well as an aggregated missing-fields summary:
+    ```text
+    error: missing field 'age' for struct 'User'
+    error: not all struct fields initialized, missing: age
+    ```
+- **Constructor Invocations (`StructName(...)`)**:
+  - Validates both positional arguments and named arguments on struct constructor calls, emitting `missing field '<field>' for struct '<name>'` and summary `not all struct fields initialized, missing: ...`.
+- **Enum Struct Variants (`Enum.Variant { ... }`)**:
+  - Validates struct-like enum variants, ensuring all variant fields are supplied at compile time and runtime:
+    ```text
+    error: missing field 'data' for variant 'Message.Payload'
+    error: not all variant fields initialized, missing: data
+    ```
+
+### 📁 Modular Top-Level Test Architecture & Clean Examples Suite
+
+- **Dedicated `tests/` Test Architecture**:
+  - Reorganized all test suites from nested example directories into a centralized, top-level `tests/` directory categorized by language domain:
+    - **`tests/memory/`**: Ownership, borrowing, loan conflicts, and lifetime validation.
+    - **`tests/traits_generics/`**: Trait composition, default methods, overrides, and generic structs/enums.
+    - **`tests/types/`**: Struct instances, formulas, object and nested destructuring.
+    - **`tests/annotations/`**: Custom annotations, `@Logger`, `@Cli`, route extraction, and AST transforms.
+    - **`tests/stdlib/`**: Standard library math, time, filesystem, JSON, array functional methods, bytes, and units.
+    - **`tests/resources/`**: Relative `.toml`, `.json`, and `.fmi` resource imports.
+    - **`tests/web/`**: Reactive `std.web` document/window APIs and `@Compute` / `@Computed` decorators.
+    - **`tests/simulations/`**: Autonomous rover telemetry simulation testing optionals and fallback flows.
+  - Zero-argument `flamelang test` (or `cargo run -- test`) automatically discovers and executes all 56 test suites with 100% pass rate.
+- **Pure Standalone `examples/` Suite**:
+  - Purged test-only artifacts and temporary directories (`cli-test`, `ws_test`, and embedded `tests/` subfolders).
+  - Retained 3 clean, production-grade example applications:
+    - **`examples/ex`**: Full-stack CLI tool and multithreaded HTTP server application.
+    - **`examples/flame-web`**: Reactive web user interface application built with JSX components.
+    - **`examples/package`**: Reusable Flame package library featuring native Rust bridge plugin integration.
+
+### ⚡ Parser Bitwise vs Borrow Delimiter Resolution Across Newlines
+
+- Fixed an issue in `parse_bitand` where a leading `&` or `&mut` on a new line could be greedily consumed as a trailing bitwise AND operator from the preceding line, ensuring robust parsing of statement-level borrows and references.
+
+## [0.6.8] - 2026-10-02 (Codename: *Sixth Spark*)
 
 ### 📐 Standard Math Library Unit Propagation & Bidirectional Float Interoperability (`std.math`)
 
@@ -32,7 +120,7 @@ All pre-release versions in the `0.x.x` series carry the official codename **Fla
   - Updated documentation (`docs/src/styles/custom.css`, `docs/astro.config.mjs`, `CustomHero.astro`, and `FlamePlayground.tsx`) to strictly use Google Fonts' **JetBrains Mono** font family with typographic ligatures enabled (`calt`, `liga`).
   - Enforced across all documentation code snippet blocks, Expressive Code frames, inline code snippets, terminal outputs, and Monaco interactive playground editors.
 
-## [0.6.7] - 2026-10-02 (Codename: *Seventh Spark*)
+## [0.6.7] - 2026-10-02 (Codename: *Sixth Spark*)
 
 ### ⚠️ Generic Parameter Bounds Lint & Warning System (`T: String` vs Traits)
 

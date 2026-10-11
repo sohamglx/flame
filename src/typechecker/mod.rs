@@ -1,5 +1,6 @@
 #![allow(unused_imports)]
 
+pub mod borrow;
 pub mod builtins;
 pub mod checker;
 pub mod exprs;

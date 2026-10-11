@@ -101,6 +101,7 @@ impl TypeChecker {
     ) {
         let named = args.iter().any(|(arg_name, _)| arg_name.is_some());
         if named {
+            let mut missing = Vec::new();
             for (field_name, field_ty) in &struct_info.fields {
                 if let Some((_, expr)) = args.iter().find(|(arg_name, _)| {
                     arg_name.as_ref().map(|n| n == field_name).unwrap_or(false)
@@ -113,13 +114,24 @@ impl TypeChecker {
                         "struct field initializer",
                     );
                 } else {
+                    missing.push(field_name.clone());
                     self.error(
                         format!("missing field '{}' for struct '{}'", field_name, name),
                         span.clone(),
                         None,
-                        None,
+                        Some(format!("provide field `{}: ...`", field_name)),
                     );
                 }
+            }
+            if !missing.is_empty() {
+                let missing_str = missing.iter().map(|m| format!("`{}`", m)).collect::<Vec<_>>().join(", ");
+                self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
+                    format!("not all struct fields initialized, missing: {}", missing_str),
+                    self.filepath.clone(),
+                    span.clone(),
+                    None,
+                    Some(format!("provide missing field(s) for struct '{}'", name)),
+                ));
             }
             for (arg_name, expr) in args {
                 if let Some(arg_name) = arg_name {
@@ -150,6 +162,28 @@ impl TypeChecker {
                     None,
                     None,
                 );
+                let mut missing = Vec::new();
+                for (i, (f_name, _)) in struct_info.fields.iter().enumerate() {
+                    if i >= args.len() {
+                        missing.push(f_name.clone());
+                        self.error(
+                            format!("missing field '{}' for struct '{}'", f_name, name),
+                            span.clone(),
+                            None,
+                            Some(format!("provide field `{}`", f_name)),
+                        );
+                    }
+                }
+                if !missing.is_empty() {
+                    let missing_str = missing.iter().map(|m| format!("`{}`", m)).collect::<Vec<_>>().join(", ");
+                    self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
+                        format!("not all struct fields initialized, missing: {}", missing_str),
+                        self.filepath.clone(),
+                        span.clone(),
+                        None,
+                        Some(format!("provide missing field(s) for struct '{}'", name)),
+                    ));
+                }
             }
             for (idx, (_, expr)) in args.iter().enumerate() {
                 if let Some((_, expected)) = struct_info.fields.get(idx) {
@@ -365,6 +399,7 @@ impl TypeChecker {
     pub(crate) fn is_numeric(&self, ty: &Type) -> bool {
         match ty {
             Type::Int | Type::Float | Type::Byte => true,
+            Type::Reference { inner, .. } => self.is_numeric(inner),
             Type::Union(types) => types.iter().any(|t| self.is_numeric(t)),
             _ => false,
         }

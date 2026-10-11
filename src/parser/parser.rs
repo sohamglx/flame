@@ -1705,7 +1705,11 @@ impl Parser {
 
     fn parse_bitand(&mut self) -> Result<Expr, Diagnostic> {
         let mut expr = self.parse_equality()?;
-        while self.match_token(TokenKind::Ampersand) {
+        while self.check(TokenKind::Ampersand) {
+            if self.index > 0 && self.peek().span.line > self.tokens[self.index - 1].span.line {
+                break;
+            }
+            self.advance();
             let right = self.parse_equality()?;
             let span = Span {
                 start: expr.span().start,

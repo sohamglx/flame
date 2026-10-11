@@ -18,6 +18,10 @@ pub fn collect_fm_files(dir: &Path, list: &mut Vec<PathBuf>, is_root: bool) {
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let p = entry.path();
+            let name_str = entry.file_name().to_string_lossy().into_owned();
+            if name_str.starts_with('.') || name_str == "target" || name_str == "node_modules" {
+                continue;
+            }
             if p.is_dir() {
                 collect_fm_files(&p, list, false);
             } else if p.extension().and_then(|s| s.to_str()) == Some("fm") {
@@ -118,9 +122,17 @@ pub fn run_tests(args: &[String]) {
         plugins_raw.clear();
     }
 
+    let is_all = args.iter().skip(2).any(|a| a == "--all" || a == "-a");
+    let target_arg = args.iter().skip(2).find(|a| !a.starts_with('-'));
+
     let mut files_to_test = Vec::new();
-    if args.len() >= 3 && !args[2].starts_with('-') {
-        let p = PathBuf::from(&args[2]);
+    if is_all {
+        if Path::new("tests").exists() {
+            collect_fm_files(Path::new("tests"), &mut files_to_test, true);
+        }
+        collect_fm_files(Path::new("."), &mut files_to_test, true);
+    } else if let Some(target) = target_arg {
+        let p = PathBuf::from(target);
         if p.exists() {
             if p.is_dir() {
                 collect_fm_files(&p, &mut files_to_test, true);
@@ -130,7 +142,7 @@ pub fn run_tests(args: &[String]) {
         } else {
             println!(
                 "\x1b[1;31merror:\x1b[0m test target '{}' does not exist.",
-                args[2]
+                target
             );
             return;
         }
@@ -147,8 +159,11 @@ pub fn run_tests(args: &[String]) {
         if Path::new("src").exists() {
             collect_fm_files(Path::new("src"), &mut files_to_test, false);
         }
-        if files_to_test.is_empty() && Path::new("main.fm").exists() {
+        if Path::new("main.fm").exists() {
             files_to_test.push(PathBuf::from("main.fm"));
+        }
+        if files_to_test.is_empty() {
+            collect_fm_files(Path::new("."), &mut files_to_test, true);
         }
     }
 

@@ -198,6 +198,11 @@ impl TypeChecker {
         for stmt in stmts {
             self.check_stmt(stmt);
         }
+        if !self.in_expect_panic {
+            let mut borrow_checker = crate::typechecker::borrow::BorrowChecker::new(&self.filepath);
+            borrow_checker.check_block(stmts);
+            self.diagnostics.extend(borrow_checker.diagnostics);
+        }
 
         let mut unique: Vec<Diagnostic> = Vec::new();
         for d in self.diagnostics {

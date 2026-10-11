@@ -2181,6 +2181,16 @@ impl TypeChecker {
                     for stmt in body_stmts {
                         self.check_stmt(stmt);
                     }
+                    if !self.in_expect_panic {
+                        let mut borrow_checker = crate::typechecker::borrow::BorrowChecker::new(&self.filepath);
+                        borrow_checker.check_function(
+                            name,
+                            params,
+                            return_type,
+                            body_stmts,
+                        );
+                        self.diagnostics.extend(borrow_checker.diagnostics);
+                    }
                 }
                 self.in_expect_panic = prev_expect_panic;
                 self.pop_scope();

@@ -1,6 +1,6 @@
-import "../flame.toml" as config
-import "../data.json" as arr_data
-import "../data.fmi" as meta
+import "./config.toml" as config
+import "./data.json" as arr_data
+import "./data.fmi" as meta
 
 @Test
 fn test_resource_imports() {

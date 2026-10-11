@@ -1,0 +1,9 @@
+export fn sayhello(&user: Formula) -> String {
+    $"hello {user.name}-{user.id}"
+}
+
+export annotation Logger(prefix: String) -> String {
+    print($"[LOGGER INIT] Prefix configured: {prefix}")
+
+    prefix
+}

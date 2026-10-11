@@ -12,6 +12,48 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use super::core::Runner;
 
+struct CallBorrowGuard {
+    env: Arc<Mutex<Env>>,
+    borrows: Vec<(String, bool)>,
+}
+
+impl CallBorrowGuard {
+    fn new(env: Arc<Mutex<Env>>, args: &[(Option<String>, Expr)]) -> Self {
+        let mut borrows = Vec::new();
+        for (_, arg) in args {
+            if let Expr::Borrow(inner, is_mut, _) = arg {
+                if let Expr::Identifier(name, _) = &**inner {
+                    borrows.push((name.clone(), *is_mut));
+                }
+            }
+        }
+        Self { env, borrows }
+    }
+
+    fn release(&mut self, ret_val: Option<&Value>) {
+        if self.borrows.is_empty() {
+            return;
+        }
+        let mut e = self.env.lock().unwrap();
+        for (name, is_mut) in self.borrows.drain(..) {
+            let is_returned_ref = match ret_val {
+                Some(Value::RefPath(RefPath::Var(ret_var, _), _)) => ret_var == &name,
+                Some(Value::RefPath(RefPath::Field { owner, .. }, _)) => owner == &name,
+                _ => false,
+            };
+            if !is_returned_ref {
+                e.release_borrow(&name, is_mut);
+            }
+        }
+    }
+}
+
+impl Drop for CallBorrowGuard {
+    fn drop(&mut self) {
+        self.release(None);
+    }
+}
+
 impl Runner {
     pub(crate) fn eval_explicit_conversion(
         &mut self,
@@ -266,6 +308,7 @@ impl Runner {
                                     moved_name, moved_name, moved_name
                                 ));
                             }
+                            env.lock().unwrap().borrow_var(name, *is_mut)?;
                             if let Value::RefPath(path, _) = val {
                                 return Ok(Value::RefPath(path, *is_mut));
                             }
@@ -1225,11 +1268,16 @@ impl Runner {
             Expr::StructInit(inner, fields, _) => {
                 let inner_val = self.eval_expr(inner, env.clone())?;
                 match inner_val {
-                    Value::StructConstructor { name, .. } => {
+                    Value::StructConstructor { name, fields: expected_fields } => {
                         let mut map = HashMap::new();
                         for (field_name, field_expr) in fields {
                             let val = self.eval_expr(field_expr, env.clone())?;
                             map.insert(field_name.clone(), val);
+                        }
+                        for (expected_name, _) in &expected_fields {
+                            if !map.contains_key(expected_name) {
+                                return Err(format!("missing field '{}' for struct '{}'", expected_name, name));
+                            }
                         }
                         Ok(Value::StructInstance {
                             name: name.clone(),
@@ -1237,11 +1285,16 @@ impl Runner {
                         })
                     }
                     Value::VariantConstructor(enum_name, var) => {
-                        if let crate::parser::EnumVariant::Struct(n, _) = var {
+                        if let crate::parser::EnumVariant::Struct(n, expected_fields) = var {
                             let mut map = HashMap::new();
                             for (field_name, field_expr) in fields {
                                 let val = self.eval_expr(field_expr, env.clone())?;
                                 map.insert(field_name.clone(), val);
+                            }
+                            for (expected_name, _) in &expected_fields {
+                                if !map.contains_key(expected_name) {
+                                    return Err(format!("missing field '{}' for variant '{}.{}'", expected_name, enum_name, n));
+                                }
                             }
                             return Ok(Value::EnumValue(enum_name, n, EnumData::Struct(map)));
                         }
@@ -1619,6 +1672,7 @@ impl Runner {
                 }
             }
             Expr::Call(callee, args, _) => {
+                let mut _call_borrow_guard = CallBorrowGuard::new(env.clone(), args);
                 if let Expr::Identifier(name, _) = &**callee {
                     if name == "print" || name == "eprint" || name == "println" {
                         let mut parts = Vec::new();
@@ -2070,10 +2124,12 @@ impl Runner {
                                         let res =
                                             self.execute_statement(stmt, child_env.clone())?;
                                         if let Value::Return(ret_val) = res {
+                                            _call_borrow_guard.release(Some(&ret_val));
                                             return Ok(*ret_val);
                                         }
                                         last_val = res;
                                     }
+                                    _call_borrow_guard.release(Some(&last_val));
                                     return Ok(last_val);
                                 }
                                 Value::NativeCallback(cb) => {
@@ -3254,10 +3310,12 @@ impl Runner {
                                         let res =
                                             self.execute_statement(stmt, child_env.clone())?;
                                         if let Value::Return(ret_val) = res {
+                                            _call_borrow_guard.release(Some(&ret_val));
                                             return Ok(*ret_val);
                                         }
                                         last_val = res;
                                     }
+                                    _call_borrow_guard.release(Some(&last_val));
                                     return Ok(last_val);
                                 }
                                 if let Value::NativeCallback(cb) = val {
@@ -4039,10 +4097,12 @@ impl Runner {
                                 for stmt in &body {
                                     let res = self.execute_statement(stmt, child_env.clone())?;
                                     if let Value::Return(ret_val) = res {
+                                        _call_borrow_guard.release(Some(&ret_val));
                                         return Ok(*ret_val);
                                     }
                                     last_val = res;
                                 }
+                                _call_borrow_guard.release(Some(&last_val));
                                 return Ok(last_val);
                             }
                             Value::NativeCallback(cb) => {
@@ -4089,16 +4149,22 @@ impl Runner {
                         let mut instance_map = HashMap::new();
                         for (i, (f_name, _)) in fields.iter().enumerate() {
                             let mut val = Value::Nil;
+                            let mut found = false;
                             for (arg_name, arg_expr) in args {
                                 if let Some(an) = arg_name {
                                     if an == f_name {
                                         val = self.eval_expr(arg_expr, env.clone())?;
+                                        found = true;
                                         break;
                                     }
                                 }
                             }
-                            if matches!(val, Value::Nil) && i < args.len() && args[i].0.is_none() {
+                            if !found && i < args.len() && args[i].0.is_none() {
                                 val = self.eval_expr(&args[i].1, env.clone())?;
+                                found = true;
+                            }
+                            if !found {
+                                return Err(format!("missing field '{}' for struct '{}'", f_name, name));
                             }
                             instance_map.insert(f_name.clone(), val);
                         }
@@ -4110,14 +4176,49 @@ impl Runner {
                         Ok(Value::Formula(instance_map))
                     }
                     Value::VariantConstructor(enum_name, var) => {
-                        if let crate::parser::EnumVariant::Tuple(n, _) = var {
-                            let mut tuple_vals = Vec::new();
-                            for (_, arg_expr) in args {
-                                tuple_vals.push(self.eval_expr(arg_expr, env.clone())?);
+                        match var {
+                            crate::parser::EnumVariant::Tuple(n, types) => {
+                                if args.len() != types.len() {
+                                    return Err(format!(
+                                        "enum constructor '{}.{}' expects {} argument(s), got {}",
+                                        enum_name, n, types.len(), args.len()
+                                    ));
+                                }
+                                let mut tuple_vals = Vec::new();
+                                for (_, arg_expr) in args {
+                                    tuple_vals.push(self.eval_expr(arg_expr, env.clone())?);
+                                }
+                                Ok(Value::EnumValue(enum_name, n, EnumData::Tuple(tuple_vals)))
                             }
-                            return Ok(Value::EnumValue(enum_name, n, EnumData::Tuple(tuple_vals)));
+                            crate::parser::EnumVariant::Struct(n, fields) => {
+                                let mut map = HashMap::new();
+                                for (i, (f_name, _)) in fields.iter().enumerate() {
+                                    let mut val = Value::Nil;
+                                    let mut found = false;
+                                    for (arg_name, arg_expr) in args {
+                                        if let Some(an) = arg_name {
+                                            if an == f_name {
+                                                val = self.eval_expr(arg_expr, env.clone())?;
+                                                found = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if !found && i < args.len() && args[i].0.is_none() {
+                                        val = self.eval_expr(&args[i].1, env.clone())?;
+                                        found = true;
+                                    }
+                                    if !found {
+                                        return Err(format!("missing field '{}' for variant '{}.{}'", f_name, enum_name, n));
+                                    }
+                                    map.insert(f_name.clone(), val);
+                                }
+                                Ok(Value::EnumValue(enum_name, n, EnumData::Struct(map)))
+                            }
+                            crate::parser::EnumVariant::Unit(n) => {
+                                Ok(Value::EnumValue(enum_name, n, EnumData::Unit))
+                            }
                         }
-                        Err(format!("variant '{:?}' is not a tuple variant", var))
                     }
                     Value::Function {
                         params,
@@ -4368,10 +4469,12 @@ impl Runner {
                         for stmt in &body {
                             let res = self.execute_statement(stmt, child_env.clone())?;
                             if let Value::Return(ret_val) = res {
+                                _call_borrow_guard.release(Some(&ret_val));
                                 return Ok(*ret_val);
                             }
                             last_val = res;
                         }
+                        _call_borrow_guard.release(Some(&last_val));
                         Ok(last_val)
                     }
                     Value::NativeCallback(cb) => {

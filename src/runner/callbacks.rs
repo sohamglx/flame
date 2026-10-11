@@ -301,9 +301,19 @@ impl Runner {
                 for stmt in body {
                     let res = self.execute_statement(stmt, child_env.clone())?;
                     if let Value::Return(ret_val) = res {
+                        if let Value::RefPath(crate::vm::RefPath::Var(name, var_env), _) = &*ret_val {
+                            if Arc::ptr_eq(var_env, &child_env) {
+                                return Err(format!("cannot return reference to local variable '{}'", name));
+                            }
+                        }
                         return Ok(*ret_val);
                     }
                     last_val = res;
+                }
+                if let Value::RefPath(crate::vm::RefPath::Var(name, var_env), _) = &last_val {
+                    if Arc::ptr_eq(var_env, &child_env) {
+                        return Err(format!("cannot return reference to local variable '{}'", name));
+                    }
                 }
                 Ok(last_val)
             }

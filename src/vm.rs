@@ -147,7 +147,9 @@ static RUNTIME_QUEUE: OnceLock<(
 static CALLBACK_REGISTRY: OnceLock<Mutex<HashMap<u64, Value>>> = OnceLock::new();
 static EVENT_LOOP_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 #[derive(Clone)]
-pub struct NativeClosureType(pub std::sync::Arc<dyn Fn(Vec<Value>) -> Result<Value, String> + Send + Sync>);
+pub struct NativeClosureType(
+    pub std::sync::Arc<dyn Fn(Vec<Value>) -> Result<Value, String> + Send + Sync>,
+);
 
 impl std::fmt::Debug for NativeClosureType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -276,7 +278,10 @@ impl fmt::Display for Value {
             Value::Formula(map) => {
                 let mut keys: Vec<&String> = map.keys().collect();
                 keys.sort();
-                let s: Vec<String> = keys.into_iter().map(|k| format!("{}: {}", k, map[k])).collect();
+                let s: Vec<String> = keys
+                    .into_iter()
+                    .map(|k| format!("{}: {}", k, map[k]))
+                    .collect();
                 write!(f, "formula {{ {} }}", s.join(", "))
             }
             Value::Unit(map) => {
@@ -285,8 +290,11 @@ impl fmt::Display for Value {
                 keys.sort();
                 for k in keys {
                     let v = map[k];
-                    if v == 1 { terms.push(k.clone()); }
-                    else { terms.push(format!("{}^{}", k, v)); }
+                    if v == 1 {
+                        terms.push(k.clone());
+                    } else {
+                        terms.push(format!("{}^{}", k, v));
+                    }
                 }
                 if terms.is_empty() {
                     write!(f, "unit {{}}")
@@ -300,8 +308,11 @@ impl fmt::Display for Value {
                 keys.sort();
                 for k in keys {
                     let val = map[k];
-                    if val == 1 { terms.push(k.clone()); }
-                    else { terms.push(format!("{}^{}", k, val)); }
+                    if val == 1 {
+                        terms.push(k.clone());
+                    } else {
+                        terms.push(format!("{}^{}", k, val));
+                    }
                 }
                 if terms.is_empty() {
                     write!(f, "{}", v)
@@ -312,19 +323,15 @@ impl fmt::Display for Value {
             Value::Object(map) => {
                 let mut keys: Vec<String> = map.keys().cloned().collect();
                 keys.sort();
-                let items: Vec<String> = keys
-                    .iter()
-                    .map(|k| format!("{}: {}", k, map[k]))
-                    .collect();
+                let items: Vec<String> =
+                    keys.iter().map(|k| format!("{}: {}", k, map[k])).collect();
                 write!(f, "{{ {} }}", items.join(", "))
             }
             Value::SharedObject(map) => {
                 let mut keys: Vec<String> = map.keys().cloned().collect();
                 keys.sort();
-                let items: Vec<String> = keys
-                    .iter()
-                    .map(|k| format!("{}: {}", k, map[k]))
-                    .collect();
+                let items: Vec<String> =
+                    keys.iter().map(|k| format!("{}: {}", k, map[k])).collect();
                 write!(f, "{{ {} }}", items.join(", "))
             }
             Value::Range(start, end) => write!(f, "{}..{}", start, end),
@@ -338,7 +345,10 @@ impl fmt::Display for Value {
             Value::RustServer { port } => write!(f, "RustServer(127.0.0.1:{})", port),
             Value::StructConstructor { name, .. } => write!(f, "<struct constructor: {}>", name),
             Value::StructInstance { name, fields } => {
-                let s: Vec<String> = fields.iter().map(|(k, v)| format!("{}: {}", k, v)).collect();
+                let s: Vec<String> = fields
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, v))
+                    .collect();
                 write!(f, "{} {{ {} }}", name, s.join(", "))
             }
             Value::Function { .. } => write!(f, "<function>"),
@@ -428,36 +438,55 @@ impl Value {
             (Value::Byte(a), Value::Byte(b)) => a == b,
             (Value::Bytes(a), Value::Bytes(b)) => a == b,
             (Value::Tuple(a), Value::Tuple(b)) => {
-                if a.len() != b.len() { return false; }
+                if a.len() != b.len() {
+                    return false;
+                }
                 a.iter().zip(b.iter()).all(|(x, y)| x.is_equal(y))
             }
             (Value::SharedTuple(a), Value::SharedTuple(b)) => {
-                if Arc::ptr_eq(a, b) { return true; }
-                if a.len() != b.len() { return false; }
+                if Arc::ptr_eq(a, b) {
+                    return true;
+                }
+                if a.len() != b.len() {
+                    return false;
+                }
                 a.iter().zip(b.iter()).all(|(x, y)| x.is_equal(y))
             }
             (Value::Tuple(a), Value::SharedTuple(b)) | (Value::SharedTuple(b), Value::Tuple(a)) => {
-                if a.len() != b.len() { return false; }
+                if a.len() != b.len() {
+                    return false;
+                }
                 a.iter().zip(b.iter()).all(|(x, y)| x.is_equal(y))
             }
             (Value::Formula(a) | Value::Object(a), Value::Formula(b) | Value::Object(b)) => {
-                if a.len() != b.len() { return false; }
-                a.iter().all(|(k, v)| b.get(k).map_or(false, |bv| v.is_equal(bv)))
+                if a.len() != b.len() {
+                    return false;
+                }
+                a.iter()
+                    .all(|(k, v)| b.get(k).map_or(false, |bv| v.is_equal(bv)))
             }
             (Value::SharedObject(a), Value::SharedObject(b)) => {
-                if Arc::ptr_eq(a, b) { return true; }
-                if a.len() != b.len() { return false; }
-                a.iter().all(|(k, v)| b.get(k).map_or(false, |bv| v.is_equal(bv)))
+                if Arc::ptr_eq(a, b) {
+                    return true;
+                }
+                if a.len() != b.len() {
+                    return false;
+                }
+                a.iter()
+                    .all(|(k, v)| b.get(k).map_or(false, |bv| v.is_equal(bv)))
             }
             (Value::SharedObject(a), Value::Formula(b) | Value::Object(b))
             | (Value::Formula(b) | Value::Object(b), Value::SharedObject(a)) => {
-                if a.len() != b.len() { return false; }
-                a.iter().all(|(k, v)| b.get(k).map_or(false, |bv| v.is_equal(bv)))
+                if a.len() != b.len() {
+                    return false;
+                }
+                a.iter()
+                    .all(|(k, v)| b.get(k).map_or(false, |bv| v.is_equal(bv)))
             }
             (Value::Unit(a), Value::Unit(b)) => a == b,
             (Value::Quantity(av, au), Value::Quantity(bv, bu)) => {
                 (av == bv || (av - bv).abs() < 0.001) && au == bu
-            },
+            }
             (a, b) => a.to_string() == b.to_string(),
         }
     }
@@ -492,8 +521,6 @@ impl Value {
             _ => "Unknown",
         }
     }
-
-
 
     pub fn pack(&self) -> CValue {
         match self {
@@ -619,7 +646,10 @@ impl Value {
                     obj_ptr: ptr as *mut std::ffi::c_void,
                 }
             }
-            Value::Formula(_) | Value::Object(_) | Value::SharedObject(_) | Value::StructInstance { .. } => {
+            Value::Formula(_)
+            | Value::Object(_)
+            | Value::SharedObject(_)
+            | Value::StructInstance { .. } => {
                 let json_val = crate::native_std::json::value_to_json(self);
                 let json_str = json_val.to_string();
                 let c_str = std::ffi::CString::new(json_str).unwrap_or_default();
@@ -669,7 +699,7 @@ impl Value {
                             .into_owned()
                     }
                 };
-                
+
                 let mut parts = variant_name.splitn(2, "::");
                 let enum_n = parts.next().unwrap_or("").to_string();
                 let variant_n = parts.next().unwrap_or(&enum_n).to_string();
@@ -856,6 +886,8 @@ pub fn wait_for_all_threads() {
 pub struct VarEntry {
     pub value: Value,
     pub is_mut: bool,
+    pub active_borrows: usize,
+    pub is_mut_borrowed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -927,7 +959,15 @@ impl Env {
     }
 
     pub fn define(&mut self, name: String, val: Value, is_mut: bool) {
-        self.variables.insert(name, VarEntry { value: val, is_mut });
+        self.variables.insert(
+            name,
+            VarEntry {
+                value: val,
+                is_mut,
+                active_borrows: 0,
+                is_mut_borrowed: false,
+            },
+        );
     }
 
     pub fn set_local(&mut self, name: String, val: Value, is_mut: bool) {
@@ -935,7 +975,66 @@ impl Env {
             entry.value = val;
             entry.is_mut = is_mut;
         } else {
-            self.variables.insert(name, VarEntry { value: val, is_mut });
+            self.variables.insert(
+                name,
+                VarEntry {
+                    value: val,
+                    is_mut,
+                    active_borrows: 0,
+                    is_mut_borrowed: false,
+                },
+            );
+        }
+    }
+
+    pub fn borrow_var(&mut self, name: &str, is_mut: bool) -> Result<(), String> {
+        if let Some(entry) = self.variables.get_mut(name) {
+            if is_mut {
+                if entry.active_borrows > 0 {
+                    return Err(format!(
+                        "cannot borrow '{}' as mutable because it is also borrowed as immutable",
+                        name
+                    ));
+                }
+                if entry.is_mut_borrowed {
+                    return Err(format!(
+                        "cannot borrow '{}' as mutable more than once at a time",
+                        name
+                    ));
+                }
+                if !entry.is_mut {
+                    return Err(format!(
+                        "cannot borrow immutable local variable '{}' as mutable",
+                        name
+                    ));
+                }
+                entry.is_mut_borrowed = true;
+            } else {
+                if entry.is_mut_borrowed {
+                    return Err(format!(
+                        "cannot borrow '{}' as immutable because it is also borrowed as mutable",
+                        name
+                    ));
+                }
+                entry.active_borrows += 1;
+            }
+            Ok(())
+        } else if let Some(parent) = &self.parent {
+            parent.lock().unwrap().borrow_var(name, is_mut)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn release_borrow(&mut self, name: &str, is_mut: bool) {
+        if let Some(entry) = self.variables.get_mut(name) {
+            if is_mut {
+                entry.is_mut_borrowed = false;
+            } else {
+                entry.active_borrows = entry.active_borrows.saturating_sub(1);
+            }
+        } else if let Some(parent) = &self.parent {
+            parent.lock().unwrap().release_borrow(name, is_mut);
         }
     }
 

@@ -110,7 +110,14 @@ impl TypeChecker {
                         if let Some(doc) = &variant.hover_doc {
                             self.insert_hover_info(span.clone(), doc.clone());
                         }
-                        if variant.struct_fields.is_empty() && variant.tuple_items.is_empty() {
+                        if !variant.struct_fields.is_empty() {
+                            Type::EnumVariant {
+                                enum_name,
+                                variant_name: name.clone(),
+                                tuple_items: variant.tuple_items.clone(),
+                                struct_fields: variant.struct_fields.iter().cloned().collect(),
+                            }
+                        } else if variant.tuple_items.is_empty() {
                             Type::EnumVariant {
                                 enum_name,
                                 variant_name: name.clone(),
@@ -118,7 +125,7 @@ impl TypeChecker {
                                 struct_fields: HashMap::new(),
                             }
                         } else {
-                            // It's a constructor for a tuple or struct variant
+                            // It's a constructor for a tuple variant
                             let params_str: Vec<String> = variant
                                 .tuple_items
                                 .iter()
@@ -698,7 +705,22 @@ impl TypeChecker {
                 let rhs_ty = self.infer_expr_type(right);
                 self.expected_closure_type = prev_expected;
                 if let Some(var) = self.lookup_var(name).cloned() {
-                    if !var.is_mut {
+                    let (target_ty, is_ref_mut) = match &var.ty {
+                        Type::Reference { inner, mutable } => {
+                            if !*mutable {
+                                self.error(
+                                    "[E0594] cannot assign to data in a '&' reference".to_string(),
+                                    span.clone(),
+                                    Some("cannot assign to '&' reference".to_string()),
+                                    Some("consider using a mutable reference '&mut'".to_string()),
+                                );
+                            }
+                            (*inner.clone(), true)
+                        }
+                        _ => (var.ty.clone(), false),
+                    };
+
+                    if !is_ref_mut && !var.is_mut && !self.in_expect_panic {
                         self.error(
                             format!("cannot assign to immutable variable '{}'", name),
                             left_span.clone(),
@@ -709,22 +731,22 @@ impl TypeChecker {
                         );
                     }
                     if *op != BinaryOp::Assign {
-                        if !self.is_numeric(&var.ty) || !self.is_numeric(&rhs_ty) {
+                        if !self.is_numeric(&target_ty) || !self.is_numeric(&rhs_ty) {
                             if matches!(op, BinaryOp::PlusAssign)
-                                && matches!(var.ty, Type::String)
+                                && matches!(target_ty, Type::String)
                                 && matches!(rhs_ty, Type::String)
                             {
                                 // String concatenation
-                            } else if matches!(var.ty, Type::Unknown)
+                            } else if matches!(target_ty, Type::Unknown)
                                 || matches!(rhs_ty, Type::Unknown)
                             {
                                 // Ignore mismatch if type is Unknown
                             } else {
-                                self.error_binary_mismatch(op, &var.ty, &rhs_ty, span);
+                                self.error_binary_mismatch(op, &target_ty, &rhs_ty, span);
                             }
                         }
                     }
-                    self.expect_assignable(&var.ty, &rhs_ty, span, "assignment");
+                    self.expect_assignable(&target_ty, &rhs_ty, span, "assignment");
                 } else {
                     self.error(
                         format!("cannot assign to undefined variable '{}'", name),
@@ -1643,8 +1665,10 @@ impl TypeChecker {
                     }
                 }
 
+                let mut missing = Vec::new();
                 for required in struct_fields.keys() {
                     if !seen.contains(required) {
+                        missing.push(required.clone());
                         self.error(
                             format!(
                                 "missing field '{}' for variant '{}.{}'",
@@ -1652,9 +1676,19 @@ impl TypeChecker {
                             ),
                             span.clone(),
                             None,
-                            None,
+                            Some(format!("provide field `{}: ...`", required)),
                         );
                     }
+                }
+                if !missing.is_empty() {
+                    let missing_str = missing.iter().map(|m| format!("`{}`", m)).collect::<Vec<_>>().join(", ");
+                    self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
+                        format!("not all variant fields initialized, missing: {}", missing_str),
+                        self.filepath.clone(),
+                        span.clone(),
+                        None,
+                        Some(format!("provide missing field(s) for variant '{}.{}'", enum_name, variant_name)),
+                    ));
                 }
 
                 Type::EnumVariant {
@@ -1665,15 +1699,85 @@ impl TypeChecker {
                 }
             }
             _ => {
-                for (_, field_expr) in fields {
-                    self.infer_expr_type(field_expr);
-                }
-                if let Expr::Identifier(name, _) = inner {
-                    Type::Struct(name.clone())
-                } else if let Type::Named(name) = base_ty {
-                    Type::Struct(name)
+                let struct_name_opt = match inner {
+                    Expr::Identifier(name, _) => Some(name.clone()),
+                    Expr::Dot(obj, member, _) => {
+                        if let Expr::Identifier(obj_name, _) = &**obj {
+                            Some(format!("{}.{}", obj_name, member))
+                        } else {
+                            Some(member.clone())
+                        }
+                    }
+                    _ => match &base_ty {
+                        Type::Named(name) | Type::Struct(name) => Some(name.clone()),
+                        _ => None,
+                    },
+                };
+
+                let struct_info_opt = struct_name_opt.as_ref().and_then(|s_name| {
+                    self.structs.get(s_name).cloned().or_else(|| {
+                        let short = s_name.rsplit('.').next().unwrap_or(s_name);
+                        self.structs.get(short).cloned()
+                    })
+                });
+
+                if let Some(struct_info) = struct_info_opt {
+                    let s_name = struct_name_opt.unwrap();
+                    let mut seen = HashSet::new();
+                    for (field_name, field_expr) in fields {
+                        seen.insert(field_name.clone());
+                        let actual = self.infer_expr_type(field_expr);
+                        if let Some((_, expected)) = struct_info.fields.iter().find(|(n, _)| n == field_name) {
+                            self.expect_assignable(
+                                expected,
+                                &actual,
+                                &field_expr.span(),
+                                "struct field initializer",
+                            );
+                        } else {
+                            self.error(
+                                format!("unknown field '{}' for struct '{}'", field_name, s_name),
+                                field_expr.span(),
+                                None,
+                                None,
+                            );
+                        }
+                    }
+
+                    let mut missing = Vec::new();
+                    for (field_name, _) in &struct_info.fields {
+                        if !seen.contains(field_name) {
+                            missing.push(field_name.clone());
+                            self.error(
+                                format!("missing field '{}' for struct '{}'", field_name, s_name),
+                                span.clone(),
+                                None,
+                                Some(format!("provide field `{}: ...`", field_name)),
+                            );
+                        }
+                    }
+                    if !missing.is_empty() {
+                        let missing_str = missing.iter().map(|m| format!("`{}`", m)).collect::<Vec<_>>().join(", ");
+                        self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
+                            format!("not all struct fields initialized, missing: {}", missing_str),
+                            self.filepath.clone(),
+                            span.clone(),
+                            None,
+                            Some(format!("provide missing field(s) for struct '{}'", s_name)),
+                        ));
+                    }
+                    Type::Struct(s_name)
                 } else {
-                    base_ty
+                    for (_, field_expr) in fields {
+                        self.infer_expr_type(field_expr);
+                    }
+                    if let Expr::Identifier(name, _) = inner {
+                        Type::Struct(name.clone())
+                    } else if let Type::Named(name) = base_ty {
+                        Type::Struct(name)
+                    } else {
+                        base_ty
+                    }
                 }
             }
         }
