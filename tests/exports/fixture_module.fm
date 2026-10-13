@@ -1,0 +1,13 @@
+package fixture_module
+
+let private_secret = 42
+
+fn private_helper() -> Int {
+    return 100
+}
+
+export let public_constant = 999
+
+export fn public_greet(name: String) -> String {
+    return $"Hello, {name}!"
+}

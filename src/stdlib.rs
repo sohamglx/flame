@@ -139,6 +139,152 @@ pub fn locate_import_file(current_file: &Path, import_path: &[String]) -> Option
         return None;
     }
 
+    let parent_dir = if current_file.is_dir() {
+        current_file
+    } else {
+        current_file.parent().unwrap_or_else(|| Path::new("."))
+    };
+
+    let pkg_name = &import_path[0];
+
+    // 1. Check if importing the project's own declared package
+    if let Some((root, manifest)) = crate::utils::manifest::find_and_load_manifest(Some(parent_dir)) {
+        let is_current_pkg = manifest.package_name().map_or(false, |n| n == pkg_name);
+        if is_current_pkg {
+            if import_path.len() == 1 {
+                if let Some(lib_entry) = manifest.library_entry() {
+                    let p = root.join(&lib_entry);
+                    if p.exists() {
+                        return Some(p);
+                    }
+                }
+                let lib_p = root.join("src").join("lib.fm");
+                if lib_p.exists() {
+                    return Some(lib_p);
+                }
+                let main_p = root.join("src").join("main.fm");
+                if main_p.exists() {
+                    return Some(main_p);
+                }
+                let src_dir = root.join("src");
+                if src_dir.is_dir() {
+                    return Some(src_dir);
+                }
+            } else {
+                let sub = import_path[1..].join("/");
+                let p1 = root.join("src").join(format!("{}.fm", sub));
+                if p1.exists() {
+                    return Some(p1);
+                }
+                let p2 = root.join("src").join(format!("{}.flame", sub));
+                if p2.exists() {
+                    return Some(p2);
+                }
+            }
+        }
+    }
+
+    // 1b. Check if src/main.fm or src/lib.fm declares `package <pkg_name>` in workspace root
+    if let Some(root) = crate::utils::manifest::find_manifest_root(parent_dir) {
+        for candidate_entry in &["src/lib.fm", "src/main.fm"] {
+            let entry_file = root.join(candidate_entry);
+            if entry_file.exists() {
+                if let Ok(content) = std::fs::read_to_string(&entry_file) {
+                    for line in content.lines().take(15) {
+                        let trimmed = line.trim();
+                        if let Some(declared) = trimmed.strip_prefix("package ") {
+                            let clean_name = declared.trim().trim_end_matches(';').trim();
+                            if clean_name == pkg_name {
+                                if import_path.len() == 1 {
+                                    return Some(entry_file);
+                                } else {
+                                    let sub = import_path[1..].join("/");
+                                    let sub_p = root.join("src").join(format!("{}.fm", sub));
+                                    if sub_p.exists() {
+                                        return Some(sub_p);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Check installed dependencies in .flame/pkg (search upward from parent_dir, then cwd)
+    let mut search_dirs = vec![parent_dir.to_path_buf()];
+    if let Ok(cwd) = std::env::current_dir() {
+        if !search_dirs.contains(&cwd) {
+            search_dirs.push(cwd);
+        }
+    }
+
+    for start_check in search_dirs {
+        let mut check_dir = start_check;
+        for _ in 0..8 {
+            let pkg_base = check_dir.join(".flame").join("pkg").join(pkg_name);
+            if pkg_base.exists() {
+                if import_path.len() == 1 {
+                    let dep_toml = pkg_base.join("flame.toml");
+                    if dep_toml.exists() {
+                        if let Some(dep_manifest) =
+                            crate::utils::manifest::load_manifest_from_file(&dep_toml)
+                        {
+                            if let Some(lib_entry) = dep_manifest.library_entry() {
+                                let p = pkg_base.join(&lib_entry);
+                                if p.exists() {
+                                    return Some(p);
+                                }
+                            }
+                        }
+                    }
+                    for candidate in &[
+                        pkg_base.join("src").join("lib.fm"),
+                        pkg_base.join("src").join("lib.flame"),
+                        pkg_base.join("src").join("main.fm"),
+                        pkg_base.join("src").join("main.flame"),
+                        pkg_base.join("lib.fm"),
+                        pkg_base.join("main.fm"),
+                    ] {
+                        if candidate.exists() {
+                            return Some(candidate.clone());
+                        }
+                    }
+                } else {
+                    let sub_path = import_path[1..].join("/");
+                    for candidate in &[
+                        pkg_base.join("src").join(format!("{}.fm", sub_path)),
+                        pkg_base.join("src").join(format!("{}.flame", sub_path)),
+                        pkg_base.join(format!("{}.fm", sub_path)),
+                        pkg_base.join(format!("{}.flame", sub_path)),
+                    ] {
+                        if candidate.exists() {
+                            return Some(candidate.clone());
+                        }
+                    }
+                }
+            }
+            if !check_dir.pop() {
+                break;
+            }
+        }
+    }
+
+    // 3. Check for "import main" mapping to the workspace's "src" directory
+    if import_path.len() == 1 && import_path[0] == "main" {
+        let mut base_dir = parent_dir.to_path_buf();
+        for _ in 0..7 {
+            let src_dir = base_dir.join("src");
+            if src_dir.exists() && src_dir.is_dir() {
+                return Some(src_dir);
+            }
+            if !base_dir.pop() {
+                break;
+            }
+        }
+    }
+
     let module_path = import_path.join("/");
     let dotted_path = import_path.join(".");
     let raw_name = import_path.last().unwrap();
@@ -155,21 +301,6 @@ pub fn locate_import_file(current_file: &Path, import_path: &[String]) -> Option
     let search_roots = ["", "src", "test", "tests"];
 
     let mut candidates_to_search = Vec::new();
-    let parent_dir = current_file.parent().unwrap_or_else(|| Path::new("."));
-
-    // Check for "import main" mapping to the workspace's "src" directory
-    if import_path.len() == 1 && import_path[0] == "main" {
-        let mut base_dir = parent_dir.to_path_buf();
-        for _ in 0..7 {
-            let src_dir = base_dir.join("src");
-            if src_dir.exists() && src_dir.is_dir() {
-                return Some(src_dir);
-            }
-            if !base_dir.pop() {
-                break;
-            }
-        }
-    }
 
     // Add current_file's parent hierarchy
     let mut base_dir = parent_dir.to_path_buf();
@@ -200,42 +331,6 @@ pub fn locate_import_file(current_file: &Path, import_path: &[String]) -> Option
                 candidates_to_search.push(root_dir);
             }
             if !base_dir.pop() {
-                break;
-            }
-        }
-
-        // Check .flame/pkg for package imports starting from current_file's parent, then fallback to cwd
-        let pkg_name = &import_path[0];
-        let mut check_dir = parent_dir.to_path_buf();
-        loop {
-            let pkg_dir = check_dir
-                .join(".flame")
-                .join("pkg")
-                .join(pkg_name)
-                .join("src");
-            if pkg_dir.exists() {
-                if import_path.len() == 1 {
-                    let p = pkg_dir.join("main.fm");
-                    if p.exists() {
-                        return Some(p);
-                    }
-                    let p = pkg_dir.join("main.flame");
-                    if p.exists() {
-                        return Some(p);
-                    }
-                } else {
-                    let sub_path = import_path[1..].join("/");
-                    let p = pkg_dir.join(format!("{}.fm", sub_path));
-                    if p.exists() {
-                        return Some(p);
-                    }
-                    let p = pkg_dir.join(format!("{}.flame", sub_path));
-                    if p.exists() {
-                        return Some(p);
-                    }
-                }
-            }
-            if !check_dir.pop() {
                 break;
             }
         }

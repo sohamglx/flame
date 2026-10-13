@@ -1,0 +1,12 @@
+[dependencies]
+math_lib = "../math_lib"
+
+[options]
+closure-types = "default"
+rust-plugins = "default"
+
+[package]
+edition = "2026"
+name = "demo_app"
+type = "executable"
+version = "0.1.0"

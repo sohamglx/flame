@@ -2,6 +2,50 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.7.0] - 2026-10-13 (Codename: *Seventh Spark*)
+
+### 📦 Comprehensive Package Manager, Module Resolver & Export Boundary Architecture
+
+- **Strict Export Boundaries & Visibility**:
+  - Implemented strict export enforcement across the runner (`src/runner/stmts.rs`) and typechecker (`src/typechecker/stmts.rs`).
+  - Only declarations explicitly annotated with `export` (`export fn`, `export let`, `export const`, `export struct`, `export enum`, `export trait`, `export annotation`) or re-exported via `export <symbol>` / `export import ...` are exposed to importers.
+  - Non-exported symbols remain private to the defining module and cannot be accessed from outside, preventing leakage of internal implementation details.
+
+- **Inferred Package Entry Points & Clean Direct Imports in Tests**:
+  - Resolved package imports through their manifest declarations and inferred entry points in `src/stdlib.rs` (`locate_import_file`):
+    - Priority: `[lib].path` -> `src/lib.fm` -> `[application].entry` -> `src/main.fm` -> root package files.
+  - Direct package imports in test files and consumer code now work seamlessly: consumers and tests can write `import <pkg_name>` directly without having to refer to internal file structures like `import src.main`.
+
+- **Local Package Installation & Live Updates (`fmp i <path>`)**:
+  - Added support for local package installation (`fmp i ../path` or `fmp install <path>`):
+    - Installs the entire package directory into `.flame/pkg/{name}`.
+    - Creates a symbolic link on Unix platforms to connect the installed package with live updates, enabling instant reflection of library code changes in tests and consumer apps without manual re-copying.
+    - Automatically updates `flame.toml` with the local package dependency.
+
+- **Package Creation & Verification Pipeline (`fmp package`)**:
+  - Upgraded `fmp package` in `src/cli/commands/project.rs`:
+    - Recursively validates all source files (`.fm`) in the package graph for syntax correctness and public exports.
+    - Emits a deterministic, versioned `.fmp` zip archive containing all package sources, assets, and metadata.
+    - Added `fmp package --check` to validate exports and package structure without emitting an archive.
+    - Added `fmp package --list` to display all included source files and public exports.
+    - Added `fmp new --lib <name>` to scaffold reusable Flame libraries with `[lib]` entry points and API test harnesses.
+
+- **Unified Typed Manifest Parsing (`FlameManifest`)**:
+  - Replaced line-by-line TOML string matching with a typed, strongly-validated `FlameManifest` using `toml` and `serde` in `src/utils/manifest.rs` and `src/package_manager/manifest.rs`.
+  - Added typed configurations for `[package]`, `[lib]`, `[application]`, `[options]`, `[dependencies]`, and `[plugins]`.
+  - Deprecates ad-hoc string parsing across build, test, package manager, and IDE paths.
+
+- **Safe Package Removal & Error Propagation**:
+  - `fmp remove <pkg>` now modifies only the parsed `[dependencies]` table and preserves native plugins if they are referenced by other dependencies or the workspace.
+  - Remote dependency downloads (`fetch_remote`) now strictly return `Result<String, String>` and abort installation if download or archive extraction fails.
+
+- **AST-Based Import Feature Detection**:
+  - Replaced regular-expression-based import scanning in `src/compiler.rs` (`scan_imports`) with AST statement parsing and lexer token scanning, preventing false positives caused by `import` keywords inside comments or string literals.
+
+- **IDE Hover Documentation on `import` Statements**:
+  - Updated IDE hover provider in `src/cli/ide.rs`:
+    - Hovering over an `import` line or imported module name now displays the target module's documentation (extracted from `@Docs("...")`, doc comments `///`, standard library registry, or `.fmi` metadata) instead of the generic keyword definition.
+
 ## [0.6.9] - 2026-10-11 (Codename: *Sixth Spark*)
 
 ### 🛡️ Rust-Style Ownership, Borrow Checking & Lifetime Safety System

@@ -318,24 +318,150 @@ pub fn add_package(args: &[String]) {
     );
 }
 
+pub fn link_or_copy_local_package(src_path: &Path, dest_path: &Path) -> std::io::Result<()> {
+    let abs_src = fs::canonicalize(src_path).unwrap_or_else(|_| src_path.to_path_buf());
+    if dest_path.exists() || dest_path.is_symlink() {
+        let _ = fs::remove_dir_all(dest_path).or_else(|_| fs::remove_file(dest_path));
+    }
+    if let Some(parent) = dest_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    #[cfg(unix)]
+    {
+        if std::os::unix::fs::symlink(&abs_src, dest_path).is_ok() {
+            return Ok(());
+        }
+    }
+    crate::utils::copy_dir_all(&abs_src, dest_path)
+}
+
+#[cfg(feature = "cli")]
+pub fn install_local_package(local_path: &Path, is_release: bool) {
+    let abs_path = fs::canonicalize(local_path).unwrap_or_else(|_| local_path.to_path_buf());
+    let pkg_name = if abs_path.join("flame.toml").exists() {
+        crate::utils::manifest::load_manifest_from_file(&abs_path.join("flame.toml"))
+            .and_then(|m| m.package_name().map(String::from))
+            .unwrap_or_else(|| {
+                abs_path
+                    .file_name()
+                    .and_then(|f| f.to_str())
+                    .unwrap_or("pkg")
+                    .to_string()
+            })
+    } else {
+        abs_path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("pkg")
+            .to_string()
+    };
+
+    let toml_path = Path::new("flame.toml");
+    if toml_path.exists() {
+        let local_str = local_path.to_string_lossy().to_string();
+        if let Ok(content) = fs::read_to_string(toml_path) {
+            if let Ok(mut doc) = toml::from_str::<toml::Value>(&content) {
+                if let Some(tbl) = doc.as_table_mut() {
+                    let deps = tbl
+                        .entry("dependencies")
+                        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
+                        .as_table_mut();
+                    if let Some(deps_tbl) = deps {
+                        deps_tbl.insert(pkg_name.clone(), toml::Value::String(local_str.clone()));
+                    }
+                }
+                if let Ok(serialized) = toml::to_string_pretty(&doc) {
+                    let _ = fs::write(toml_path, serialized);
+                }
+            }
+        }
+    }
+
+    let pkg_dest = Path::new(".flame").join("pkg").join(&pkg_name);
+    match link_or_copy_local_package(&abs_path, &pkg_dest) {
+        Ok(_) => {
+            generate_package_fmi(&pkg_name, &pkg_dest, is_release);
+            println!(
+                "   \x1b[1;32m✓\x1b[0m Linked & installed local package '{}' into .flame/pkg/{} (live connected for tests)",
+                pkg_name, pkg_name
+            );
+        }
+        Err(e) => {
+            eprintln!(
+                "   \x1b[1;31m✗ Failed\x1b[0m installing local package '{}': {}",
+                pkg_name, e
+            );
+        }
+    }
+}
+
 #[cfg(feature = "cli")]
 pub fn remove_package(pkg_name: &str) {
     let toml_path = Path::new("flame.toml");
     if toml_path.exists() {
         if let Ok(content) = fs::read_to_string(toml_path) {
-            let lines: Vec<&str> = content
-                .lines()
-                .filter(|line| {
-                    let trimmed = line.trim();
-                    !trimmed.starts_with(&format!("{} =", pkg_name))
-                        && !trimmed.starts_with(&format!("{}=", pkg_name))
-                })
-                .collect();
-            let _ = fs::write(toml_path, lines.join("\n"));
+            if let Ok(mut doc) = toml::from_str::<toml::Value>(&content) {
+                if let Some(table) = doc.as_table_mut() {
+                    let sections = [
+                        "dependencies",
+                        "plugins",
+                        "native-dependencies",
+                        "dev-dependencies",
+                    ];
+                    for sec in &sections {
+                        if let Some(sec_val) = table.get_mut(*sec).and_then(|v| v.as_table_mut()) {
+                            sec_val.remove(pkg_name);
+                        }
+                    }
+                }
+                if let Ok(serialized) = toml::to_string_pretty(&doc) {
+                    let _ = fs::write(toml_path, serialized);
+                }
+            }
         }
     }
 
-    let pkg_dir = Path::new(".flame").join("pkg").join(pkg_name);
+    // Build reference set to avoid removing plugins still used elsewhere
+    let mut still_referenced = std::collections::HashSet::new();
+    if let Ok(content) = fs::read_to_string("flame.toml") {
+        for sec in &[
+            "[dependencies]",
+            "[plugins]",
+            "[native-dependencies]",
+            "[dev-dependencies]",
+        ] {
+            for (k, _) in parse_section_entries(&content, sec) {
+                still_referenced.insert(k);
+            }
+        }
+    }
+
+    let pkg_base = Path::new(".flame").join("pkg");
+    if pkg_base.exists() {
+        if let Ok(entries) = fs::read_dir(&pkg_base) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name != pkg_name {
+                    let dep_manifest = entry.path().join("flame.toml");
+                    if dep_manifest.exists() {
+                        if let Ok(content) = fs::read_to_string(dep_manifest) {
+                            for sec in &[
+                                "[dependencies]",
+                                "[plugins]",
+                                "[native-dependencies]",
+                            ] {
+                                for (k, _) in parse_section_entries(&content, sec) {
+                                    still_referenced.insert(k);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let pkg_dir = pkg_base.join(pkg_name);
     if pkg_dir.exists() {
         let manifest_path = pkg_dir.join("flame.toml");
         if manifest_path.exists() {
@@ -343,8 +469,11 @@ pub fn remove_package(pkg_name: &str) {
                 let plugins = parse_section_entries(&dep_manifest, "[plugins]");
                 let native_deps = parse_section_entries(&dep_manifest, "[native-dependencies]");
                 for (plugin_name, _) in plugins.into_iter().chain(native_deps.into_iter()) {
-                    let plugin_dir = Path::new(".flame").join("pkg").join(&plugin_name);
-                    if plugin_dir.exists() && plugin_name != pkg_name {
+                    let plugin_dir = pkg_base.join(&plugin_name);
+                    if plugin_dir.exists()
+                        && plugin_name != pkg_name
+                        && !still_referenced.contains(&plugin_name)
+                    {
                         let _ = fs::remove_dir_all(&plugin_dir);
                         println!(
                             "\x1b[1;32m     Removed\x1b[0m local plugin '{}' of package '{}'",
@@ -354,11 +483,10 @@ pub fn remove_package(pkg_name: &str) {
                 }
             }
         }
-        let _ = fs::remove_dir_all(&pkg_dir);
+        let _ = fs::remove_dir_all(&pkg_dir).or_else(|_| fs::remove_file(&pkg_dir));
     }
     println!("\x1b[1;32m     Removed\x1b[0m package '{}'", pkg_name);
 }
-
 
 #[cfg(feature = "cli")]
 pub fn ensure_dependencies_installed(is_release: bool) {
@@ -412,54 +540,60 @@ pub fn ensure_dependencies_installed(is_release: bool) {
     let mut native_to_compile = native_deps;
     native_to_compile.extend(plugins);
 
-    let fetch_remote = |target: &str, source: &str| -> String {
+    let fetch_remote = |target: &str, source: &str| -> Result<String, String> {
         let is_local = source.starts_with('.') || source.starts_with('/') || source == "*";
         if is_local {
-            if source == "*" {
-                target.to_string()
+            let local_dir = if source == "*" {
+                PathBuf::from(target)
             } else {
-                source.to_string()
-            }
+                PathBuf::from(source)
+            };
+            let pkg_dest = Path::new(".flame").join("pkg").join(target);
+            let _ = link_or_copy_local_package(&local_dir, &pkg_dest);
+            Ok(pkg_dest.to_string_lossy().into_owned())
         } else {
             let pkg_dir = Path::new(".flame").join("pkg");
-            let target_dir = pkg_dir.join(&target);
+            let target_dir = pkg_dir.join(target);
 
             if !source.starts_with("http") && !source.contains("github.com") {
-                return target.to_string();
+                return Ok(target.to_string());
             }
 
             if !target_dir.exists() {
                 let _ = fs::create_dir_all(&pkg_dir);
-                if let Err(e) = download_archive_with_loader(target, source, &target_dir) {
-                    eprintln!(
-                        "\r\x1b[1;31m  ✗ Failed\x1b[0m downloading package '{}': {}\x1b[K",
-                        target, e
-                    );
-                }
+                download_archive_with_loader(target, source, &target_dir).map_err(|e| {
+                    format!("Failed downloading package '{}': {}", target, e)
+                })?;
             }
-            target_dir.to_string_lossy().into_owned()
+            Ok(target_dir.to_string_lossy().into_owned())
         }
     };
 
     for (target, source) in deps {
-        fetch_remote(&target, &source);
+        if let Err(e) = fetch_remote(&target, &source) {
+            eprintln!("\r\x1b[1;31m  ✗\x1b[0m {}\x1b[K", e);
+        }
     }
 
     if !is_rust_plugins_denied() {
         for (target, source) in native_to_compile {
-            let plugin_path_str = fetch_remote(&target, &source);
-            let plugin_path = Path::new(&plugin_path_str);
-
-            if plugin_path.join("Cargo.toml").exists()
-                || plugin_path.join("native").join("Cargo.toml").exists()
-            {
-                generate_package_fmi(&target, plugin_path, is_release);
+            match fetch_remote(&target, &source) {
+                Ok(plugin_path_str) => {
+                    let plugin_path = Path::new(&plugin_path_str);
+                    if plugin_path.join("Cargo.toml").exists()
+                        || plugin_path.join("native").join("Cargo.toml").exists()
+                    {
+                        generate_package_fmi(&target, plugin_path, is_release);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("\r\x1b[1;31m  ✗\x1b[0m {}\x1b[K", e);
+                }
             }
         }
         build_all_dependency_plugins(is_release);
     }
 }
-
 
 #[cfg(feature = "cli")]
 pub fn install_all_packages(args: &[String]) {
@@ -474,6 +608,16 @@ pub fn install_all_packages(args: &[String]) {
 
     let is_release = args.contains(&"--release".to_string()) || args.contains(&"-r".to_string());
     let force = args.contains(&"--force".to_string()) || args.contains(&"-f".to_string());
+
+    // Check if user specified a positional path argument: e.g. `fmp i ../some_pkg`
+    let local_target_arg = args.iter().find(|a| !a.starts_with('-')).cloned();
+    if let Some(ref path_str) = local_target_arg {
+        let p = Path::new(path_str);
+        if p.exists() && (p.is_dir() || path_str.starts_with('.') || path_str.starts_with('/')) {
+            install_local_package(p, is_release);
+            return;
+        }
+    }
 
     println!();
     println!("\x1b[1;36m  Installing\x1b[0m dependencies declared in flame.toml...\n");
@@ -510,7 +654,9 @@ pub fn install_all_packages(args: &[String]) {
             } else {
                 PathBuf::from(&source)
             };
-            generate_package_fmi(&target, &local_dir, is_release);
+            let pkg_dest = pkg_dir.join(&target);
+            let _ = link_or_copy_local_package(&local_dir, &pkg_dest);
+            generate_package_fmi(&target, &pkg_dest, is_release);
             if local_dir.join("flame.toml").exists() {
                 if let Ok(dep_manifest) = fs::read_to_string(local_dir.join("flame.toml")) {
                     let plugins = parse_section_entries(&dep_manifest, "[plugins]");

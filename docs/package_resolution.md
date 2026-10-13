@@ -56,15 +56,23 @@ Flame mirrors the modern dependency model for fetching remote packages:
 
 ---
 
-## Package Creation & Distribution
+## Package Creation, Archives (.fmp) & Distribution
 
-When configuring a library or package (`type = "pkg"` in `flame.toml`), running `flame build` bundles:
-- `flame.toml` manifest.
-- The `src/` directory containing exported Flame code.
-- Generated `.fmi` interface files for bundled native plugins.
-- Built native archives (`.rlib`).
+When configuring a library (`type = "library"` or `"pkg"` in `flame.toml`), use the packaging pipeline:
 
-Consumers can install your package via `flame install` and immediately benefit from your native plugins and full IDE autocompletion with zero manual FFI bridging.
+- **`fmp new --lib <name>`**: Scaffolds a new library with `[lib].path = "src/lib.fm"` and test harnesses.
+- **`fmp package --check`**: Validates the entire source graph, exports, and dependencies.
+- **`fmp package --list`**: Displays all included source files and public exports.
+- **`fmp package`**: Emits a validated package directory at `target/pkg/<name>` and a deterministic `.fmp` zip archive at `target/pkg/<name>.fmp`.
+
+### Local Dependencies with Live Updates
+When testing packages locally, install via:
+```bash
+fmp i ../my_library
+```
+Flame links the whole package into `.flame/pkg/my_library` using filesystem symlinks on Unix, ensuring any updates made to the library code are immediately live in the consumer's tests and execution without re-copying.
+
+Consumers can install remote packages via `fmp install` or `fmp add <git_url>`, benefiting from `.fmi` interface contracts, full IDE autocompletion, and native plugin bridges with zero manual FFI setup.
 
 ---
 

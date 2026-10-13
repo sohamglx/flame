@@ -86,7 +86,7 @@ fn real_main() {
         "new" => {
             if args.len() < 3 {
                 println!("\x1b[1;31merror:\x1b[0m please specify the project or plugin name");
-                println!("usage: fmp new <project_name> | fmp new --plugin <plugin_name>");
+                println!("usage: fmp new <project_name> | fmp new --lib <library_name> | fmp new --plugin <plugin_name>");
                 return;
             }
             if args.contains(&"--plugin".to_string()) || args.contains(&"-p".to_string()) {
@@ -99,6 +99,16 @@ fn real_main() {
                     "bridge"
                 };
                 init_native_bridge(plugin_name);
+            } else if args.contains(&"--lib".to_string()) || args.contains(&"-l".to_string()) {
+                let l_idx = args.iter().position(|r| r == "--lib" || r == "-l").unwrap();
+                let lib_name = if let Some(n) = args.get(l_idx + 1).filter(|a| !a.starts_with('-')) {
+                    n.as_str()
+                } else if l_idx > 2 && !args[2].starts_with('-') {
+                    args[2].as_str()
+                } else {
+                    "mylib"
+                };
+                create_new_library(lib_name);
             } else {
                 let project_name = &args[2];
                 create_new_project(project_name);
@@ -246,7 +256,7 @@ fn real_main() {
             package_manager::gen_fmi_from_rust_file(std::path::Path::new(filepath));
         }
         "version" | "--version" | "-version" | "--v" | "-v" | "-V" => {
-            println!("Flame {} (Sixth Spark)", env!("CARGO_PKG_VERSION"));
+            println!("Flame {} (Seventh Spark)", env!("CARGO_PKG_VERSION"));
         }
         "help" | "--help" | "-h" => {
             print_help();

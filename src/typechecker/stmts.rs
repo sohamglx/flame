@@ -8,7 +8,15 @@ use std::collections::{HashMap, HashSet};
 impl TypeChecker {
     pub(crate) fn collect_top_level_declarations(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
-            match stmt {
+            if self.is_importing && !matches!(stmt, Stmt::ExportDecl(_, _)) {
+                continue;
+            }
+            let check_stmt = if let Stmt::ExportDecl(inner, _) = stmt {
+                inner.as_ref()
+            } else {
+                stmt
+            };
+            match check_stmt {
                 Stmt::StructDecl {
                     name,
                     fields,
@@ -1537,11 +1545,27 @@ impl TypeChecker {
                             let prev = self.is_importing;
                             self.is_importing = true;
                             for s in &parsed_stmts {
-                                let inner_stmt = if let Stmt::ExportDecl(inner, _) = s {
-                                    inner.as_ref()
+                                let (inner_stmt, is_exported) = if let Stmt::ExportDecl(inner, _) = s {
+                                    (inner.as_ref(), true)
                                 } else {
-                                    s
+                                    (s, false)
                                 };
+
+                                if !is_exported && !matches!(inner_stmt, Stmt::ImplDecl { .. }) {
+                                    continue;
+                                }
+
+                                if is_exported {
+                                    if let Stmt::ExprStmt(crate::parser::Expr::Identifier(reexp_name, _)) = inner_stmt {
+                                        let q_name = format!("{}.{}", last, reexp_name);
+                                        if let Some(sig) = self.functions.get(reexp_name).cloned() {
+                                            self.functions.insert(q_name.clone(), sig);
+                                        }
+                                        if let Some(s_info) = self.structs.get(reexp_name).cloned() {
+                                            self.structs.insert(q_name, s_info);
+                                        }
+                                    }
+                                }
 
                                 match inner_stmt {
                                     Stmt::ImplDecl {

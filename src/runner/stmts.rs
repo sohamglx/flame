@@ -529,11 +529,11 @@ impl Runner {
                         self.modules.insert(mod_name, mod_env);
                     }
                 } else if mod_name.starts_with("native.")
-                    || (Path::new(&format!(".flame/pkg/{}", path.last().unwrap())).exists()
-                        && !Path::new(&format!(".flame/pkg/{}/src/main.fm", path.last().unwrap()))
-                            .exists())
                     || crate::utils::manifest::get_declared_plugins(Some(&self.filepath))
                         .contains(path.last().unwrap().as_str())
+                    || (crate::stdlib::locate_import_file(&self.filepath, path).is_none()
+                        && (Path::new(&format!(".flame/pkg/{}/{}.fmi", path.last().unwrap(), path.last().unwrap())).exists()
+                            || Path::new(&format!(".flame/pkg/{}/native", path.last().unwrap())).exists()))
                 {
                     if crate::utils::manifest::is_rust_plugins_denied(Some(&self.filepath)) {
                         return Err(format!(
@@ -731,21 +731,32 @@ impl Runner {
                     let mut target_is_dir = false;
 
                     let mut target_path = None;
-                    let pkg_main = self
-                        .resolve_path(&format!(".flame/pkg/{}/src/main.fm", path.last().unwrap()));
+                    let raw_pkg = path.last().unwrap();
                     let f_fm = self.resolve_path(&format!("{}.fm", path.join("/")));
                     let _f_flame = self.resolve_path(&format!("{}.flame", path.join("/")));
 
                     if self.vfs.is_some() {
                         let vfs = self.vfs.as_ref().unwrap();
-                        let pkg_main_str =
-                            format!(".flame/pkg/{}/src/main.fm", path.last().unwrap());
                         let f_fm_str = format!("src/{}.fm", path.join("/"));
                         let f_flame_str = format!("src/{}.flame", path.join("/"));
                         let dir_prefix = format!("src/{}/", path.join("/"));
 
-                        if vfs.contains_key(&pkg_main_str) {
-                            target_path = Some(PathBuf::from(pkg_main_str));
+                        let pkg_candidates = [
+                            format!(".flame/pkg/{}/src/lib.fm", raw_pkg),
+                            format!(".flame/pkg/{}/src/main.fm", raw_pkg),
+                            format!(".flame/pkg/{}/lib.fm", raw_pkg),
+                            format!(".flame/pkg/{}/main.fm", raw_pkg),
+                        ];
+                        let mut found_pkg = None;
+                        for cand in &pkg_candidates {
+                            if vfs.contains_key(cand) {
+                                found_pkg = Some(PathBuf::from(cand));
+                                break;
+                            }
+                        }
+
+                        if let Some(p) = found_pkg {
+                            target_path = Some(p);
                         } else if vfs.contains_key(&f_fm_str) {
                             target_path = Some(PathBuf::from(f_fm_str));
                         } else if vfs.contains_key(&f_flame_str) {
@@ -789,15 +800,10 @@ impl Runner {
                             error_msg = format!("Module '{}' not found in VFS", mod_name);
                         }
                     } else {
-                        // Physical filesystem fallback
                         if let Some(f) = crate::stdlib::locate_import_file(&self.filepath, path) {
                             target_path = Some(f);
-                        } else {
-                            if self.read_file_or_vfs(&pkg_main).is_ok() {
-                                target_path = Some(pkg_main);
-                            } else if self.read_file_or_vfs(&f_fm).is_ok() {
-                                target_path = Some(f_fm);
-                            }
+                        } else if self.read_file_or_vfs(&f_fm).is_ok() {
+                            target_path = Some(f_fm);
                         }
 
                         if let Some(f) = target_path {
@@ -838,6 +844,7 @@ impl Runner {
                         let mod_env = Arc::new(Mutex::new(Env::new()));
                         crate::stdlib::register_global_builtins(mod_env.clone());
                         let mut all_modules = std::collections::HashMap::new();
+                        let mut exported_symbols = std::collections::HashSet::new();
 
                         for (local_file, content) in files_to_run {
                             let mut lexer = Lexer::new(&content);
@@ -894,10 +901,35 @@ impl Runner {
                                         | Stmt::LetDecl { name, .. }
                                         | Stmt::ConstDecl { name, .. }
                                         | Stmt::StructDecl { name, .. }
-                                        | Stmt::EnumDecl { name, .. } => {
+                                        | Stmt::EnumDecl { name, .. }
+                                        | Stmt::TraitDecl { name, .. } => {
+                                            exported_symbols.insert(name.clone());
                                             if let Some(val) = mod_env.lock().unwrap().get(name) {
                                                 env.lock().unwrap().define(
                                                     name.clone(),
+                                                    val,
+                                                    false,
+                                                );
+                                            }
+                                        }
+                                        Stmt::ExprStmt(crate::parser::Expr::Identifier(name, _)) => {
+                                            exported_symbols.insert(name.clone());
+                                            if let Some(val) = mod_env.lock().unwrap().get(name) {
+                                                env.lock().unwrap().define(
+                                                    name.clone(),
+                                                    val,
+                                                    false,
+                                                );
+                                            }
+                                        }
+                                        Stmt::ImportDecl { alias, path, .. } => {
+                                            let exp_name = alias
+                                                .clone()
+                                                .unwrap_or_else(|| path.last().unwrap().clone());
+                                            exported_symbols.insert(exp_name.clone());
+                                            if let Some(val) = mod_env.lock().unwrap().get(&exp_name) {
+                                                env.lock().unwrap().define(
+                                                    exp_name,
                                                     val,
                                                     false,
                                                 );
@@ -916,7 +948,13 @@ impl Runner {
                             self.modules.insert(k, v);
                         }
 
-                        let mut map = mod_env.lock().unwrap().to_formula_map();
+                        let full_map = mod_env.lock().unwrap().to_formula_map();
+                        let mut map = std::collections::HashMap::new();
+                        for sym in &exported_symbols {
+                            if let Some(val) = full_map.get(sym) {
+                                map.insert(sym.clone(), val.clone());
+                            }
+                        }
                         map.insert("__module__".to_string(), Value::Bool(true));
                         env.lock().unwrap().define(
                             bind_name.clone(),

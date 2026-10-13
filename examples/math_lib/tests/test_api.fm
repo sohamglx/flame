@@ -1,0 +1,12 @@
+import math_lib
+
+@Test
+fn test_math_lib_api() {
+    assertEq(math_lib.add(20, 30), 50, "math_lib.add should equal 50")
+    assertEq(math_lib.multiply(6, 7), 42, "math_lib.multiply should equal 42")
+}
+
+@ExpectPanic
+fn test_private_helper_inaccessible() {
+    let _ = math_lib.internal_helper
+}

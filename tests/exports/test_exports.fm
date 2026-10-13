@@ -1,0 +1,17 @@
+import fixture_module as fixture
+
+@Test
+fn test_exported_symbols_accessible() {
+    assertEq(fixture.public_constant, 999, "Public constant should be accessible")
+    assertEq(fixture.public_greet("Flame"), "Hello, Flame!", "Public greet function should work")
+}
+
+@ExpectPanic
+fn test_unexported_variable_inaccessible() {
+    let _ = fixture.private_secret
+}
+
+@ExpectPanic
+fn test_unexported_function_inaccessible() {
+    let _ = fixture.private_helper
+}

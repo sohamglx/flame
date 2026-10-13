@@ -1211,17 +1211,41 @@ pub fn analyze_file_for_json(
 
     let mut scanned_var_hover = None;
     let mut hover_found = None;
+
+    let trimmed_current_line = current_line.trim();
+    if trimmed_current_line.starts_with("import ") {
+        let import_target_str = trimmed_current_line.trim_start_matches("import ").trim();
+        let target_token = import_target_str
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .trim_end_matches(';')
+            .trim_matches('"')
+            .trim_matches('\'');
+        if !target_token.is_empty() {
+            if let Some(m_doc) = extract_module_docs(&manifest_dir, &file, target_token) {
+                hover_found = Some(JsonHover {
+                    label: format!("import {}", target_token),
+                    documentation: Some(m_doc),
+                });
+            }
+        }
+    }
+
     if !word_under_cursor.is_empty() {
         if let Some(var) = scanned_vars.iter().find(|v| v.name == word_under_cursor) {
             if let Some(t) = &var.typ {
                 if t != "Unknown" {
                     let (code_block, doc_body) = if t.starts_with("import:") {
                         let imported = &t["import:".len()..];
+                        let mod_doc = extract_module_docs(&manifest_dir, &file, imported);
                         (
                             format!("import {} as {}", imported, word_under_cursor),
-                            var.doc
-                                .clone()
-                                .unwrap_or_else(|| format!("Imported module `{}`", imported)),
+                            mod_doc.unwrap_or_else(|| {
+                                var.doc
+                                    .clone()
+                                    .unwrap_or_else(|| format!("Imported module `{}`", imported))
+                            }),
                         )
                     } else if t.starts_with("fn ") || t.starts_with("annotation ") {
                         (t.clone(), var.doc.clone().unwrap_or_default())
@@ -4557,6 +4581,86 @@ fn load_local_rust_doc(manifest_dir: &Path, module_name: &str, member: &str) -> 
                     return Some(docs.join("\n"));
                 }
             }
+        }
+    }
+
+    None
+}
+
+fn extract_module_docs(manifest_dir: &Path, file_path: &str, mod_target: &str) -> Option<String> {
+    let clean_target = mod_target.trim().trim_matches('"').trim_matches('\'').trim();
+
+    // 1. Std module doc
+    if let Some(doc) = crate::blaze::get_std_module_doc(clean_target) {
+        return Some(format!("```flame\nmodule {}\n```\n{}", clean_target, doc));
+    }
+    let without_std = clean_target.strip_prefix("std.").unwrap_or(clean_target);
+    if let Some(doc) = crate::blaze::get_std_module_doc(without_std) {
+        return Some(format!("```flame\nmodule {}\n```\n{}", clean_target, doc));
+    }
+
+    // 2. Resolve source file
+    let parts: Vec<String> = clean_target.split('.').map(String::from).collect();
+    let current_file = Path::new(file_path);
+    let resolved_path = crate::stdlib::locate_import_file(current_file, &parts)
+        .or_else(|| crate::stdlib::locate_resource_file(current_file, clean_target));
+
+    if let Some(path) = resolved_path {
+        let target_file = if path.is_dir() {
+            if path.join("src").join("lib.fm").is_file() {
+                path.join("src").join("lib.fm")
+            } else if path.join("src").join("main.fm").is_file() {
+                path.join("src").join("main.fm")
+            } else if path.join("lib.fm").is_file() {
+                path.join("lib.fm")
+            } else if path.join("main.fm").is_file() {
+                path.join("main.fm")
+            } else {
+                path
+            }
+        } else {
+            path
+        };
+
+        if target_file.is_file() {
+            if let Ok(content) = fs::read_to_string(&target_file) {
+                let docs_re = regex::Regex::new(r#"(?s)@Docs\(\s*"((?:[^"\\]|\\.)*)"\s*\)"#).ok()?;
+                if let Some(cap) = docs_re.captures(&content) {
+                    let raw = &cap[1];
+                    let unescaped = raw
+                        .replace("\\n", "\n")
+                        .replace("\\\"", "\"")
+                        .replace("\\\\", "\\");
+                    return Some(format!("```flame\nmodule {}\n```\n{}", clean_target, unescaped));
+                }
+
+                let mut top_docs = Vec::new();
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("///") {
+                        top_docs.push(trimmed.trim_start_matches("///").trim());
+                    } else if !trimmed.is_empty() && !trimmed.starts_with("//") {
+                        break;
+                    }
+                }
+                if !top_docs.is_empty() {
+                    return Some(format!("```flame\nmodule {}\n```\n{}", clean_target, top_docs.join("\n")));
+                }
+            }
+        }
+    }
+
+    // 3. Native plugin docs
+    if clean_target.starts_with("native.") {
+        let plug = clean_target.strip_prefix("native.").unwrap();
+        if let Some(meta) = load_meta_from_project(manifest_dir, plug) {
+            if let Some(doc) = meta.docs {
+                return Some(format!("```flame\nplugin native.{}\n```\n{}", plug, doc));
+            }
+        }
+    } else if let Some(meta) = load_meta_from_project(manifest_dir, clean_target) {
+        if let Some(doc) = meta.docs {
+            return Some(format!("```flame\nplugin native.{}\n```\n{}", clean_target, doc));
         }
     }
 

@@ -1,169 +1,216 @@
 ---
-title: Creating Flame Packages
-description: A complete guide on how to create, configure, and test Flame packages, including bundling native Rust plugins and exporting annotations.
+title: Creating Flame Packages & Libraries
+description: A complete guide on how to scaffold, configure, package, and test Flame libraries, including strict export boundaries, deterministic .fmp archives, and live local dependencies.
 ---
 
 import { Aside, Tabs, TabItem, Steps } from '@astrojs/starlight/components';
 
-Creating a package in Flame allows you to bundle reusable Flame scripts, custom annotations, and even native Rust plugins into a single, distributable unit. When you distribute a Flame package (e.g., via GitHub), consumers can easily pull it into their projects and benefit from full IDE support and seamless native interop.
+Creating a package in Flame allows you to bundle reusable Flame code, modules, interfaces, and native Rust plugins into a single, distributable unit. Consumers and test suites can import packages directly through clean, public interfaces with zero internal path leakage.
 
 ---
 
-## 1. Package Configuration (`flame.toml`)
+## 1. Scaffolding a Library (`fmp new --lib`)
 
-To declare that your project is a package (rather than an executable application), set the `type` to `"pkg"` in your `flame.toml` file.
+To scaffold a brand new Flame library project, run:
+
+```bash
+fmp new --lib my_library
+```
+
+This generates a library project structure with canonical manifest settings, a library entry point (`src/lib.fm`), and an automated public API test harness (`tests/test_api.fm`):
+
+```text
+my_library/
+├── flame.toml             # Manifest configured with type = "library"
+├── src/
+│   └── lib.fm            # Public library entry point
+└── tests/
+    └── test_api.fm       # Automated package test suite
+```
+
+For applications or binary executables, use standard `fmp new my_app`.
+
+---
+
+## 2. Package Configuration (`flame.toml`)
+
+Libraries are declared with `type = "library"` under `[package]` and specify their primary entry point in `[lib]`:
 
 ```toml
-[project]
-name = "my_package"
+[package]
+name = "my_library"
 version = "0.1.0"
-type = "pkg"
+edition = "2026"
+type = "library"
 
-# Optional: define a local Rust plugin bundled with this package
+[lib]
+path = "src/lib.fm"
+
+[options]
+rust-plugins = "default"
+closure-types = "default"
+
+# Optional: define local native Rust plugins bundled with this package
 [plugins]
 native_core = "./native"
 ```
 
-When `type = "pkg"`, running `flame build` will generate a standalone, self-contained package folder inside `target/<profile>/pkg/my_package` that is ready for distribution.
+### Manifest Conventions:
+* **`type = "library"`** (or legacy `"pkg"`): Declares a reusable source package. Defaults entry point to `src/lib.fm`.
+* **`type = "executable"`**: Declares a standalone application. Defaults entry point to `src/main.fm` (or configurable via `[application].entry`).
 
 ---
 
-## 2. Standard Directory Structure
+## 3. Strict Export Boundaries & Visibility
 
-A complete Flame package typically follows this directory structure:
-
-```text
-my_package/
-├── flame.toml
-├── src/
-│   └── main.fm           # Main entry point for the package
-├── native/               # (Optional) Local Rust plugin directory
-│   ├── Cargo.toml
-│   └── src/
-│       └── lib.rs
-└── test/                 # Test files
-    └── my_test.fm
-```
-
----
-
-## 3. Documenting Your Package
-
-To provide documentation for consumers when they hover over your package name in an `import` statement, use the `package` keyword along with a `@Docs` annotation at the top of your `src/main.fm` file.
+Flame enforces strict export boundaries. Only declarations explicitly annotated with `export` are made available to importing consumers:
 
 ```flame
-// src/main.fm
-@Docs("
-# My Package
-This package provides a collection of useful functions and native plugins.
-")
-package my_package
+// src/lib.fm
+package my_library
 
-import native.core
-```
+// Private to this package — cannot be accessed by consumers or external modules
+let internal_seed = 42
 
-When a user writes `import my_package` and hovers over `my_package`, they will see these custom docs instantly.
+fn private_helper(val: Int) -> Int {
+    return val + internal_seed
+}
 
----
+// Public API — visible to consumers
+@Docs("Computes the sum of two integers.")
+export fn add(a: Int, b: Int) -> Int {
+    return a + b
+}
 
-## 4. Exporting Functions and Annotations
+@Docs("Processes input using the package's internal engine.")
+export fn process(input: Int) -> Int {
+    return private_helper(input)
+}
 
-For consumers to use your package's features, you must explicitly `export` them in your Flame scripts. You can export functions, structs, enums, and even custom annotations.
-
-```flame
-// src/main.fm
-
-import native.core
-
-// Export a custom annotation
-export annotation MyAnnotation()
-
-// Export a struct
+// Export custom structs and types
 export struct Config {
-    pub key: String
-}
-
-// Export a function that uses your local native plugin
-export fn process_data(config: Config) -> String {
-    // Calling the native plugin bundled inside your package
-    core.process(config.key)
+    pub timeout_ms: Int
 }
 ```
 
-When a user imports your package, only the `export`ed symbols will be available in their environment.
-
----
-
-## 5. Bundling Local Rust Plugins
-
-Flame makes it incredibly easy to bundle native Rust plugins inside your package. 
-
-<Steps>
-1. **Create the Rust Plugin**: Run `fmp new --plugin <plugin_name>` (or `fmp new -p <plugin_name>`) to scaffold a new Rust plugin in the `./native` directory. *(Note: Ensure the plugin name is different from your Flame package name).*
-2. **Register it**: Run `fmp add --plugin ./native` (or `fmp add -p ./native`) to register the plugin in `flame.toml` under `[plugins]`. The plugin name is automatically read from `native/Cargo.toml`.
-3. **Use it**: Import it in your Flame scripts using the `native.` prefix and its registered name (e.g., `import native.core`).
-</Steps>
-
-<Aside type="tip">
-**Auto-Resolution & Interfaces**: When you run `fmp build`, Flame will automatically compile your local Rust plugin. It also leverages the `flame-macro` crate to generate an Interface File (`.fmi`). This `.fmi` is packaged alongside your Flame scripts, ensuring that anyone who consumes your package gets **instant IDE autocomplete and hover documentation** for your native Rust methods, without needing to compile the Rust code themselves first!
+<Aside type="caution" title="Private Symbols are Inaccessible">
+Accessing unexported functions or variables from an imported package (e.g. `my_library.internal_seed` or `my_library.private_helper()`) produces an immediate compile-time or runtime error.
 </Aside>
 
 ---
 
-## 6. Configuring and Running Tests
+## 4. Documenting Packages with `@Docs`
 
-Testing your package ensures its reliability before distribution. Flame includes a built-in testing framework that seamlessly resolves your package's modules.
-
-Write your tests in the `test/` directory. You can easily import your package's source code by importing `main` or specific files from the `src/` directory.
+When consumers hover over your package name or imported functions in their IDE, Flame displays the documentation attached via `@Docs` annotations or doc comments (`///`):
 
 ```flame
-// test/my_test.fm
+// src/lib.fm
+@Docs("
+# My Library
+Fast, lightweight algorithms and data structures for Flame applications.
+")
+package my_library
 
-import main
-
-@Test
-fn test_process_data() {
-    let conf = main.Config { key: "test_key" }
-    let result = main.process_data(conf)
-    
-    assertEq(result, "processed_test_key")
+@Docs("Calculates factorial of a positive integer.")
+export fn factorial(n: Int) -> Int {
+    if n <= 1 { 1 } else { n * factorial(n - 1) }
 }
 ```
 
-Run your tests using the Flame CLI:
+Hovering over `import my_library` or `my_library.factorial` shows markdown documentation directly in the editor hover card.
+
+---
+
+## 5. Testing the Public Package Interface
+
+Package tests should test what consumers can import. In Flame test files under `tests/`, simply import your package by name:
+
+```flame
+// tests/test_api.fm
+import my_library
+
+@Test
+fn test_public_add() {
+    assertEq(my_library.add(10, 20), 30, "Should add correctly")
+}
+
+@Test
+fn test_public_process() {
+    assertEq(my_library.process(8), 50, "Should process with internal seed")
+}
+
+@ExpectPanic
+fn test_private_symbols_blocked() {
+    // Attempting to access private symbols panics with missing property error
+    let _ = my_library.private_helper
+}
+```
+
+Run tests from the package root:
 
 ```bash
 fmp test
 ```
 
-Flame's package resolution system is smart enough to resolve `import main` inside the `test/` folder directly to your `src/main.fm` file, providing full IDE autocomplete and diagnostics during test development.
+Flame's module resolver automatically resolves `import my_library` to `src/lib.fm` as declared in your `flame.toml`. You **never** need to write `import src.main` or `import main`.
 
 ---
 
-## 7. Building and Distributing
+## 6. The Packaging Pipeline (`fmp package`)
 
-When you are ready to distribute your package, simply run:
+Flame includes a dedicated packaging command to validate source graphs and produce deterministic `.fmp` package archives:
+
+### Inspection & Validation Flags:
+* **`fmp package --list`**: Displays all source files and public exports that will be included in the package.
+* **`fmp package --check`**: Recursively parses and validates all source files, ensures exports are valid, and validates dependency declarations without building an archive.
+* **`fmp package`**: Validates the entire package graph and emits:
+  1. A verified package directory at `target/pkg/<name>/`.
+  2. A deterministic `.fmp` zip archive at `target/pkg/<name>.fmp`.
+* **`fmp package --out <custom_path.fmp>`**: Specifies a custom output archive destination.
+
+Example output:
+```text
+$ fmp package --list
+Package: my_library (type: library)
+Entry point: src/lib.fm
+
+Source files (1):
+  • src/lib.fm
+
+Public exports (2):
+  • export fn add (src/lib.fm)
+  • export fn process (src/lib.fm)
+```
+
+---
+
+## 7. Local Package Dependencies & Live Updates (`fmp i <path>`)
+
+To use your local library inside another Flame application during development:
 
 ```bash
-fmp build
+# Inside your application directory:
+fmp i ../my_library
+# or
+fmp install ../my_library
 ```
 
-Because `type = "pkg"`, Flame acts as a package bundler. It will create a directory at `target/pkg/my_package` containing:
-- Your `flame.toml` manifest.
-- Your entire `src/` directory.
-- Generated `.fmi` interface files from your local plugins.
+### What Flame Does:
+1. **Installs Whole Package**: Links the entire package directory into `.flame/pkg/my_library`.
+2. **Generates Interface Metadata**: Automatically creates `.flame/pkg/my_library/my_library.fmi`.
+3. **Live Updates for Tests & Development**: On Unix systems, Flame creates a filesystem symlink so changes made in `my_library` are **immediately live** in your consumer app's tests and runs without needing to reinstall.
+4. **Records in Manifest**: Adds the local dependency to `flame.toml`:
+   ```toml
+   [dependencies]
+   my_library = "../my_library"
+   ```
 
-### Publishing to GitHub
+Consumers can immediately write:
 
-You don't need a centralized package registry to distribute your package! Just push your repository to GitHub. 
+```flame
+// In consumer app src/main.fm or tests/test_app.fm:
+import my_library
 
-Consumers can install your package using the package manager:
-
-```bash title="bash"
-fmp add github.com/username/my_package@v1.0.0
-# or declare in flame.toml and run:
-fmp install
+let result = my_library.add(100, 25)
+println($"Result: {result}")
 ```
-
-Flame fetches the package natively, caches the Flame sources and `.fmi` interface files, and makes your package functionality instantly available. Consumers **never need to manually copy Rust source code or manage Cargo files in their applications**. During `fmp build`, Flame's dependency analysis automatically integrates only the required native plugins into that application's specialized runtime.
-

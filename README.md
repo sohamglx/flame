@@ -213,7 +213,13 @@ fmp check automation/src/main.fm --json --line 47 --col 18
 - **`fmp format --all`** (or `fmp format` directly in a workspace): Formats all `.fm` and `.flame` source files across your repository.
 
 ### 4. Package & Plugin Management
-- **`fmp new <name>`**: Initialize a new Flame workspace directory with a ready-to-run manifest and directory structure.
+- **`fmp new <name>`**: Initialize a new Flame executable application workspace.
+- **`fmp new --lib <name>`**: Initialize a new Flame reusable library project configured with `type = "library"`, `[lib].path = "src/lib.fm"`, export examples, and automated tests.
+- **`fmp package`**: Validate the entire package source graph, check public exports, and build a deterministic `.fmp` zip archive at `target/pkg/<name>.fmp`.
+- **`fmp package --check`**: Verify syntax and exported declarations without generating an archive artifact.
+- **`fmp package --list`**: Display all source files and public exported symbols included in the package.
+- **`fmp i <path>` / `fmp install <path>`**: Install a local package from a relative directory (e.g. `fmp i ../my_lib`), linking the full package into `.flame/pkg/` with live updates for development and tests.
+- **`fmp remove <name>` / `fmp rm <name>`**: Safely remove a dependency from `flame.toml` without breaking shared plugins.
 - **`fmp add <url_or_name>`**: Download and register external Flame modules or repositories.
 - **`fmp add --plugin <path_to_plugin> [--name <plugin_name>]`**: Register a local or external native Rust plugin inside your `flame.toml` manifest. If `--name` is omitted, Flame automatically discovers the plugin name by inspecting its `Cargo.toml` or extracting the directory name!
 - **`fmp new -p [plugin_name]`**: Initialize a native Rust plugin workspace (`./native`) inside your current Flame project, generating a starter `Cargo.toml`, bridge code, and automatically registering the specified plugin name in your `flame.toml`.

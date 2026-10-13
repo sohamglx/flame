@@ -1,0 +1,7 @@
+import math_lib
+
+@Test
+fn test_consumer_math() {
+    assertEq(math_lib.add(5, 7), 12, "5 + 7 should be 12")
+    assertEq(math_lib.multiply(8, 9), 72, "8 * 9 should be 72")
+}

@@ -78,10 +78,62 @@ pub fn build_project(
                     scan_imports(&path, features);
                 } else if path.extension().and_then(|s| s.to_str()) == Some("fm") {
                     if let Ok(content) = fs::read_to_string(&path) {
-                        // Map imports to features for BlazeVm compilation
-                        let import_re = regex::Regex::new(r"import\s+([a-zA-Z0-9_\.]+)").unwrap();
-                        for cap in import_re.captures_iter(&content) {
-                            let mod_name = &cap[1];
+                        let mut lexer = crate::lexer::Lexer::new(&content);
+                        let mut tokens = Vec::new();
+                        loop {
+                            let tok = lexer.next_token();
+                            let is_eof = tok.kind == crate::lexer::TokenKind::EOF;
+                            tokens.push(tok);
+                            if is_eof {
+                                break;
+                            }
+                        }
+
+                        let mut import_modules: Vec<String> = Vec::new();
+                        let mut parser = crate::parser::Parser::new(tokens.clone(), path.to_string_lossy().to_string());
+                        if let Ok(statements) = parser.parse() {
+                            for stmt in &statements {
+                                match stmt {
+                                    crate::parser::ast::Stmt::ImportDecl { path, .. } => {
+                                        import_modules.push(path.join("."));
+                                    }
+                                    crate::parser::ast::Stmt::ExportDecl(inner, _) => {
+                                        if let crate::parser::ast::Stmt::ImportDecl { path, .. } = inner.as_ref() {
+                                            import_modules.push(path.join("."));
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        } else {
+                            // Fallback: tokenize import statements from lexer stream (immune to comments/strings)
+                            let mut i = 0;
+                            while i < tokens.len() {
+                                if tokens[i].kind == crate::lexer::TokenKind::Import {
+                                    i += 1;
+                                    let mut mod_parts = Vec::new();
+                                    while i < tokens.len() {
+                                        match &tokens[i].kind {
+                                            crate::lexer::TokenKind::Identifier => {
+                                                mod_parts.push(tokens[i].lexeme.clone());
+                                                i += 1;
+                                            }
+                                            crate::lexer::TokenKind::Dot => {
+                                                i += 1;
+                                            }
+                                            _ => break,
+                                        }
+                                    }
+                                    if !mod_parts.is_empty() {
+                                        import_modules.push(mod_parts.join("."));
+                                    }
+                                } else {
+                                    i += 1;
+                                }
+                            }
+                        }
+
+                        for mod_name in import_modules {
                             let search = if mod_name.starts_with("std.") {
                                 mod_name.to_string()
                             } else {
