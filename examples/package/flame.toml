@@ -15,5 +15,3 @@ closure-types = "strict"
 flamer = "https://github.com/shoya-129/flamer"
 bot = "https://github.com/ezet-galaxy/bot"
 
-[plugins]
-bridge = "./native"

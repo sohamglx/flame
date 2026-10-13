@@ -8,7 +8,7 @@ fn internal_helper() -> Int {
 
 @Docs("Computes the sum of two numbers.")
 export fn add(a: Int, b: Int) -> Int {
-    return a + b
+    return a + b + internal_helper()
 }
 
 @Docs("Multiplies two numbers.")

@@ -2,6 +2,42 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.7.1] - 2026-10-13 (Codename: *Seventh Spark - Patch 1*)
+
+### ⚡ Daemon Runtimes, Annotation Scope Inference & IDE Autocomplete Ergonomics
+
+- **Package Closure Environment Preservation for Private Helpers**:
+  - Resolved an issue in `src/runner/exprs.rs` where calling an exported package function that internally relies on package-private helper functions triggered runtime `undefined variable` errors.
+  - Exported functions now preserve and execute within their parent module's `closure_env`, allowing private helper functions to be invoked freely without exposing them to external consumers.
+
+- **Daemon Event Loop Activation & Annotation Entry Detection**:
+  - In `src/runner/exprs.rs`, invoking `.listen()` on a server or daemon instance (such as `flamer.listen()`) now engages `crate::vm::set_event_loop_active(true)`, preventing the runtime from exiting prematurely and keeping the background daemon active until interrupted (`Ctrl+C`).
+  - In `src/runner/core.rs`, augmented entry point detection to recognize `@Flamer`, `@Server`, `@Daemon`, and `@App` annotations, ensuring annotated `main()` functions automatically execute when invoked as the application entry file.
+
+- **Concrete Type & Method Inference inside Annotated Functions**:
+  - Fixed variable type shadowing in `src/cli/ide.rs`:
+    - Variables injected by function annotations (e.g. `flamer` injected by `@Flamer`) now resolve to their concrete struct type (`FlameServer`) rather than being shadowed by `import:flamer` or clobbered by TypeChecker module imports (`Type::Named("module:flamer")`).
+    - Dot completions on annotated variables (`flamer.`) now prioritize instance methods (`set_port`, `get`, `post`, `router`, `listen`, `type`, `toString`, `toJson`) with method signatures and docs instead of suggesting module export symbols (`FlameServer`, `Request`, `Response`, `init`).
+    - Added fallback instance method completion and hover definitions for `FlameServer` native server instances.
+
+- **IDE Autocomplete for `import` Statements & Dependencies**:
+  - Overhauled import autocompletions in `src/cli/ide.rs`:
+    - Typing `import ` now dynamically scans `[dependencies]`, `[plugins]`, and `[native-dependencies]` from `Flame.toml` / `flame.toml`, surfacing available packages alongside standard library (`std`) and native (`native`) targets.
+    - Typing `import native.` surfaces autocompletions for all configured native plugins and native dependencies with prefix matching.
+    - Typing `import std.` autocompletes standard library modules with prefix matching.
+
+- **Comprehensive Struct, Enum, and Trait Dot-Completions**:
+  - Member completion on types and namespaces (`TypeName.`):
+    - `TraitName.` suggests all declared methods, default methods, and associated types from `TypeChecker::traits`.
+    - `EnumName.` suggests all enum variants from both scanned AST declarations and `TypeChecker::enums`.
+    - `StructName.` suggests all fields, associated constructors, and methods across `impl` blocks (including methods from implemented traits).
+    - Upgraded method suggestions on struct instances to include full function signatures and documentation extracted from `method_details`.
+
+- **IDE Hover Formatting for Properties and Enum Elements**:
+  - Updated symbol hover signatures:
+    - Struct fields are now formatted as `(property) <field>: <type>` instead of `let <field>: <type>`.
+    - Enum variants are formatted as `(element) <variant>` instead of `let <variant>`.
+
 ## [0.7.0] - 2026-10-13 (Codename: *Seventh Spark*)
 
 ### 📦 Comprehensive Package Manager, Module Resolver & Export Boundary Architecture

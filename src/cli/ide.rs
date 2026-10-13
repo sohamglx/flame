@@ -474,40 +474,122 @@ pub fn analyze_file_for_json(
     let cursor_col = col.unwrap_or(current_line.len() + 1);
 
     let mut completions = Vec::new();
-    if current_line.trim_end().ends_with("import") {
-        completions.push(JsonCompletion {
-            sort_text: None,
-            label: "native".to_string(),
-            kind: "module".to_string(),
-            detail: "native dependencies".to_string(),
-            documentation: None,
-        });
-        completions.push(JsonCompletion {
-            sort_text: None,
-            label: "std".to_string(),
-            kind: "module".to_string(),
-            detail: "standard library".to_string(),
-            documentation: None,
-        });
-    } else if current_line.contains("import native.") {
-        for module in &native_modules {
-            completions.push(JsonCompletion {
-                sort_text: None,
-                label: module.clone(),
-                kind: "plugin".to_string(),
-                detail: "native plugin".to_string(),
-                documentation: None,
-            });
-        }
-    } else if current_line.contains("import std.") {
-        for module in &std_modules {
-            completions.push(JsonCompletion {
-                sort_text: None,
-                label: module.clone(),
-                kind: "module".to_string(),
-                detail: "standard library".to_string(),
-                documentation: None,
-            });
+    let pkg_dependencies = parse_manifest_section(&manifest_content, "[dependencies]")
+        .into_iter()
+        .map(|(name, _)| name)
+        .filter(|n| n != "std")
+        .collect::<Vec<_>>();
+    let native_deps = parse_manifest_section(&manifest_content, "[native-dependencies]")
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect::<Vec<_>>();
+
+    let upto_cursor = current_line.chars().take(cursor_col).collect::<String>();
+    let trimmed_import_line = upto_cursor.trim_start();
+
+    if trimmed_import_line.starts_with("import") {
+        let after_import = trimmed_import_line.trim_start_matches("import").trim_start();
+        if after_import.starts_with("native.") {
+            let prefix = after_import.trim_start_matches("native.").trim();
+            for plugin in &plugins {
+                if prefix.is_empty() || plugin.name.starts_with(prefix) {
+                    completions.push(JsonCompletion {
+                        sort_text: Some("0_".to_string()),
+                        label: plugin.name.clone(),
+                        kind: "plugin".to_string(),
+                        detail: format!("native plugin: {}", plugin.source),
+                        documentation: Some(format!("```flame\nimport native.{}\n```\nPlugin: `{}`", plugin.name, plugin.source)),
+                    });
+                }
+            }
+            for dep in &native_deps {
+                if (prefix.is_empty() || dep.starts_with(prefix)) && !completions.iter().any(|c| c.label == *dep) {
+                    completions.push(JsonCompletion {
+                        sort_text: Some("1_".to_string()),
+                        label: dep.clone(),
+                        kind: "module".to_string(),
+                        detail: "native dependency".to_string(),
+                        documentation: Some(format!("```flame\nimport native.{}\n```\nNative dependency `{}`", dep, dep)),
+                    });
+                }
+            }
+            for module in &native_modules {
+                if (prefix.is_empty() || module.starts_with(prefix)) && !completions.iter().any(|c| c.label == *module) {
+                    completions.push(JsonCompletion {
+                        sort_text: Some("2_".to_string()),
+                        label: module.clone(),
+                        kind: "plugin".to_string(),
+                        detail: "native plugin".to_string(),
+                        documentation: None,
+                    });
+                }
+            }
+        } else if after_import.starts_with("std.") {
+            let prefix = after_import.trim_start_matches("std.").trim();
+            for module in &std_modules {
+                if prefix.is_empty() || module.starts_with(prefix) {
+                    completions.push(JsonCompletion {
+                        sort_text: Some("0_".to_string()),
+                        label: module.clone(),
+                        kind: "module".to_string(),
+                        detail: "standard library".to_string(),
+                        documentation: Some(format!("```flame\nimport std.{}\n```", module)),
+                    });
+                }
+            }
+        } else {
+            let prefix = after_import.trim();
+            for pkg in &pkg_dependencies {
+                if prefix.is_empty() || pkg.starts_with(prefix) {
+                    completions.push(JsonCompletion {
+                        sort_text: Some("0_".to_string()),
+                        label: pkg.clone(),
+                        kind: "module".to_string(),
+                        detail: "package dependency".to_string(),
+                        documentation: Some(format!("```flame\nimport {}\n```\nPackage dependency from flame.toml", pkg)),
+                    });
+                }
+            }
+            for plugin in &plugins {
+                if (prefix.is_empty() || plugin.name.starts_with(prefix)) && !completions.iter().any(|c| c.label == plugin.name) {
+                    completions.push(JsonCompletion {
+                        sort_text: Some("1_".to_string()),
+                        label: plugin.name.clone(),
+                        kind: "plugin".to_string(),
+                        detail: "plugin".to_string(),
+                        documentation: Some(format!("```flame\nimport {}\n```\nPlugin: `{}`", plugin.name, plugin.source)),
+                    });
+                }
+            }
+            if prefix.is_empty() || "std".starts_with(prefix) {
+                completions.push(JsonCompletion {
+                    sort_text: Some("2_".to_string()),
+                    label: "std".to_string(),
+                    kind: "module".to_string(),
+                    detail: "standard library".to_string(),
+                    documentation: Some("Access standard library modules with `import std.<module>`".to_string()),
+                });
+            }
+            if prefix.is_empty() || "native".starts_with(prefix) {
+                completions.push(JsonCompletion {
+                    sort_text: Some("2_".to_string()),
+                    label: "native".to_string(),
+                    kind: "module".to_string(),
+                    detail: "native dependencies & plugins".to_string(),
+                    documentation: Some("Access native plugins with `import native.<plugin>`".to_string()),
+                });
+            }
+            for dep in &native_deps {
+                if (prefix.is_empty() || dep.starts_with(prefix)) && !completions.iter().any(|c| c.label == *dep) {
+                    completions.push(JsonCompletion {
+                        sort_text: Some("3_".to_string()),
+                        label: dep.clone(),
+                        kind: "module".to_string(),
+                        detail: "native dependency".to_string(),
+                        documentation: None,
+                    });
+                }
+            }
         }
     } else if current_line.trim().starts_with("@Requires(")
         && current_line[..cursor_col as usize].matches('"').count() % 2 == 1
@@ -1079,13 +1161,13 @@ pub fn analyze_file_for_json(
         for var in &mut scanned_vars {
             if let Some(vinfo) = tc.lookup_var(&var.name) {
                 let inferred_name = match &vinfo.ty {
-                    crate::typechecker::Type::Named(n) => Some(n.clone()),
+                    crate::typechecker::Type::Named(n) if !n.starts_with("module:") && !n.starts_with("plugin:") => Some(n.clone()),
                     crate::typechecker::Type::Struct(n) => Some(n.clone()),
                     crate::typechecker::Type::Enum(n) => Some(n.clone()),
                     _ => None,
                 };
                 if let Some(name) = inferred_name {
-                    if name != "Unknown" {
+                    if name != "Unknown" && !name.starts_with("module:") && !name.starts_with("plugin:") {
                         var.typ = Some(name);
                     }
                 }
@@ -1179,7 +1261,19 @@ pub fn analyze_file_for_json(
                             });
                         }
                     } else if !word_under_cursor.is_empty() {
-                        let sig = format!("{}: {}", word_under_cursor, ty_str);
+                        let is_struct_field = scanned_structs.iter().any(|s| s.fields.iter().any(|(f, _)| f == &word_under_cursor))
+                            || tc.structs.values().any(|s| s.fields.iter().any(|(f, _)| f == &word_under_cursor));
+                        let is_enum_variant = scanned_enums.iter().any(|e| e.variants.iter().any(|v| v.name == word_under_cursor))
+                            || tc.enums.values().any(|e| e.variants.contains_key(&word_under_cursor));
+
+                        let sig = if is_struct_field {
+                            format!("(property) {}: {}", word_under_cursor, ty_str)
+                        } else if is_enum_variant {
+                            format!("(element) {}: {}", word_under_cursor, ty_str)
+                        } else {
+                            format!("let {}: {}", word_under_cursor, ty_str)
+                        };
+
                         let struct_doc = scanned_structs
                             .iter()
                             .find(|s| s.name == *ty_str)
@@ -1188,16 +1282,16 @@ pub fn analyze_file_for_json(
                             scanned_vars.iter().find(|v| v.name == word_under_cursor)
                         {
                             if let Some(d) = &var.doc {
-                                format!("```flame\nlet {}\n```\n\n{}", sig, d)
+                                format!("```flame\n{}\n```\n\n{}", sig, d)
                             } else if let Some(sdoc) = &struct_doc {
-                                format!("```flame\nlet {}\n```\n\n{}", sig, sdoc)
+                                format!("```flame\n{}\n```\n\n{}", sig, sdoc)
                             } else {
-                                format!("```flame\nlet {}\n```", sig)
+                                format!("```flame\n{}\n```", sig)
                             }
                         } else if let Some(sdoc) = &struct_doc {
-                            format!("```flame\nlet {}\n```\n\n{}", sig, sdoc)
+                            format!("```flame\n{}\n```\n\n{}", sig, sdoc)
                         } else {
-                            format!("```flame\nlet {}\n```", sig)
+                            format!("```flame\n{}\n```", sig)
                         };
                         exact_ast_hover = Some(JsonHover {
                             label: word_under_cursor.clone(),
@@ -1267,14 +1361,26 @@ pub fn analyze_file_for_json(
                             var.doc.clone().or(struct_doc).unwrap_or_default(),
                         )
                     };
+                    let is_struct_field = scanned_structs.iter().any(|s| s.fields.iter().any(|(f, _)| f == &word_under_cursor))
+                        || tc_opt.as_ref().map_or(false, |tc| tc.structs.values().any(|s| s.fields.iter().any(|(f, _)| f == &word_under_cursor)));
+                    let is_enum_variant = scanned_enums.iter().any(|e| e.variants.iter().any(|v| v.name == word_under_cursor))
+                        || tc_opt.as_ref().map_or(false, |tc| tc.enums.values().any(|e| e.variants.contains_key(&word_under_cursor)));
+
+                    let decl_prefix = if is_struct_field {
+                        "(property) "
+                    } else if is_enum_variant {
+                        "(element) "
+                    } else {
+                        "let "
+                    };
                     let documentation = if doc_body.is_empty() {
-                        format!("```flame\nlet {}\n```", code_block)
+                        format!("```flame\n{}{}\n```", decl_prefix, code_block)
                     } else if doc_body.starts_with("```") {
                         doc_body
                     } else if t.starts_with("fn ") || t.starts_with("annotation ") {
                         format!("```flame\n{}\n```\n\n{}", code_block, doc_body)
                     } else {
-                        format!("```flame\nlet {}\n```\n\n{}", code_block, doc_body)
+                        format!("```flame\n{}{}\n```\n\n{}", decl_prefix, code_block, doc_body)
                     };
                     scanned_var_hover = Some(JsonHover {
                         label: word_under_cursor.clone(),
@@ -1360,7 +1466,11 @@ pub fn analyze_file_for_json(
 
         // First check if it's a known variable! If so, it might be a struct or native type (e.g. FlameServer)
         if !resolved_as_var {
-            if let Some(var) = scanned_vars.iter().find(|v| v.name == namespace) {
+            let var_opt = scanned_vars
+                .iter()
+                .find(|v| v.name == namespace && v.typ.as_ref().map_or(false, |t| !t.starts_with("import:") && !t.starts_with("module:")))
+                .or_else(|| scanned_vars.iter().find(|v| v.name == namespace));
+            if let Some(var) = var_opt {
                 if let Some(typ) = &var.typ {
                     if typ != "Unknown" && !typ.starts_with("import:") {
                         let mut provided = false;
@@ -1708,6 +1818,27 @@ pub fn analyze_file_for_json(
                                 }
                             }
                         }
+                        if !provided && typ == "FlameServer" {
+                            let flame_server_methods = [
+                                ("get", "fn get(path: String, handler: Function)", "Registers an HTTP GET route handler"),
+                                ("post", "fn post(path: String, handler: Function)", "Registers an HTTP POST route handler"),
+                                ("listen", "async fn listen(port: Int = 8080) -> Result<()>", "Starts the HTTP server daemon listening for incoming requests"),
+                                ("set_port", "fn set_port(port: Int)", "Sets the server port"),
+                                ("router", "fn router() -> Router", "Returns the underlying server router"),
+                            ];
+                            for (m_name, m_sig, m_doc) in flame_server_methods {
+                                if member_prefix.as_deref().map_or(true, |p| m_name.starts_with(p)) {
+                                    completions.push(JsonCompletion {
+                                        sort_text: Some("1_".to_string()),
+                                        label: m_name.to_string(),
+                                        kind: "method".to_string(),
+                                        detail: m_sig.to_string(),
+                                        documentation: Some(format!("```flame\n{}\n```\n\n{}", m_sig, m_doc)),
+                                    });
+                                }
+                            }
+                            provided = true;
+                        }
                         if provided {
                             // Append universal methods
                             for (u_name, u_doc) in [
@@ -1870,6 +2001,21 @@ pub fn analyze_file_for_json(
                                                 }
                                             }
                                         }
+                                    }
+                                }
+                                if hover_found.is_none() && typ == "FlameServer" {
+                                    let flame_server_methods = [
+                                        ("get", "fn get(path: String, handler: Function)", "Registers an HTTP GET route handler"),
+                                        ("post", "fn post(path: String, handler: Function)", "Registers an HTTP POST route handler"),
+                                        ("listen", "async fn listen(port: Int = 8080) -> Result<()>", "Starts the HTTP server daemon listening for incoming requests"),
+                                        ("set_port", "fn set_port(port: Int)", "Sets the server port"),
+                                        ("router", "fn router() -> Router", "Returns the underlying server router"),
+                                    ];
+                                    if let Some((_, sig, doc)) = flame_server_methods.iter().find(|(m, _, _)| *m == word_under_cursor) {
+                                        hover_found = Some(JsonHover {
+                                            label: format!("FlameServer::{}()", word_under_cursor),
+                                            documentation: Some(format!("```flame\n{}\n```\n\n{}", sig, doc)),
+                                        });
                                     }
                                 }
                             }
@@ -2511,6 +2657,8 @@ pub fn analyze_file_for_json(
                     is_instance = false;
                     if scanned_structs.iter().any(|s| s.name == namespace) {
                         var_type = Some(namespace.to_string());
+                    } else if tc_opt.as_ref().map_or(false, |tc| tc.structs.contains_key(&namespace)) {
+                        var_type = Some(namespace.to_string());
                     } else if let Some(dot_idx) = namespace.find('.') {
                         let mod_name = &namespace[..dot_idx];
                         let struct_name = &namespace[dot_idx + 1..];
@@ -2543,10 +2691,7 @@ pub fn analyze_file_for_json(
                                 },
                             )
                         {
-                            eprintln!("DEBUG_CANDIDATE: {:?}", candidate);
-                            match std::fs::read_to_string(&candidate) {
-                                Ok(content) => {
-                                    eprintln!("DEBUG_CANDIDATE_READ_OK, len={}", content.len());
+                            if let Ok(content) = std::fs::read_to_string(&candidate) {
                                     let mut lexer = crate::lexer::Lexer::new(&content);
                                     let mut tokens = Vec::new();
                                     loop {
@@ -2575,13 +2720,9 @@ pub fn analyze_file_for_json(
                                         }
                                     }
                                 }
-                                Err(e) => {
-                                    eprintln!("DEBUG_CANDIDATE_READ_ERR: {}", e);
-                                }
                             }
                         }
                     }
-                }
                 // eprintln!("DEBUG_COMPLETIONS_PRE: namespace={}, var_type={:?}", namespace, var_type);
 
                 let mut provided_completions = false;
@@ -2645,6 +2786,49 @@ pub fn analyze_file_for_json(
                                     label: variant_name.clone(),
                                     kind: "enumMember".to_string(),
                                     detail: format!("{} enum variant", namespace),
+                                    documentation: None,
+                                });
+                                provided_completions = true;
+                            }
+                        }
+                    } else if let Some(trait_info) = tc.traits.get(&namespace) {
+                        for (m_name, m_sig) in &trait_info.methods {
+                            if member_prefix.as_deref().map_or(true, |p| m_name.starts_with(p)) {
+                                let params_str = m_sig.params.iter().map(|p| format!("{}: {:?}", p.name, p.ty)).collect::<Vec<_>>().join(", ");
+                                let return_str = if m_sig.return_type == crate::typechecker::Type::Nil { "".to_string() } else { format!(" -> {:?}", m_sig.return_type) };
+                                let sig = format!("fn {}({}){}", m_name, params_str, return_str);
+                                completions.push(JsonCompletion {
+                                    sort_text: Some("1_".to_string()),
+                                    label: m_name.clone(),
+                                    kind: "method".to_string(),
+                                    detail: format!("trait {} method", namespace),
+                                    documentation: m_sig.hover_doc.clone().or_else(|| Some(format!("```flame\n{}\n```", sig))),
+                                });
+                                provided_completions = true;
+                            }
+                        }
+                        for (m_name, (m_sig, _)) in &trait_info.default_methods {
+                            if member_prefix.as_deref().map_or(true, |p| m_name.starts_with(p)) {
+                                let params_str = m_sig.params.iter().map(|p| format!("{}: {:?}", p.name, p.ty)).collect::<Vec<_>>().join(", ");
+                                let return_str = if m_sig.return_type == crate::typechecker::Type::Nil { "".to_string() } else { format!(" -> {:?}", m_sig.return_type) };
+                                let sig = format!("fn {}({}){}", m_name, params_str, return_str);
+                                completions.push(JsonCompletion {
+                                    sort_text: Some("1_".to_string()),
+                                    label: m_name.clone(),
+                                    kind: "method".to_string(),
+                                    detail: format!("trait {} default method", namespace),
+                                    documentation: m_sig.hover_doc.clone().or_else(|| Some(format!("```flame\n{}\n```", sig))),
+                                });
+                                provided_completions = true;
+                            }
+                        }
+                        for assoc in &trait_info.associated_types {
+                            if member_prefix.as_deref().map_or(true, |p| assoc.starts_with(p)) {
+                                completions.push(JsonCompletion {
+                                    sort_text: Some("2_".to_string()),
+                                    label: assoc.clone(),
+                                    kind: "typeParameter".to_string(),
+                                    detail: format!("trait {} associated type", namespace),
                                     documentation: None,
                                 });
                                 provided_completions = true;
@@ -2890,19 +3074,41 @@ pub fn analyze_file_for_json(
                                 provided_completions = true;
                             }
                         }
-                        for method in &struct_def.methods {
+                        for m in &struct_def.method_details {
                             if member_prefix
                                 .as_deref()
-                                .map_or(true, |prefix| method.starts_with(prefix))
+                                .map_or(true, |prefix| m.name.starts_with(prefix))
                             {
+                                let doc = if let Some(d) = &m.doc {
+                                    Some(format!("```flame\n{}\n```\n\n{}", m.signature, d))
+                                } else {
+                                    Some(format!("```flame\n{}\n```", m.signature))
+                                };
                                 completions.push(JsonCompletion {
                                     sort_text: Some("1_".to_string()),
-                                    label: method.clone(),
+                                    label: m.name.clone(),
                                     kind: "method".to_string(),
-                                    detail: format!("{} method", t),
-                                    documentation: None,
+                                    detail: m.signature.clone(),
+                                    documentation: doc,
                                 });
                                 provided_completions = true;
+                            }
+                        }
+                        if struct_def.method_details.is_empty() {
+                            for method in &struct_def.methods {
+                                if member_prefix
+                                    .as_deref()
+                                    .map_or(true, |prefix| method.starts_with(prefix))
+                                {
+                                    completions.push(JsonCompletion {
+                                        sort_text: Some("1_".to_string()),
+                                        label: method.clone(),
+                                        kind: "method".to_string(),
+                                        detail: format!("{} method", t),
+                                        documentation: None,
+                                    });
+                                    provided_completions = true;
+                                }
                             }
                         }
                     }
@@ -2925,18 +3131,32 @@ pub fn analyze_file_for_json(
                                 }
                             }
                         }
-                        if let Some(methods) = tc.methods.get(t) {
+                        if let Some(methods) = tc.methods.get(t).or_else(|| {
+                            tc.methods.iter().find(|(k, _)| *k == t || k.ends_with(&format!(".{}", t))).map(|(_, v)| v)
+                        }) {
                             for (method_name, m_sig) in methods {
                                 if member_prefix
                                     .as_deref()
                                     .map_or(true, |prefix| method_name.starts_with(prefix))
                                 {
+                                    let params_str = m_sig
+                                        .params
+                                        .iter()
+                                        .map(|p| format!("{}: {:?}", p.name, p.ty))
+                                        .collect::<Vec<_>>()
+                                        .join(", ");
+                                    let return_str = if m_sig.return_type == crate::typechecker::Type::Nil {
+                                        "".to_string()
+                                    } else {
+                                        format!(" -> {:?}", m_sig.return_type)
+                                    };
+                                    let sig = format!("fn {}({}){}", method_name, params_str, return_str);
                                     completions.push(JsonCompletion {
                                         sort_text: Some("1_".to_string()),
                                         label: method_name.clone(),
                                         kind: "method".to_string(),
-                                        detail: format!("{} method", t),
-                                        documentation: m_sig.hover_doc.clone(),
+                                        detail: sig.clone(),
+                                        documentation: m_sig.hover_doc.clone().or_else(|| Some(format!("```flame\n{}\n```", sig))),
                                     });
                                     provided_completions = true;
                                 }

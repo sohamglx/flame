@@ -5,8 +5,6 @@ import bot
 import flamer
 import news
 
-
-
 let bot_token = env.get("BOT_TOKEN")
 
 println(bot_token)
@@ -42,7 +40,6 @@ async fn webhook(body: String) -> Formula {
     return {
         ok: true
     }
-
 }
 
 @Flamer(port: 3000)
@@ -50,6 +47,7 @@ async fn main() {
     println("--- Flame Telegram Bot Webhook Server ---")
     println("Server listening on port 3000.")
     println("Point your Telegram webhook to: /webhook")
+
 
     flamer.post("/webhook", webhook)
     flamer.post(

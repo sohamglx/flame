@@ -2,7 +2,7 @@ import math_lib
 
 @Test
 fn test_math_lib_api() {
-    assertEq(math_lib.add(20, 30), 50, "math_lib.add should equal 50")
+    assertEq(math_lib.add(20, 30), 92, "math_lib.add with internal_helper should equal 92")
     assertEq(math_lib.multiply(6, 7), 42, "math_lib.multiply should equal 42")
 }
 

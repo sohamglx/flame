@@ -388,16 +388,49 @@ impl Runner {
                 name, annotations, ..
             } = stmt
             {
-                if annotations.iter().any(|a| a.name == "Application" || a.name == "Cli" || a.name == "Web") {
+                if annotations.iter().any(|a| {
+                    a.name == "Application"
+                        || a.name == "Cli"
+                        || a.name == "Web"
+                        || a.name == "Flamer"
+                        || a.name == "Server"
+                        || a.name == "Daemon"
+                        || a.name == "App"
+                }) {
                     app_entry = Some(name.clone());
                     app_count += 1;
                 }
             }
         }
 
+        if app_entry.is_none() && !self.test_mode {
+            if stmts.iter().any(|s| matches!(s, Stmt::FuncDecl { name, .. } if name == "main")) {
+                let explicitly_called = stmts.iter().any(|s| match s {
+                    Stmt::ExprStmt(Expr::Call(callee, ..)) => match &**callee {
+                        Expr::Identifier(id, _) => id == "main",
+                        _ => false,
+                    },
+                    Stmt::ExprStmt(Expr::Await(inner, _)) => {
+                        if let Expr::Call(callee, ..) = &**inner {
+                            match &**callee {
+                                Expr::Identifier(id, _) => id == "main",
+                                _ => false,
+                            }
+                        } else {
+                            false
+                        }
+                    }
+                    _ => false,
+                });
+                if !explicitly_called {
+                    app_entry = Some("main".to_string());
+                    app_count = 1;
+                }
+            }
+        }
 
         if app_count > 1 {
-            return Err("Only one @Application / @Cli / @Web entry point is allowed.".to_string());
+            return Err("Only one application entry point is allowed.".to_string());
         }
 
         let mut last_val = Value::Nil;

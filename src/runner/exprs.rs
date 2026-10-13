@@ -3200,6 +3200,9 @@ impl Runner {
 
                                 for sym_str in symbol_candidates {
                                     if let Some(func) = self.native_methods.get(&sym_str) {
+                                        if member == "listen" {
+                                            crate::vm::set_event_loop_active(true);
+                                        }
                                         let res = func(c_args.as_ptr(), c_args.len());
 
                                         for c_val in c_args {
@@ -3226,7 +3229,7 @@ impl Runner {
                                 }
                             }
                             if let Some(val) = map.get(member) {
-                                if let Value::Function { params, body, .. } = val {
+                                if let Value::Function { params, body, env: closure_env, .. } = val {
                                     if body.is_empty() {
                                         let mut evaled_args = Vec::new();
                                         for (_, arg_expr) in args {
@@ -3247,7 +3250,7 @@ impl Runner {
                                         return Ok(Value::String(res_str));
                                     }
                                     let child_env =
-                                        Arc::new(Mutex::new(Env::new_child(env.clone())));
+                                        Arc::new(Mutex::new(Env::new_child(closure_env.clone())));
                                     let is_self_method = params.first().map_or(false, |p| {
                                         p.name == "self"
                                             || p.name == "&self"
@@ -3279,7 +3282,7 @@ impl Runner {
                                     if is_self_method {
                                         let p0 = &params[0];
                                         self.bind_param(child_env.clone(), p0, self_val.clone());
-                                    } else {
+                                    } else if !map.contains_key("__module__") {
                                         child_env.lock().unwrap().define(
                                             "self".to_string(),
                                             self_val,

@@ -1,4 +1,5 @@
 #![allow(dead_code, unused_imports, unused_variables)]
+use super::core::Runner;
 use crate::lexer::{Lexer, Span};
 use crate::parser::{
     BinaryOp, Expr, InterpolatedSegment, LiteralValue, Param, Parser, Stmt, UnaryOp,
@@ -10,10 +11,13 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::TryRecvError;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use super::core::Runner;
 
 impl Runner {
-    pub(crate) fn execute_statement(&mut self, stmt: &Stmt, env: Arc<Mutex<Env>>) -> Result<Value, String> {
+    pub(crate) fn execute_statement(
+        &mut self,
+        stmt: &Stmt,
+        env: Arc<Mutex<Env>>,
+    ) -> Result<Value, String> {
         if !self.test_mode && crate::parser::is_test_statement(stmt) {
             return Ok(Value::Nil);
         }
@@ -54,7 +58,8 @@ impl Runner {
                             let _guard = crate::runner::core::ScopedAnnotationContext::new(ctx_val);
                             let mut anno_args = Vec::new();
                             for arg_str in &anno.args {
-                                if let Ok(arg_val) = self.eval_annotation_arg(arg_str, env.clone()) {
+                                if let Ok(arg_val) = self.eval_annotation_arg(arg_str, env.clone())
+                                {
                                     anno_args.push(arg_val);
                                 }
                             }
@@ -165,13 +170,19 @@ impl Runner {
                     env: env.clone(),
                     annotations: annotations.clone(),
                 };
-                env.lock().unwrap().define(name.clone(), func.clone(), false);
+                env.lock()
+                    .unwrap()
+                    .define(name.clone(), func.clone(), false);
 
                 for anno in annotations {
                     if let Some(anno_func) = self.find_annotation_func(&anno.name, env.clone()) {
                         if self.is_executable_annotation(&anno_func) {
                             let ret_type_str = return_type.as_deref();
-                            let current_func = env.lock().unwrap().get(name).unwrap_or_else(|| func.clone());
+                            let current_func = env
+                                .lock()
+                                .unwrap()
+                                .get(name)
+                                .unwrap_or_else(|| func.clone());
                             let ctx_val = crate::runner::core::build_annotation_context(
                                 name.clone(),
                                 "function",
@@ -185,7 +196,8 @@ impl Runner {
                             let _guard = crate::runner::core::ScopedAnnotationContext::new(ctx_val);
                             let mut anno_args = Vec::new();
                             for arg_str in &anno.args {
-                                if let Ok(arg_val) = self.eval_annotation_arg(arg_str, env.clone()) {
+                                if let Ok(arg_val) = self.eval_annotation_arg(arg_str, env.clone())
+                                {
                                     anno_args.push(arg_val);
                                 }
                             }
@@ -219,7 +231,9 @@ impl Runner {
                     name: name.clone(),
                     fields: fields.clone(),
                 };
-                env.lock().unwrap().define(name.clone(), func.clone(), false);
+                env.lock()
+                    .unwrap()
+                    .define(name.clone(), func.clone(), false);
 
                 for anno in annotations {
                     if let Some(anno_func) = self.find_annotation_func(&anno.name, env.clone()) {
@@ -247,7 +261,8 @@ impl Runner {
                             let _guard = crate::runner::core::ScopedAnnotationContext::new(ctx_val);
                             let mut anno_args = Vec::new();
                             for arg_str in &anno.args {
-                                if let Ok(arg_val) = self.eval_annotation_arg(arg_str, env.clone()) {
+                                if let Ok(arg_val) = self.eval_annotation_arg(arg_str, env.clone())
+                                {
                                     anno_args.push(arg_val);
                                 }
                             }
@@ -266,11 +281,9 @@ impl Runner {
                 ..
             } => {
                 let enum_val = Value::EnumMeta(name.clone(), variants.clone());
-                env.lock().unwrap().define(
-                    name.clone(),
-                    enum_val.clone(),
-                    false,
-                );
+                env.lock()
+                    .unwrap()
+                    .define(name.clone(), enum_val.clone(), false);
 
                 for anno in annotations {
                     if let Some(anno_func) = self.find_annotation_func(&anno.name, env.clone()) {
@@ -302,7 +315,8 @@ impl Runner {
                             let _guard = crate::runner::core::ScopedAnnotationContext::new(ctx_val);
                             let mut anno_args = Vec::new();
                             for arg_str in &anno.args {
-                                if let Ok(arg_val) = self.eval_annotation_arg(arg_str, env.clone()) {
+                                if let Ok(arg_val) = self.eval_annotation_arg(arg_str, env.clone())
+                                {
                                     anno_args.push(arg_val);
                                 }
                             }
@@ -314,11 +328,7 @@ impl Runner {
                 }
                 Ok(Value::Nil)
             }
-            Stmt::TraitDecl {
-                name,
-                methods,
-                ..
-            } => {
+            Stmt::TraitDecl { name, methods, .. } => {
                 let trait_env = Arc::new(Mutex::new(Env::new_child(env.clone())));
                 for method in methods {
                     let _ = self.execute_statement(method, trait_env.clone());
@@ -364,7 +374,12 @@ impl Runner {
                 }
                 Ok(Value::Nil)
             }
-            Stmt::ImportDecl { path, alias, is_quoted, .. } => {
+            Stmt::ImportDecl {
+                path,
+                alias,
+                is_quoted,
+                ..
+            } => {
                 if *is_quoted {
                     if let Some(file_str) = path.first() {
                         let is_native = file_str.starts_with("native")
@@ -373,7 +388,8 @@ impl Runner {
                             || crate::utils::manifest::get_declared_plugins(Some(&self.filepath))
                                 .contains(file_str);
                         if is_native {
-                            if crate::utils::manifest::is_rust_plugins_denied(Some(&self.filepath)) {
+                            if crate::utils::manifest::is_rust_plugins_denied(Some(&self.filepath))
+                            {
                                 return Err(format!(
                                     "cannot import native file '{}': rust-plugins is set to \"deny\" in flame.toml [options]",
                                     file_str
@@ -389,24 +405,35 @@ impl Runner {
 
                         let bind_name = alias.clone().unwrap_or_else(|| {
                             let p = std::path::Path::new(file_str);
-                            p.file_stem().and_then(|s| s.to_str()).unwrap_or("resource").to_string()
+                            p.file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("resource")
+                                .to_string()
                         });
-                        let resolved_opt = crate::stdlib::locate_resource_file(&self.filepath, file_str)
-                            .or_else(|| {
-                                let direct = self.resolve_path(file_str);
-                                if direct.exists() { Some(direct) } else { None }
-                            });
+                        let resolved_opt =
+                            crate::stdlib::locate_resource_file(&self.filepath, file_str).or_else(
+                                || {
+                                    let direct = self.resolve_path(file_str);
+                                    if direct.exists() { Some(direct) } else { None }
+                                },
+                            );
                         if let Some(res_path) = resolved_opt {
                             let ext = res_path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                            if (ext == "json" || ext == "fmi") && self.vfs.is_none() && res_path.exists() {
-                                if let Ok(val) = crate::native_std::json::parse_json_file(&res_path) {
+                            if (ext == "json" || ext == "fmi")
+                                && self.vfs.is_none()
+                                && res_path.exists()
+                            {
+                                if let Ok(val) = crate::native_std::json::parse_json_file(&res_path)
+                                {
                                     env.lock().unwrap().define(bind_name, val, false);
                                     return Ok(Value::Nil);
                                 }
                             }
                             if let Ok(content) = self.read_file_or_vfs(&res_path) {
                                 if ext == "json" || ext == "fmi" {
-                                    if let Ok(val) = crate::native_std::json::parse_json_str(&content) {
+                                    if let Ok(val) =
+                                        crate::native_std::json::parse_json_str(&content)
+                                    {
                                         env.lock().unwrap().define(bind_name, val, false);
                                         return Ok(Value::Nil);
                                     }
@@ -418,10 +445,12 @@ impl Runner {
                                                 toml::Value::Integer(i) => Value::Int(*i),
                                                 toml::Value::Float(f) => Value::Float(*f),
                                                 toml::Value::Boolean(b) => Value::Bool(*b),
-                                                toml::Value::Datetime(dt) => Value::String(dt.to_string()),
-                                                toml::Value::Array(arr) => {
-                                                    Value::Tuple(arr.iter().map(toml_to_val).collect())
+                                                toml::Value::Datetime(dt) => {
+                                                    Value::String(dt.to_string())
                                                 }
+                                                toml::Value::Array(arr) => Value::Tuple(
+                                                    arr.iter().map(toml_to_val).collect(),
+                                                ),
                                                 toml::Value::Table(tbl) => {
                                                     let mut m = std::collections::HashMap::new();
                                                     for (k, v) in tbl {
@@ -431,11 +460,19 @@ impl Runner {
                                                 }
                                             }
                                         }
-                                        env.lock().unwrap().define(bind_name, toml_to_val(&val), false);
+                                        env.lock().unwrap().define(
+                                            bind_name,
+                                            toml_to_val(&val),
+                                            false,
+                                        );
                                         return Ok(Value::Nil);
                                     }
                                 } else {
-                                    env.lock().unwrap().define(bind_name, Value::String(content), false);
+                                    env.lock().unwrap().define(
+                                        bind_name,
+                                        Value::String(content),
+                                        false,
+                                    );
                                     return Ok(Value::Nil);
                                 }
                             }
@@ -444,7 +481,9 @@ impl Runner {
                     return Ok(Value::Nil);
                 }
                 let mod_name = path.join(".");
-                let bind_name = alias.clone().unwrap_or_else(|| path.last().unwrap().clone());
+                let bind_name = alias
+                    .clone()
+                    .unwrap_or_else(|| path.last().unwrap().clone());
                 if mod_name.starts_with("std.") || crate::stdlib::is_known_std(&mod_name) {
                     let mut stdlib_dir = None;
                     let mut current =
@@ -504,11 +543,9 @@ impl Runner {
 
                         let mut map = mod_env.lock().unwrap().to_formula_map();
                         map.insert("__module__".to_string(), Value::Bool(true));
-                        env.lock().unwrap().define(
-                            bind_name.clone(),
-                            Value::Formula(map),
-                            false,
-                        );
+                        env.lock()
+                            .unwrap()
+                            .define(bind_name.clone(), Value::Formula(map), false);
                         if let Some(al) = alias {
                             self.modules.insert(al.clone(), mod_env.clone());
                         }
@@ -518,11 +555,9 @@ impl Runner {
                         crate::stdlib::register_std_module(&mod_name, mod_env.clone());
                         let mut map = mod_env.lock().unwrap().to_formula_map();
                         map.insert("__module__".to_string(), Value::Bool(true));
-                        env.lock().unwrap().define(
-                            bind_name.clone(),
-                            Value::Formula(map),
-                            false,
-                        );
+                        env.lock()
+                            .unwrap()
+                            .define(bind_name.clone(), Value::Formula(map), false);
                         if let Some(al) = alias {
                             self.modules.insert(al.clone(), mod_env.clone());
                         }
@@ -532,8 +567,14 @@ impl Runner {
                     || crate::utils::manifest::get_declared_plugins(Some(&self.filepath))
                         .contains(path.last().unwrap().as_str())
                     || (crate::stdlib::locate_import_file(&self.filepath, path).is_none()
-                        && (Path::new(&format!(".flame/pkg/{}/{}.fmi", path.last().unwrap(), path.last().unwrap())).exists()
-                            || Path::new(&format!(".flame/pkg/{}/native", path.last().unwrap())).exists()))
+                        && (Path::new(&format!(
+                            ".flame/pkg/{}/{}.fmi",
+                            path.last().unwrap(),
+                            path.last().unwrap()
+                        ))
+                        .exists()
+                            || Path::new(&format!(".flame/pkg/{}/native", path.last().unwrap()))
+                                .exists()))
                 {
                     if crate::utils::manifest::is_rust_plugins_denied(Some(&self.filepath)) {
                         return Err(format!(
@@ -716,11 +757,9 @@ impl Runner {
 
                     let mut map = mod_env.lock().unwrap().to_formula_map();
                     map.insert("__module__".to_string(), Value::Bool(true));
-                    env.lock().unwrap().define(
-                        bind_name.clone(),
-                        Value::Formula(map),
-                        false,
-                    );
+                    env.lock()
+                        .unwrap()
+                        .define(bind_name.clone(), Value::Formula(map), false);
                     if let Some(al) = alias {
                         self.modules.insert(al.clone(), mod_env.clone());
                     }
@@ -912,7 +951,10 @@ impl Runner {
                                                 );
                                             }
                                         }
-                                        Stmt::ExprStmt(crate::parser::Expr::Identifier(name, _)) => {
+                                        Stmt::ExprStmt(crate::parser::Expr::Identifier(
+                                            name,
+                                            _,
+                                        )) => {
                                             exported_symbols.insert(name.clone());
                                             if let Some(val) = mod_env.lock().unwrap().get(name) {
                                                 env.lock().unwrap().define(
@@ -927,12 +969,10 @@ impl Runner {
                                                 .clone()
                                                 .unwrap_or_else(|| path.last().unwrap().clone());
                                             exported_symbols.insert(exp_name.clone());
-                                            if let Some(val) = mod_env.lock().unwrap().get(&exp_name) {
-                                                env.lock().unwrap().define(
-                                                    exp_name,
-                                                    val,
-                                                    false,
-                                                );
+                                            if let Some(val) =
+                                                mod_env.lock().unwrap().get(&exp_name)
+                                            {
+                                                env.lock().unwrap().define(exp_name, val, false);
                                             }
                                         }
                                         _ => {}
@@ -956,11 +996,9 @@ impl Runner {
                             }
                         }
                         map.insert("__module__".to_string(), Value::Bool(true));
-                        env.lock().unwrap().define(
-                            bind_name.clone(),
-                            Value::Formula(map),
-                            false,
-                        );
+                        env.lock()
+                            .unwrap()
+                            .define(bind_name.clone(), Value::Formula(map), false);
                         if let Some(al) = alias {
                             self.modules.insert(al.clone(), mod_env.clone());
                         }
@@ -1178,7 +1216,10 @@ impl Runner {
                     let val = self.eval_expr(expr, env.clone())?;
                     if let Value::RefPath(crate::vm::RefPath::Var(name, var_env), _) = &val {
                         if Arc::ptr_eq(var_env, &env) {
-                            return Err(format!("cannot return reference to local variable '{}'", name));
+                            return Err(format!(
+                                "cannot return reference to local variable '{}'",
+                                name
+                            ));
                         }
                     }
                     Ok(Value::Return(Box::new(val)))
@@ -1392,7 +1433,11 @@ impl Runner {
         )
     }
 
-    pub fn eval_annotation_arg(&mut self, arg_str: &str, env: Arc<Mutex<Env>>) -> Result<Value, String> {
+    pub fn eval_annotation_arg(
+        &mut self,
+        arg_str: &str,
+        env: Arc<Mutex<Env>>,
+    ) -> Result<Value, String> {
         let trimmed = arg_str.trim();
         let mut lexer = crate::lexer::Lexer::new(trimmed);
         let mut tokens = Vec::new();
