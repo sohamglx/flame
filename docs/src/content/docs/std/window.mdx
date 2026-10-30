@@ -84,13 +84,13 @@ if editor != nil {
 | :--- | :--- | :--- | :--- |
 | `window.list` | *None* | `[Window]` | Returns an array of all currently open top-level application windows. |
 | `window.find` | `query: String` | `Window?` | Finds the first window matching title substring, app name, or ID. |
-| `window.focus` | `target: Unknown` | `Bool` | Brings target window to foreground and sets input focus. |
-| `window.minimize` | `target: Unknown` | `Bool` | Minimizes target window. |
-| `window.maximize` | `target: Unknown` | `Bool` | Maximizes target window. |
-| `window.restore` | `target: Unknown` | `Bool` | Restores target window from minimized or maximized state. |
-| `window.move` | `target: Unknown, x: Int, y: Int` | `Bool` | Moves target window to $(X, Y)$ screen coordinates. |
-| `window.resize` | `target: Unknown, width: Int, height: Int` | `Bool` | Resizes target window to specified width and height. |
-| `window.close` | `target: Unknown` | `Bool` | Sends a close request to target window. |
+| `window.focus<T>` | `target: T` | `Bool` | Brings target window to foreground and sets input focus. Target can be title, app name, or ID. |
+| `window.minimize<T>` | `target: T` | `Bool` | Minimizes target window. |
+| `window.maximize<T>` | `target: T` | `Bool` | Maximizes target window. |
+| `window.restore<T>` | `target: T` | `Bool` | Restores target window from minimized or maximized state. |
+| `window.move<T>` | `target: T, x: Int, y: Int` | `Bool` | Moves target window to $(X, Y)$ screen coordinates. |
+| `window.resize<T>` | `target: T, width: Int, height: Int` | `Bool` | Resizes target window to specified width and height. |
+| `window.close<T>` | `target: T` | `Bool` | Sends a close request to target window. |
 
 ### `Window` Struct Fields
 

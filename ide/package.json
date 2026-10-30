@@ -2,7 +2,7 @@
   "name": "flame-language-support",
   "displayName": "Flame",
   "description": "Rich IDE syntax highlighting and configuration for the Flame programming language.",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "icon": "flame.png",
   "publisher": "ezet-galaxy",
   "license": "ISC",
@@ -19,6 +19,28 @@
     "Programming Languages"
   ],
   "contributes": {
+    "commands": [
+      {
+        "command": "flame.runTest",
+        "title": "Flame: Run Test",
+        "icon": "$(play)"
+      },
+      {
+        "command": "flame.debugTest",
+        "title": "Flame: Debug Test",
+        "icon": "$(debug-alt)"
+      },
+      {
+        "command": "flame.runApp",
+        "title": "Flame: Run Application",
+        "icon": "$(play)"
+      },
+      {
+        "command": "flame.debugApp",
+        "title": "Flame: Debug Application",
+        "icon": "$(debug-alt)"
+      }
+    ],
     "languages": [
       {
         "id": "flame",

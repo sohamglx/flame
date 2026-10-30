@@ -87,6 +87,8 @@ pub struct FunctionSig {
     pub hover_doc: Option<String>,
     pub is_static: bool,
     pub generic_params: Vec<crate::parser::GenericParam>,
+    pub is_declaration: bool,
+    pub is_async: bool,
 }
 
 #[derive(Debug, Clone)]

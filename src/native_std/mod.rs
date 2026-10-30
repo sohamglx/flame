@@ -29,7 +29,7 @@ use std::sync::{Arc, Mutex};
 
 pub fn get_module_defs() -> Vec<NativeModuleDef> {
     #[allow(unused_mut)]
-    let mut defs = vec![fmt::def(), annotation::def()];
+    let mut defs = vec![fmt::def(), annotation::def(), thread::def()];
 
     #[cfg(feature = "utils")]
     defs.push(time::def());

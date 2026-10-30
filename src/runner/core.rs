@@ -403,9 +403,31 @@ impl Runner {
             }
         }
 
+        let explicitly_called = if let Some(ref entry_name) = app_entry {
+            stmts.iter().any(|s| match s {
+                Stmt::ExprStmt(Expr::Call(callee, ..)) => match &**callee {
+                    Expr::Identifier(id, _) => id == entry_name,
+                    _ => false,
+                },
+                Stmt::ExprStmt(Expr::Await(inner, _)) => {
+                    if let Expr::Call(callee, ..) = &**inner {
+                        match &**callee {
+                            Expr::Identifier(id, _) => id == entry_name,
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            })
+        } else {
+            false
+        };
+
         if app_entry.is_none() && !self.test_mode {
             if stmts.iter().any(|s| matches!(s, Stmt::FuncDecl { name, .. } if name == "main")) {
-                let explicitly_called = stmts.iter().any(|s| match s {
+                let explicitly_called_main = stmts.iter().any(|s| match s {
                     Stmt::ExprStmt(Expr::Call(callee, ..)) => match &**callee {
                         Expr::Identifier(id, _) => id == "main",
                         _ => false,
@@ -422,7 +444,7 @@ impl Runner {
                     }
                     _ => false,
                 });
-                if !explicitly_called {
+                if !explicitly_called_main {
                     app_entry = Some("main".to_string());
                     app_count = 1;
                 }
@@ -435,7 +457,10 @@ impl Runner {
 
         let mut last_val = Value::Nil;
         for stmt in stmts {
-            let should_execute = if app_count > 0 {
+            if !self.test_mode && crate::parser::is_test_statement(stmt) {
+                continue;
+            }
+            let should_execute = if app_count > 0 && !explicitly_called {
                 matches!(
                     stmt,
                     Stmt::FuncDecl { .. }
@@ -481,23 +506,6 @@ impl Runner {
                 } else {
                     false
                 };
-                let explicitly_called = stmts.iter().any(|s| match s {
-                    Stmt::ExprStmt(Expr::Call(callee, ..)) => match &**callee {
-                        Expr::Identifier(id, _) => id == &entry_name,
-                        _ => false,
-                    },
-                    Stmt::ExprStmt(Expr::Await(inner, _)) => {
-                        if let Expr::Call(callee, ..) = &**inner {
-                            match &**callee {
-                                Expr::Identifier(id, _) => id == &entry_name,
-                                _ => false,
-                            }
-                        } else {
-                            false
-                        }
-                    }
-                    _ => false,
-                });
                 if !explicitly_called {
                     let res = self.invoke_callback_value(&entry_val, Vec::new())?;
                     last_val = res;

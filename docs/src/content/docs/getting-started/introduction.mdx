@@ -28,7 +28,7 @@ Maintaining a large, monolithic Rust codebase is notoriously demanding. While Ru
 
 Flame adopts a Rust-inspired object model and type system:
 - **Familiar OOP**: Defines types using `struct` and methods using `impl`, with explicit `&self` receivers.
-- **Borrowing & References**: Employs compile-time ownership, borrowing, and reference checks inspired by Rust, avoiding the latency spikes of a garbage collector (GC).
+- **Borrowing & References**: Employs compile-time ownership, borrowing, and reference checks inspired by Rust—ensuring deterministic memory safety with zero Garbage Collector (GC) and zero runtime overhead.
 - **Super Embeddable**: Embed Flame scripts or complete packages directly into Rust host applications, game engines, and microservices using the `flamebinder` crate.
 - **Batteries-Included Standard Library**: Provides rich, out-of-the-box standard library modules (`std.fs`, `std.net.http`, `std.json`, `std.thread`) so you can build real-world applications without hunting down dozens of external crates.
 

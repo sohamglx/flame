@@ -36,10 +36,9 @@ In Flame, `if` is not only a statement—it is also a first-class **expression**
 
 ```flame
 let b = 0
-let a = if b == 0 { 10 } else { 20 }
+let status = if b == 0 { "connected" } else { "offline" }
 
-let connected = true
-let status = if connected { "connected" } else { "offline" }
+println(status) // prints: connected
 ```
 
 #### Multiline Block Form

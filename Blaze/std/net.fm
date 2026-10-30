@@ -4,40 +4,28 @@ package net
 export struct TcpSocket {}
 
 impl TcpSocket {
-    fn connect(addr: String) -> TcpSocket {
-        return TcpSocket {}
-    }
-    fn write(data: String) {}
-    fn read() -> String {
-        return ""
-    }
-    fn close() {}
+    fn connect(addr: String) -> TcpSocket;
+    fn write(data: String);
+    fn read() -> String;
+    fn close();
 }
 
 @Docs("TCP socket listener for inbound server connections.")
 export struct TcpListener {}
 
 impl TcpListener {
-    fn bind(addr: String) -> TcpListener {
-        return TcpListener {}
-    }
-    fn accept() -> TcpSocket {
-        return TcpSocket {}
-    }
-    fn close() {}
+    fn bind(addr: String) -> TcpListener;
+    fn accept() -> TcpSocket;
+    fn close();
 }
 
 @Docs("UDP socket for connectionless datagram communication.")
 export struct UdpSocket {}
 
 impl UdpSocket {
-    fn bind(addr: String) -> UdpSocket {
-        return UdpSocket {}
-    }
-    fn send(data: String, addr: String) {}
-    fn recv() -> Formula {
-        return formula {}
-    }
+    fn bind(addr: String) -> UdpSocket;
+    fn send(data: String, addr: String);
+    fn recv() -> Formula;
 }
 
 @Docs("HTTP client interface for performing network requests.")
@@ -45,29 +33,19 @@ export struct Http {}
 
 impl Http {
     @Docs("Performs an HTTP GET request.\n\n**Example:**\n```flame\nlet res = await http.get(\"https://api.example.com/data\")\n```")
-    fn get(url: String) -> Formula {
-        return formula {}
-    }
+    fn get(url: String) -> Formula;
 
     @Docs("Performs an HTTP POST request.")
-    fn post(url: String, body: Unknown) -> Formula {
-        return formula {}
-    }
+    fn post<T>(url: String, body: T) -> Formula;
 
     @Docs("Performs an HTTP PUT request.")
-    fn put(url: String, body: Unknown) -> Formula {
-        return formula {}
-    }
+    fn put<T>(url: String, body: T) -> Formula;
 
     @Docs("Performs an HTTP DELETE request.")
-    fn delete(url: String) -> Formula {
-        return formula {}
-    }
+    fn delete(url: String) -> Formula;
 
     @Docs("Performs an HTTP PATCH request.")
-    fn patch(url: String, body: Unknown) -> Formula {
-        return formula {}
-    }
+    fn patch<T>(url: String, body: T) -> Formula;
 }
 
 @Docs("Global HTTP client instance.")
@@ -81,67 +59,49 @@ export struct ClientSocket {
 
 impl ClientSocket {
     @Docs("Sends a UTF-8 text message or raw binary Bytes through the WebSocket connection.\n\n**Example:**\n```flame\nsocket.send(\"Chat message text\")\nsocket.send(byte.readBytes(\"avatar.png\"))\n```")
-    fn send(data: Unknown) {}
+    fn send<T>(data: T);
 
     @Docs("Sends a UTF-8 text message frame through the WebSocket connection.\n\n**Example:**\n```flame\nsocket.sendText(\"{\"action\": \"ping\", \"seq\": 1}\")\n```")
-    fn sendText(text: String) {}
+    fn sendText(text: String);
 
     @Docs("Sends raw binary data as a binary WebSocket frame.\n\n**Example:**\n```flame\nlet payload = byte.readBytes(\"telemetry.bin\")\nsocket.sendBytes(payload)\n```")
-    fn sendBytes(bytes: Byte) {}
+    fn sendBytes(bytes: Byte);
 
     @Docs("Blocks synchronously until the next UTF-8 text message arrives from the WebSocket.\n\n**Returns:** `String` - The text payload received.\n\n**Example:**\n```flame\nlet msg = socket.recv()\nprintln($\"Received: {msg}\")\n```")
-    fn recv() -> String {
-        return ""
-    }
+    fn recv() -> String;
 
     @Docs("Blocks synchronously until the next binary frame arrives from the WebSocket.\n\n**Returns:** `Byte` - The binary payload received.\n\n**Example:**\n```flame\nlet bin = socket.recvBytes()\nprintln($\"Received {bin.len()} bytes of audio data\")\n```")
-    fn recvBytes() -> Byte {
-        return 0
-    }
+    fn recvBytes() -> Byte;
 
     @Docs("Sends a WebSocket Ping frame with optional application payload data.\n\n**Example:**\n```flame\nsocket.ping(\"heartbeat\")\n```")
-    fn ping(data: Unknown) {}
+    fn ping<T>(data: T);
 
     @Docs("Sends a WebSocket Pong frame with optional application payload data.\n\n**Example:**\n```flame\nsocket.pong(\"heartbeat-ack\")\n```")
-    fn pong(data: Unknown) {}
+    fn pong<T>(data: T);
 
     @Docs("Gracefully closes the WebSocket connection with status code 1000.\n\n**Example:**\n```flame\nsocket.close()\n```")
-    fn close() {}
+    fn close();
 
     @Docs("Returns an asynchronous message `Stream` supporting `.forEach()`, `.onEach()`, and `.toChannel()`.\n\n**Returns:** `Stream` - Event stream of arriving messages.\n\n**Example:**\n```flame\nlet stream = socket.messages()\nstream.forEach((msg) {\n    println($\"Streamed message: {msg}\")\n})\n```")
-    fn messages() -> Stream {
-        return Stream {}
-    }
+    fn messages() -> Stream;
 
     @Docs("Registers a callback invoked whenever an inbound text message arrives.\n\n**Example:**\n```flame\nsocket.onMessage((msg) {\n    println($\"Got message: {msg}\")\n})\n```")
-    fn onMessage(callback: (msg: String)) -> ClientSocket {
-        return ClientSocket { url: "", readyState: "open" }
-    }
+    fn onMessage(callback: (msg: String)) -> ClientSocket;
 
     @Docs("Registers a callback invoked whenever an inbound binary frame arrives.\n\nInside the callback, `bytes.` provides methods: `.len()`, `.slice()`, `.toString()`, `.toHex()`, `.get()`.\n\n**Example:**\n```flame\nsocket.onBinary((bytes) {\n    println($\"Got binary chunk: {bytes.len()} bytes\")\n})\n```")
-    fn onBinary(callback: (bytes: Byte)) -> ClientSocket {
-        return ClientSocket { url: "", readyState: "open" }
-    }
+    fn onBinary(callback: (bytes: Byte)) -> ClientSocket;
 
     @Docs("Registers a callback invoked when the connection is closed.\n\n**Example:**\n```flame\nsocket.onClose((code, reason) {\n    println($\"Socket closed: code={code}, reason={reason}\")\n})\n```")
-    fn onClose(callback: (code: Int, reason: String)) -> ClientSocket {
-        return ClientSocket { url: "", readyState: "closed" }
-    }
+    fn onClose(callback: (code: Int, reason: String)) -> ClientSocket;
 
     @Docs("Registers a callback invoked when a connection error occurs.\n\n**Example:**\n```flame\nsocket.onError((err) {\n    println($\"Socket error: {err}\")\n})\n```")
-    fn onError(callback: (err: String)) -> ClientSocket {
-        return ClientSocket { url: "", readyState: "closed" }
-    }
+    fn onError(callback: (err: String)) -> ClientSocket;
 
     @Docs("Registers a callback invoked when a Ping control frame is received.")
-    fn onPing(callback: (data: Byte)) -> ClientSocket {
-        return ClientSocket { url: "", readyState: "open" }
-    }
+    fn onPing(callback: (data: Byte)) -> ClientSocket;
 
     @Docs("Registers a callback invoked when a Pong control frame is received.")
-    fn onPong(callback: (data: Byte)) -> ClientSocket {
-        return ClientSocket { url: "", readyState: "open" }
-    }
+    fn onPong(callback: (data: Byte)) -> ClientSocket;
 }
 
 @Docs("Connected client connection handle passed to server lifecycle callbacks.\n\nProvides methods for message transmission and client lifecycle:\n- `client.send(msg)` - Transmit text or binary payload\n- `client.sendText(text)` - Transmit UTF-8 text frame\n- `client.sendBytes(bytes)` - Transmit binary frame\n- `client.ping(data)` - Send Ping control frame\n- `client.close()` - Disconnect client\n- `client.id` - Unique client integer ID\n- `client.address` - Client IP address string\n\n**Example:**\n```flame\ns.onConnect((client) {\n    println($\"Client {client.id} joined from {client.address}\")\n    client.send(\"Welcome to Flame Server!\")\n})\n```")
@@ -153,19 +113,19 @@ export struct ServerClient {
 
 impl ServerClient {
     @Docs("Sends a UTF-8 text message or raw binary Bytes to this specific client.\n\n**Example:**\n```flame\nclient.send($\"Hello Client {client.id}!\")\n```")
-    fn send(data: Any) {}
+    fn send<T>(data: T);
 
     @Docs("Sends a UTF-8 text frame to this client.\n\n**Example:**\n```flame\nclient.sendText(\"OK\")\n```")
-    fn sendText(text: String) {}
+    fn sendText(text: String);
 
     @Docs("Sends raw binary data as a binary frame to this client.\n\n**Example:**\n```flame\nclient.sendBytes(bytes)\n```")
-    fn sendBytes(bytes: Byte) {}
+    fn sendBytes(bytes: Byte);
 
     @Docs("Sends a Ping control frame to this client.")
-    fn ping(data: Any) {}
+    fn ping<T>(data: T);
 
     @Docs("Closes this client's WebSocket connection gracefully.\n\n**Example:**\n```flame\nclient.close()\n```")
-    fn close() {}
+    fn close();
 }
 
 @Docs("WebSocket server listener instance returned by `ws.Socket.listen()` or `ws.listen()`.\n\nAll event handlers (`onConnect`, `onMessage`, `onBinary`, `onClose`, `onError`, `onPing`, `onPong`) and controls (`broadcast`, `connections`, `close`) are accessible directly on this variable `s`.\n\n**Example:**\n```flame\nimport std.net.ws\n\nlet s = ws.Socket.listen(\"127.0.0.1:8080\")\nprintln($\"Server listening on {s.address} (port: {s.port})\")\n\ns.onConnect((client) {\n    println($\"[+] Client connected: {client.id} ({client.address})\")\n    client.send(\"Welcome to Flame Chat Gateway!\")\n})\n\ns.onMessage((client, msg) {\n    println($\"[{client.id}] {msg}\")\n    s.broadcast($\"[{client.id}]: {msg}\")\n})\n\ns.onBinary((client, bytes) {\n    println($\"[{client.id}] Sent binary data: {bytes.len()} bytes\")\n    client.sendBytes(bytes)\n})\n\ns.onClose((client, code, reason) {\n    println($\"[-] Client {client.id} disconnected ({code})\")\n})\n```")
@@ -177,53 +137,37 @@ export struct Server {
 
 impl Server {
     @Docs("Registers a callback invoked whenever a new WebSocket client connects.\n\nInside the callback, `client.` provides completions for `.send()`, `.sendBytes()`, `.close()`, `.id`, `.address`.\n\n**Example:**\n```flame\ns.onConnect((client) {\n    println($\"Client {client.id} connected from {client.address}\")\n    client.send(\"Welcome!\")\n})\n```")
-    fn onConnect(callback: (client: ServerClient)) -> Server {
-        return Server { port: 8080, host: "127.0.0.1", address: "127.0.0.1:8080" }
-    }
+    fn onConnect(callback: (client: ServerClient)) -> Server;
 
     @Docs("Registers a callback invoked whenever a connected client sends a UTF-8 text message.\n\nInside the callback, `client.` provides `ServerClient` methods (`.send()`, `.sendBytes()`, `.close()`) and `msg.` provides `String` methods.\n\n**Example:**\n```flame\ns.onMessage((client, msg) {\n    println($\"Message from {client.id}: {msg}\")\n    s.broadcast($\"{client.id}: {msg}\")\n})\n```")
-    fn onMessage(callback: (client: ServerClient, msg: String)) -> Server {
-        return Server { port: 8080, host: "127.0.0.1", address: "127.0.0.1:8080" }
-    }
+    fn onMessage(callback: (client: ServerClient, msg: String)) -> Server;
 
     @Docs("Registers a callback invoked whenever a connected client sends a binary frame.\n\nInside the callback, `client.` provides `ServerClient` methods (`.send()`, `.sendBytes()`, `.close()`) and `bytes.` provides `Bytes` methods (`.len()`, `.slice()`, `.toString()`, `.toHex()`).\n\n**Example:**\n```flame\ns.onBinary((client, bytes) {\n    println($\"[Server] Binary frame: {bytes.len()} bytes\")\n    client.sendBytes(bytes)\n})\n```")
-    fn onBinary(callback: (client: ServerClient, bytes: Byte)) -> Server {
-        return Server { port: 8080, host: "127.0.0.1", address: "127.0.0.1:8080" }
-    }
+    fn onBinary(callback: (client: ServerClient, bytes: Byte)) -> Server;
 
     @Docs("Registers a callback invoked when a connected client disconnects.\n\n**Example:**\n```flame\ns.onClose((client, code, reason) {\n    println($\"Client {client.id} disconnected: {code} - {reason}\")\n})\n```")
-    fn onClose(callback: (client: ServerClient, code: Int, reason: String)) -> Server {
-        return Server { port: 8080, host: "127.0.0.1", address: "127.0.0.1:8080" }
-    }
+    fn onClose(callback: (client: ServerClient, code: Int, reason: String)) -> Server;
 
     @Docs("Registers a callback invoked when a client encounters a transport or protocol error.\n\n**Example:**\n```flame\ns.onError((client, err) {\n    println($\"Client {client.id} error: {err}\")\n})\n```")
-    fn onError(callback: (client: ServerClient, error: String)) -> Server {
-        return Server { port: 8080, host: "127.0.0.1", address: "127.0.0.1:8080" }
-    }
+    fn onError(callback: (client: ServerClient, error: String)) -> Server;
 
     @Docs("Registers a callback invoked when a client sends a Ping frame.")
-    fn onPing(callback: (client: ServerClient, data: Byte)) -> Server {
-        return Server { port: 8080, host: "127.0.0.1", address: "127.0.0.1:8080" }
-    }
+    fn onPing(callback: (client: ServerClient, data: Byte)) -> Server;
 
     @Docs("Registers a callback invoked when a client sends a Pong frame.")
-    fn onPong(callback: (client: ServerClient, data: Byte)) -> Server {
-        return Server { port: 8080, host: "127.0.0.1", address: "127.0.0.1:8080" }
-    }
+    fn onPong(callback: (client: ServerClient, data: Byte)) -> Server;
 
     @Docs("Broadcasts a UTF-8 text message or raw binary Bytes to all currently connected clients simultaneously.\n\n**Example:**\n```flame\ns.broadcast(\"System update: server reload scheduled in 1 minute\")\ns.broadcast(byte.readBytes(\"state_sync.bin\"))\n```")
-    fn broadcast(data: Any) {}
+    fn broadcast<T>(data: T);
 
     @Docs("Returns the number of currently active client connections connected to the server.\n\n**Returns:** `Int` - Active connection count.\n\n**Example:**\n```flame\nprintln($\"Total online clients: {s.connections()}\")\n```")
-    fn connections() -> Int {
-        return 0
-    }
+    fn connections() -> Int;
 
     @Docs("Gracefully shuts down the WebSocket server listener and closes all connected clients.\n\n**Example:**\n```flame\ns.close()\n```")
-    fn close() {}
+    fn close();
 
     @Docs("Gracefully shuts down the WebSocket server listener and closes all connected clients.\n\n**Example:**\n```flame\ns.shutdown()\n```")
-    fn shutdown() {}
+    fn shutdown();
 }
 
 @Docs("Raw binary byte buffer with length and manipulation methods.")
@@ -233,19 +177,19 @@ export struct Bytes {
 
 impl Bytes {
     @Docs("Returns the number of bytes in this buffer.\n\n**Example:**\n```flame\nlet size = bytes.len()\n```")
-    fn len() -> Int { return 0 }
+    fn len() -> Int;
 
     @Docs("Returns a sub-slice of this byte buffer from `start` for `length` bytes.\n\n**Example:**\n```flame\nlet sub = bytes.slice(0, 4)\n```")
-    fn slice(start: Int, length: Int) -> Bytes { return Bytes { len: 0 } }
+    fn slice(start: Int, length: Int) -> Bytes;
 
     @Docs("Decodes this byte buffer as a UTF-8 String.\n\n**Example:**\n```flame\nlet text = bytes.toString()\n```")
-    fn toString() -> String { return "" }
+    fn toString() -> String;
 
     @Docs("Formats this byte buffer as a lowercase hexadecimal string.\n\n**Example:**\n```flame\nlet hex = bytes.toHex()\n```")
-    fn toHex() -> String { return "" }
+    fn toHex() -> String;
 
     @Docs("Returns the byte value at the given zero-based index.\n\n**Example:**\n```flame\nlet b = bytes.get(0)\n```")
-    fn get(index: Int) -> Int { return 0 }
+    fn get(index: Int) -> Int;
 }
 
 @Docs("Asynchronous message stream returned by `socket.messages()`.")
@@ -253,15 +197,13 @@ export struct Stream {}
 
 impl Stream {
     @Docs("Subscribes an asynchronous consumer closure to incoming stream messages.\n\n**Example:**\n```flame\nlet stream = socket.messages()\nstream.forEach((msg) {\n    println($\"Stream item: {msg}\")\n})\n```")
-    fn forEach(callback: (msg: String)) {}
+    fn forEach(callback: (msg: String));
 
     @Docs("Subscribes an asynchronous consumer closure to incoming stream messages.\n\n**Example:**\n```flame\nlet stream = socket.messages()\nstream.onEach((msg) {\n    println($\"Stream item: {msg}\")\n})\n```")
-    fn onEach(callback: (msg: String)) {}
+    fn onEach(callback: (msg: String));
 
     @Docs("Bridges the WebSocket message stream directly into Flame's native `std.thread` MPSC channel `(Sender, Receiver)`.\n\n**Returns:** `(Sender, Receiver)` - Flame thread message channel.\n\n**Example:**\n```flame\nimport std.thread as th\n\nlet (tx, rx) = socket.messages().toChannel()\nwhile true {\n    let msg = rx.recv()\n    println($\"Received from channel: {msg}\")\n}\n```")
-    fn toChannel() -> Any {
-        return nil
-    }
+    fn toChannel<T>() -> (thread.Sender<T>, thread.Receiver<T>);
 }
 
 @Docs("WebSocket subsystem factory interface exposing client connection and server binding.")
@@ -269,27 +211,19 @@ export struct Socket {}
 
 impl Socket {
     @Docs("Connects to a remote WebSocket server endpoint and returns a `ClientSocket` instance.\n\n**Returns:** `ClientSocket` - Active client connection.\n\n**Example:**\n```flame\nimport std.net.ws\n\nlet client = ws.Socket.connect(\"ws://127.0.0.1:8080\")\nclient.send(\"Hello Server\")\nlet resp = client.recv()\nprintln($\"Server replied: {resp}\")\nclient.close()\n```")
-    fn connect(url: String) -> ClientSocket {
-        return ClientSocket { url: url, readyState: "open" }
-    }
+    fn connect(url: String) -> ClientSocket;
 
     @Docs("Binds a WebSocket server listener to the specified address and returns a `Server` instance.\n\n**Returns:** `Server` - Listening server handle with `.onConnect()`, `.onMessage()`, `.broadcast()`, etc.\n\n**Example:**\n```flame\nimport std.net.ws\n\nlet s = ws.Socket.listen(\"127.0.0.1:8080\")\nprintln($\"WebSocket server ready on {s.address}\")\n\ns.onConnect((client) {\n    println($\"Client {client.id} joined!\")\n    client.send(\"Welcome\")\n})\n\ns.onMessage((client, msg) {\n    s.broadcast($\"{client.id}: {msg}\")\n})\n```")
-    fn listen(addr: String) -> Server {
-        return Server { port: 8080, host: "127.0.0.1", address: addr }
-    }
+    fn listen(addr: String) -> Server;
 }
 
 @Docs("Top-level connect function to open a WebSocket client connection.\n\n**Example:**\n```flame\nimport std.net.ws\nlet socket = ws.connect(\"ws://127.0.0.1:8080\")\nsocket.send(\"ping\")\n```")
-export fn connect(url: String) -> ClientSocket {
-    return Socket.connect(url)
-}
+export fn connect(url: String) -> ClientSocket;
 
 @Docs("Top-level listen function to start a WebSocket server.\n\n**Example:**\n```flame\nimport std.net.ws\nlet s = ws.listen(\"127.0.0.1:8080\")\ns.onMessage((client, msg) { s.broadcast(msg) })\n```")
-export fn listen(addr: String) -> Server {
-    return Socket.listen(addr)
-}
+export fn listen(addr: String) -> Server;
 
 @Docs("WebSocket global subsystem instance.")
 export const ws: Socket = Socket {}
-export const WebSocket: Socket = Socket {}
 
+export const WebSocket: Socket = Socket {}

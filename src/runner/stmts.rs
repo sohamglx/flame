@@ -164,11 +164,20 @@ impl Runner {
                 annotations,
                 ..
             } => {
-                let func = Value::Function {
-                    params: params.clone(),
-                    body: body.clone().unwrap_or_default(),
-                    env: env.clone(),
-                    annotations: annotations.clone(),
+                let func = if let Some(body_stmts) = body {
+                    Value::Function {
+                        params: params.clone(),
+                        body: body_stmts.clone(),
+                        env: env.clone(),
+                        annotations: annotations.clone(),
+                    }
+                } else {
+                    Value::Declaration {
+                        name: name.clone(),
+                        params: params.clone(),
+                        return_type: return_type.clone(),
+                        annotations: annotations.clone(),
+                    }
                 };
                 env.lock()
                     .unwrap()
@@ -246,6 +255,7 @@ impl Runner {
                                     default_val: None,
                                     is_ref: false,
                                     is_mut: false,
+                                    span: crate::lexer::Span::dummy(),
                                 })
                                 .collect();
                             let ctx_val = crate::runner::core::build_annotation_context(
@@ -300,6 +310,7 @@ impl Runner {
                                     default_val: None,
                                     is_ref: false,
                                     is_mut: false,
+                                    span: crate::lexer::Span::dummy(),
                                 })
                                 .collect();
                             let ctx_val = crate::runner::core::build_annotation_context(
@@ -637,6 +648,7 @@ impl Runner {
                                                         default_val: None,
                                                         is_ref: false,
                                                         is_mut: false,
+                                                        span: crate::lexer::Span::dummy(),
                                                     })
                                                     .collect(),
                                                 body: vec![],
@@ -676,6 +688,7 @@ impl Runner {
                                                             default_val: None,
                                                             is_ref: false,
                                                             is_mut: false,
+                                                            span: crate::lexer::Span::dummy(),
                                                         })
                                                         .collect(),
                                                     body: vec![],
@@ -706,6 +719,7 @@ impl Runner {
                                                                 default_val: None,
                                                                 is_ref: false,
                                                                 is_mut: false,
+                                                                span: crate::lexer::Span::dummy(),
                                                             })
                                                             .collect(),
                                                         body: vec![],

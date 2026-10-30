@@ -1,8 +1,30 @@
 const vscode = require('vscode');
 const { existsSync, writeFileSync, unlinkSync, statSync } = require('fs');
-const { dirname, join, delimiter } = require('path');
+const { dirname, join, delimiter, relative } = require('path');
 const { homedir, tmpdir } = require('os');
 const { execFile } = require('child_process');
+
+function findProjectDir(filePath) {
+    if (!filePath) {
+        if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+            return vscode.workspace.workspaceFolders[0].uri.fsPath;
+        }
+        return process.cwd();
+    }
+    let curr = dirname(filePath);
+    for (let i = 0; i < 15; i++) {
+        if (existsSync(join(curr, 'flame.toml'))) {
+            return curr;
+        }
+        const parent = dirname(curr);
+        if (parent === curr) break;
+        curr = parent;
+    }
+    if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+        return vscode.workspace.workspaceFolders[0].uri.fsPath;
+    }
+    return dirname(filePath);
+}
 
 function findWorkspaceRoot(documentPath) {
     if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
@@ -376,17 +398,25 @@ function activate(context) {
 
     context.subscriptions.push(vscode.languages.registerHoverProvider(['flame'], {
         async provideHover(document, position) {
+            const actionMd = getHoverActionButtons(document, position);
             const result = await runCheck(document, position);
-            if (!result || !result.hover) return null;
 
             const blocks = [];
-            if (result.hover.documentation) {
-                const md = new vscode.MarkdownString(removeTableBorders(result.hover.documentation));
-                md.supportHtml = true;
-                blocks.push(md);
-            } else if (result.hover.label) {
-                blocks.push(new vscode.MarkdownString('`' + result.hover.label + '`'));
+            if (actionMd) {
+                blocks.push(actionMd);
             }
+
+            if (result && result.hover) {
+                if (result.hover.documentation) {
+                    const md = new vscode.MarkdownString(removeTableBorders(result.hover.documentation));
+                    md.supportHtml = true;
+                    blocks.push(md);
+                } else if (result.hover.label) {
+                    blocks.push(new vscode.MarkdownString('`' + result.hover.label + '`'));
+                }
+            }
+
+            if (blocks.length === 0) return null;
             return new vscode.Hover(blocks);
         }
     }));
@@ -420,12 +450,12 @@ function activate(context) {
                 result.signature_help.label
             );
             signature.parameters = result.signature_help.parameters.map(p => new vscode.ParameterInformation(p));
-            
+
             const help = new vscode.SignatureHelp();
             help.signatures = [signature];
             help.activeSignature = 0;
             help.activeParameter = result.signature_help.active_parameter;
-            
+
             return help;
         }
     }, '(', ','));
@@ -472,6 +502,187 @@ function activate(context) {
             return computeFoldingRanges(document);
         }
     }));
+
+    function getOrCreateTerminal(name = 'Flame') {
+        let terminal = vscode.window.terminals.find(t => t.name === name);
+        if (!terminal) {
+            terminal = vscode.window.createTerminal(name);
+        }
+        return terminal;
+    }
+
+    function runInTerminal(cmd) {
+        const terminal = getOrCreateTerminal('Flame');
+        terminal.show(true);
+        terminal.sendText(cmd);
+    }
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('flame.runTest', (filePath, testName) => {
+            const projectDir = findProjectDir(filePath);
+            const relPath = filePath ? relative(projectDir, filePath) : '';
+            const filterArg = testName ? ` --filter ${testName}` : '';
+            const testTarget = relPath ? ` "${relPath}"` : '';
+            runInTerminal(`cd "${projectDir}" && fmp test${testTarget}${filterArg}`);
+        }),
+        vscode.commands.registerCommand('flame.debugTest', (filePath, testName) => {
+            const projectDir = findProjectDir(filePath);
+            const relPath = filePath ? relative(projectDir, filePath) : '';
+            const filterArg = testName ? ` --filter ${testName}` : '';
+            const testTarget = relPath ? ` "${relPath}"` : '';
+            runInTerminal(`cd "${projectDir}" && fmp test${testTarget}${filterArg} --debug`);
+        }),
+        vscode.commands.registerCommand('flame.runApp', (filePath) => {
+            const projectDir = findProjectDir(filePath);
+            const relPath = filePath ? relative(projectDir, filePath) : '';
+            const isDefaultMain = !relPath || relPath === 'src/main.fm' || relPath === 'main.fm';
+            const runCmd = isDefaultMain ? 'fmp run' : `fmp run "${relPath}"`;
+            runInTerminal(`cd "${projectDir}" && ${runCmd}`);
+        }),
+        vscode.commands.registerCommand('flame.debugApp', (filePath) => {
+            const projectDir = findProjectDir(filePath);
+            const relPath = filePath ? relative(projectDir, filePath) : '';
+            const isDefaultMain = !relPath || relPath === 'src/main.fm' || relPath === 'main.fm';
+            const runCmd = isDefaultMain ? 'fmp run --debug' : `fmp run "${relPath}" --debug`;
+            runInTerminal(`cd "${projectDir}" && ${runCmd}`);
+        }),
+        vscode.languages.registerCodeLensProvider(['flame'], {
+            provideCodeLenses(document) {
+                return getCodeLenses(document);
+            }
+        })
+    );
+}
+
+const TEST_ANNO_RE = /^\s*@(Test|test|ExpectPanic|expect_panic|Benchmark|benchmark)\b/;
+const APP_ANNO_RE = /^\s*@(Application|application|Cli|cli)\b/;
+const FUNC_DECL_RE = /^\s*(?:pub\s+)?(?:export\s+)?(?:async\s+)?fn\s+([a-zA-Z0-9_]+)/;
+
+function findAnnotatedFunctionBelow(lines, startLine) {
+    for (let i = startLine + 1; i < lines.length && i <= startLine + 10; i++) {
+        const line = lines[i].trim();
+        if (!line || line.startsWith('//') || line.startsWith('/*')) continue;
+        const match = lines[i].match(FUNC_DECL_RE);
+        if (match) {
+            return { name: match[1], line: i };
+        }
+        if (line.startsWith('@')) continue;
+        break;
+    }
+    return null;
+}
+
+function findAnnotationsAbove(lines, startLine) {
+    const annos = [];
+    for (let i = startLine - 1; i >= 0 && i >= startLine - 10; i--) {
+        const line = lines[i].trim();
+        if (!line || line.startsWith('//') || line.startsWith('/*')) continue;
+        if (line.startsWith('@')) {
+            annos.push({ text: line, line: i });
+        } else {
+            break;
+        }
+    }
+    return annos;
+}
+
+function createTestActionButtons(filePath, testName) {
+    const runUri = vscode.Uri.parse(`command:flame.runTest?${encodeURIComponent(JSON.stringify([filePath, testName]))}`);
+    const debugUri = vscode.Uri.parse(`command:flame.debugTest?${encodeURIComponent(JSON.stringify([filePath, testName]))}`);
+    const md = new vscode.MarkdownString(`[▶︎ Run Test](${runUri}) &nbsp;|&nbsp; [⚙︎ Debug](${debugUri})`);
+    md.isTrusted = true;
+    md.supportHtml = true;
+    return md;
+}
+
+function createAppActionButtons(filePath) {
+    const runUri = vscode.Uri.parse(`command:flame.runApp?${encodeURIComponent(JSON.stringify([filePath]))}`);
+    const debugUri = vscode.Uri.parse(`command:flame.debugApp?${encodeURIComponent(JSON.stringify([filePath]))}`);
+    const md = new vscode.MarkdownString(`[▶︎ Run](${runUri}) &nbsp;|&nbsp; [⚙︎ Debug](${debugUri})`);
+    md.isTrusted = true;
+    md.supportHtml = true;
+    return md;
+}
+
+function getHoverActionButtons(document, position) {
+    if (!document || document.uri.fsPath.endsWith('.fmi') || document.uri.fsPath.endsWith('.tmp.fm')) return null;
+    const lines = document.getText().split('\n');
+    const currentLineIndex = position.line;
+    if (currentLineIndex < 0 || currentLineIndex >= lines.length) return null;
+    const currentLine = lines[currentLineIndex];
+
+    // 1. Cursor is on @Test / @ExpectPanic line
+    if (TEST_ANNO_RE.test(currentLine)) {
+        const func = findAnnotatedFunctionBelow(lines, currentLineIndex);
+        if (func) {
+            return createTestActionButtons(document.uri.fsPath, func.name);
+        }
+    }
+
+    // 2. Cursor is on @Application / @Cli line
+    if (APP_ANNO_RE.test(currentLine)) {
+        return createAppActionButtons(document.uri.fsPath);
+    }
+
+    // 3. Cursor is on a function declaration line
+    const funcMatch = currentLine.match(FUNC_DECL_RE);
+    if (funcMatch) {
+        const funcName = funcMatch[1];
+        const annosAbove = findAnnotationsAbove(lines, currentLineIndex);
+        if (annosAbove.some(a => TEST_ANNO_RE.test(a.text))) {
+            return createTestActionButtons(document.uri.fsPath, funcName);
+        }
+        if (annosAbove.some(a => APP_ANNO_RE.test(a.text))) {
+            return createAppActionButtons(document.uri.fsPath);
+        }
+    }
+
+    return null;
+}
+
+function getCodeLenses(document) {
+    if (!document || document.uri.fsPath.endsWith('.fmi') || document.uri.fsPath.endsWith('.tmp.fm')) return [];
+    const codeLenses = [];
+    const lines = document.getText().split('\n');
+    const seenFunctions = new Set();
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (TEST_ANNO_RE.test(line)) {
+            const func = findAnnotatedFunctionBelow(lines, i);
+            if (func && !seenFunctions.has(func.line)) {
+                seenFunctions.add(func.line);
+                const range = new vscode.Range(i, 0, i, 0);
+                codeLenses.push(
+                    new vscode.CodeLens(range, {
+                        title: '▶︎ Run Test',
+                        command: 'flame.runTest',
+                        arguments: [document.uri.fsPath, func.name]
+                    }),
+                    new vscode.CodeLens(range, {
+                        title: '⚙︎ Debug',
+                        command: 'flame.debugTest',
+                        arguments: [document.uri.fsPath, func.name]
+                    })
+                );
+            }
+        } else if (APP_ANNO_RE.test(line)) {
+            const range = new vscode.Range(i, 0, i, 0);
+            codeLenses.push(
+                new vscode.CodeLens(range, {
+                    title: '▶︎ Run',
+                    command: 'flame.runApp',
+                    arguments: [document.uri.fsPath]
+                }),
+                new vscode.CodeLens(range, {
+                    title: '⚙︎ Debug',
+                    command: 'flame.debugApp',
+                    arguments: [document.uri.fsPath]
+                })
+            );
+        }
+    }
+    return codeLenses;
 }
 
 function computeFoldingRanges(document) {

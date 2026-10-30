@@ -4,26 +4,24 @@ package desktop
 export struct Mouse {}
 
 impl Mouse {
-    fn move(x: Int, y: Int) {}
-    fn click() {}
-    fn rightClick() {}
-    fn position() -> Formula {
-        return formula {}
-    }
+    fn move(x: Int, y: Int);
+    fn click();
+    fn rightClick();
+    fn position() -> Formula;
 }
 
 @Docs("Controls keyboard simulation and typing.")
 export struct Keyboard {}
 
 impl Keyboard {
-    fn typeText(text: String) {}
-    fn keyPress(key: String) {}
-    fn keyRelease(key: String) {}
+    fn typeText(text: String);
+    fn keyPress(key: String);
+    fn keyRelease(key: String);
 }
 
 export const mouse: Mouse = Mouse {}
+
 export const keyboard: Keyboard = Keyboard {}
 
 @Docs("Opens any URL, custom scheme (e.g. `brave://`, `chrome://`, `https://`), file path, or application. Optionally pass command-line arguments.\n\n**Example:**\n```flame\nimport std.desktop\n\n// Open websites and web apps\ndesktop.open(\"https://google.com\")\n\n// Open custom browser internal schemes\ndesktop.open(\"brave://settings\")\n\n// Open applications with arguments\ndesktop.open(\"code\", [\".\"])\ndesktop.open(\"firefox\", [\"--private-window\", \"https://github.com\"])\n```")
-export fn open(target: String, args: [String]? = []) -> Bool {
-}
+export fn open(target: String, args: [String]? = []) -> Bool;

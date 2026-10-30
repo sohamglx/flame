@@ -48,7 +48,6 @@ async fn main() {
     println("Server listening on port 3000.")
     println("Point your Telegram webhook to: /webhook")
 
-
     flamer.post("/webhook", webhook)
     flamer.post(
         "/test", 
@@ -57,6 +56,15 @@ async fn main() {
             println(parsed.name)
             return {
                 ok: true
+            }
+        }
+    )
+    flamer.get(
+        "/", 
+        (body: String) -> Formula {
+            return {
+                ok: true, 
+                text: "Flame Bot is running!"
             }
         }
     )

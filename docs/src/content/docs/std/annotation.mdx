@@ -88,7 +88,7 @@ export struct TargetMetadata {
     name: String
     kind: String
     parameters: [ParameterInfo]
-    return_type: String
+    returnType: String
     annotations: [AnnotationInfo]
 }
 ```
@@ -98,12 +98,12 @@ export struct TargetMetadata {
 | `name` | `String` | The identifier of the annotated symbol (e.g. `"fetch_user"`). |
 | `kind` | `String` | The declaration kind: `"function"`, `"struct"`, `"enum"`, or `"variable"`. |
 | `parameters` | `[ParameterInfo]` | An ordered list of parameter metadata (for functions). |
-| `return_type` | `String` | Return type signature string (e.g. `"String"`, `"Int"`, or `"Nil"`). |
+| `returnType` | `String` | Return type signature string (e.g. `"String"`, `"Int"`, or `"Nil"`). |
 | `annotations` | `[AnnotationInfo]` | Array of all annotations attached to this target declaration. |
 
 #### Methods on `TargetMetadata`
 
-#### `ref() -> Unknown`
+#### `ref<T>() -> T`
 Returns a callable reference to the annotated function.
 
 - When invoked, `ref()` executes the target function's underlying body without re-triggering attached annotations (preventing recursive re-entrancy).
@@ -117,28 +117,15 @@ annotation Route(path: String) {
 }
 ```
 
-#### `transform(transformer: Unknown) -> Unknown`
-Wraps or transforms the annotated function. Flame supports two transformer signatures:
+#### `transform<F, R>(transformer: F) -> R`
+Wraps or transforms the annotated declaration. `transform` accepts a closure that receives the annotated target handler as its parameter:
 
-1. **Direct Interceptor Closure**: Receives the original callable reference as its first argument, followed by the target function's parameters:
-   ```flame
-   ctx.target.transform((ref, arg1: String) {
-       print($"Before calling {ctx.target.name}")
-       let result = ref(arg1)
-       print($"After calling {ctx.target.name}")
-       return result
-   })
-   ```
-
-2. **Higher-Order Factory Closure**: Receives the original callable reference and returns a replacement closure:
-   ```flame
-   ctx.target.transform((ref) {
-       return (arg1: String) {
-           let result = ref(arg1)
-           return $"[WRAPPED: {result}]"
-       }
-   })
-   ```
+```flame
+ctx.target.transform((handler) {
+    let result = handler()
+    return result
+})
+```
 
 ---
 

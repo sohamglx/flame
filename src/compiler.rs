@@ -686,7 +686,7 @@ panic = "abort"
                                         main_rs.push_str(
                                             "        flamelang::vm::set_event_loop_active(true);\n",
                                         );
-                                        main_rs.push_str(&format!("        std::thread::spawn(move || {{ let rt = tokio::runtime::Runtime::new().unwrap(); rt.block_on(async move {{ {}.await }}); flamelang::vm::set_event_loop_active(false); }});\n", call_expr));
+                                        main_rs.push_str(&format!("        std::thread::spawn(move || {{ let rt = tokio::runtime::Runtime::new().unwrap(); let _res = rt.block_on(async move {{ {}.await }}); if let Err(e) = _res {{ eprintln!(\"\\x1b[1;31mDaemon error:\\x1b[0m {{:?}}\", e); }} flamelang::vm::set_event_loop_active(false); }});\n", call_expr));
                                         main_rs.push_str("        CValue::null()\n");
                                     } else {
                                         main_rs.push_str(&format!("        let res = tokio::runtime::Runtime::new().unwrap().block_on(async move {{ {}.await }});\n", call_expr));
@@ -887,6 +887,13 @@ panic = "abort"
         main_rs.push_str("            Ok(mut stmts) => {\n");
         main_rs.push_str("                if !stmts.iter().any(|s| flamelang::parser::is_test_statement(s)) { continue; }\n");
         main_rs.push_str("                flamelang::parser::filter_platform_stmts(&mut stmts, Some(std::env::consts::OS));\n");
+        main_rs.push_str("                let (tc_res, _) = flamelang::typechecker::TypeChecker::new(file_path.to_string_lossy().to_string()).check_program(&stmts);\n");
+        main_rs.push_str("                if let Err(diags) = tc_res {\n");
+        main_rs.push_str("                    for d in diags {\n");
+        main_rs.push_str("                        d.print(&src);\n");
+        main_rs.push_str("                    }\n");
+        main_rs.push_str("                    std::process::exit(1);\n");
+        main_rs.push_str("                }\n");
         main_rs.push_str("                let mut runner = Runner::new(file_path.clone());\n");
         // copy native methods over
         main_rs.push_str(
@@ -940,14 +947,14 @@ panic = "abort"
         main_rs.push_str("    match parser.parse() {\n");
         main_rs.push_str("        Ok(mut stmts) => {\n");
         main_rs.push_str("            flamelang::parser::filter_platform_stmts(&mut stmts, Some(std::env::consts::OS));\n");
-        main_rs.push_str("            let clean_stmts: Vec<_> = stmts.into_iter().filter(|stmt| !flamelang::parser::is_test_statement(stmt)).collect();\n");
-        main_rs.push_str("            let (tc_res, _) = flamelang::typechecker::TypeChecker::new(entry_file.clone()).check_program(&clean_stmts);\n");
+        main_rs.push_str("            let (tc_res, _) = flamelang::typechecker::TypeChecker::new(entry_file.clone()).check_program(&stmts);\n");
         main_rs.push_str("            if let Err(diags) = tc_res {\n");
         main_rs.push_str("                for d in diags {\n");
         main_rs.push_str("                    d.print(&src);\n");
         main_rs.push_str("                }\n");
         main_rs.push_str("                std::process::exit(1);\n");
         main_rs.push_str("            }\n");
+        main_rs.push_str("            let clean_stmts: Vec<_> = stmts.into_iter().filter(|stmt| !flamelang::parser::is_test_statement(stmt)).collect();\n");
         main_rs.push_str("            let result = runner.run(&clean_stmts);\n");
         main_rs.push_str("            vm::wait_for_all_threads();\n");
         main_rs.push_str("            if let Err(e) = result {\n");

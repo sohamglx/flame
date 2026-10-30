@@ -1,13 +1,13 @@
 package process
 
 @Docs("Executes a command synchronously and returns the output.\n\n**Example:**\n```flame\nlet out = process.exec(\"ls\", [\"-la\"])\n```")
-export fn exec(cmd: String, args: [String] = []) -> Formula {}
+export fn exec(cmd: String, args: [String] = []) -> Formula;
 
 @Docs("Spawns a child process asynchronously.")
-export fn spawn(cmd: String, args: [String] = []) -> Formula {}
+export fn spawn(cmd: String, args: [String] = []) -> Formula;
 
 @Docs("Terminates current process execution with exit code.")
-export fn exit(code: Int = 0) {}
+export fn exit(code: Int = 0);
 
 @Docs("Returns the process ID of the current process.")
-export fn current_pid() -> Int {}
+export fn current_pid() -> Int;

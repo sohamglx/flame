@@ -84,6 +84,7 @@ pub enum TokenKind {
     Dot,              // .
     Comma,            // ,
     Colon,            // :
+    Semicolon,        // ;
     At,               // @
     Dollar,           // $
     Question,         // ?
@@ -415,6 +416,7 @@ impl<'a> Lexer<'a> {
             }
             ',' => TokenKind::Comma,
             ':' => TokenKind::Colon,
+            ';' => TokenKind::Semicolon,
             '@' => TokenKind::At,
             '?' => {
                 if self.peek() == Some('.') {
@@ -877,7 +879,7 @@ impl<'a> Lexer<'a> {
                 Some('\u{feff}') | Some(' ') | Some('\t') | Some('\r') => {
                     self.advance();
                 }
-                Some('\n') | Some(';') => {
+                Some('\n') => {
                     self.advance();
                     if self.keep_comments {
                         return Some(TokenKind::Newline);

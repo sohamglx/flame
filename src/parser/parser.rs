@@ -112,6 +112,14 @@ impl Parser {
         current
     }
 
+    fn previous(&self) -> Token {
+        if self.index > 0 {
+            self.tokens[self.index - 1].clone()
+        } else {
+            self.peek()
+        }
+    }
+
     fn check(&self, kind: TokenKind) -> bool {
         self.peek().kind == kind
     }
@@ -159,7 +167,12 @@ impl Parser {
     pub fn parse(&mut self) -> Result<Vec<Stmt>, Diagnostic> {
         let mut statements = Vec::new();
         while !self.check(TokenKind::EOF) {
+            while self.match_token(TokenKind::Semicolon) {}
+            if self.check(TokenKind::EOF) {
+                break;
+            }
             statements.push(self.parse_statement()?);
+            while self.match_token(TokenKind::Semicolon) {}
         }
         Ok(statements)
     }
@@ -199,14 +212,14 @@ impl Parser {
         match token.kind {
             TokenKind::Async => {
                 self.advance(); // consume "async"
-                self.parse_func_decl(annotations)
+                self.parse_func_decl_with_async(annotations, true)
             }
             TokenKind::Package => self.parse_package_decl(annotations),
             TokenKind::Import => self.parse_import_statement(),
             TokenKind::Export => self.parse_export_statement(annotations),
             TokenKind::Let => self.parse_var_decl(TokenKind::Let, annotations),
             TokenKind::Const => self.parse_var_decl(TokenKind::Const, annotations),
-            TokenKind::Fn => self.parse_func_decl(annotations),
+            TokenKind::Fn => self.parse_func_decl_with_async(annotations, false),
             TokenKind::Annotation => self.parse_annotation_decl(annotations),
             TokenKind::Struct => self.parse_struct_decl(annotations),
             TokenKind::Enum => self.parse_enum_decl(annotations),
@@ -230,6 +243,7 @@ impl Parser {
             _ => {
                 // Expression statement
                 let expr = self.parse_expr()?;
+                while self.match_token(TokenKind::Semicolon) {}
                 Ok(Stmt::ExprStmt(expr))
             }
         }
@@ -638,14 +652,18 @@ impl Parser {
     }
 
     fn parse_func_decl(&mut self, annotations: Vec<Annotation>) -> Result<Stmt, Diagnostic> {
+        self.parse_func_decl_with_async(annotations, false)
+    }
+
+    fn parse_func_decl_with_async(&mut self, annotations: Vec<Annotation>, is_async: bool) -> Result<Stmt, Diagnostic> {
         let is_web = annotations.iter().any(|a| Self::is_web_annotation(&a.name));
         self.web_function_stack.push(is_web);
-        let res = self.parse_func_decl_inner(annotations);
+        let res = self.parse_func_decl_inner(annotations, is_async);
         self.web_function_stack.pop();
         res
     }
 
-    fn parse_func_decl_inner(&mut self, annotations: Vec<Annotation>) -> Result<Stmt, Diagnostic> {
+    fn parse_func_decl_inner(&mut self, annotations: Vec<Annotation>, is_async: bool) -> Result<Stmt, Diagnostic> {
         let start_tok = self.consume(TokenKind::Fn, "expected 'fn' function definition")?;
         let name_tok = if matches!(
             self.peek().kind,
@@ -697,7 +715,7 @@ impl Parser {
                 let is_web_context = self.is_inside_web_annotated_function()
                     || annotations.iter().any(|a| Self::is_web_annotation(&a.name));
                 if is_web_context {
-                    p_type = "Any".to_string();
+                    p_type = "Unknown".to_string();
                 } else {
                     return Err(Diagnostic::new_error(
                         "expected ':' after parameter name".to_string(),
@@ -722,6 +740,7 @@ impl Parser {
                 default_val,
                 is_ref,
                 is_mut,
+                span: p_name_tok.span.clone(),
             });
 
             if !self.match_token(TokenKind::Comma) {
@@ -739,14 +758,28 @@ impl Parser {
             return_type = Some(ret);
         }
 
-        let body = self.parse_block()?;
-        let end_span = self.peek().span.clone();
+        let (body, end_span) = if self.match_token(TokenKind::Semicolon) {
+            let semi_span = self.previous().span.clone();
+            (None, semi_span)
+        } else if self.check(TokenKind::OpenBrace) {
+            let b = self.parse_block()?;
+            let end_s = self.peek().span.clone();
+            (Some(b), end_s)
+        } else {
+            return Err(Diagnostic::new_error(
+                "expected '{' for function body or ';' for function declaration".to_string(),
+                self.filepath.clone(),
+                self.peek().span.clone(),
+                None,
+                None,
+            ));
+        };
 
         Ok(Stmt::FuncDecl {
             name,
             params,
             return_type,
-            body: Some(body),
+            body,
             annotations,
             span: Span {
                 start: start_tok.span.start,
@@ -757,6 +790,7 @@ impl Parser {
             name_span: name_tok.span,
             generic_params,
             is_default: false,
+            is_async,
         })
     }
 
@@ -840,6 +874,7 @@ impl Parser {
                     default_val,
                     is_ref,
                     is_mut,
+                    span: p_name_tok.span.clone(),
                 });
 
                 if !self.match_token(TokenKind::Comma) {
@@ -858,8 +893,14 @@ impl Parser {
             return_type = Some(ret);
         }
 
-        let body = self.parse_block()?;
-        let end_span = self.peek().span.clone();
+        let (body, end_span) = if self.match_token(TokenKind::Semicolon) {
+            let semi_span = self.previous().span.clone();
+            (Vec::new(), semi_span)
+        } else {
+            let b = self.parse_block()?;
+            let end_s = self.peek().span.clone();
+            (b, end_s)
+        };
 
         Ok(Stmt::AnnotationDecl {
             name,
@@ -1090,6 +1131,7 @@ impl Parser {
     }
 
     fn parse_trait_method(&mut self, is_default: bool) -> Result<Stmt, Diagnostic> {
+        let is_async = self.match_token(TokenKind::Async);
         let start_tok = self.consume(TokenKind::Fn, "expected 'fn'")?;
         let name_tok = self.consume(TokenKind::Identifier, "expected method name")?;
         let name = name_tok.lexeme.clone();
@@ -1134,6 +1176,7 @@ impl Parser {
                 default_val: None,
                 is_ref,
                 is_mut,
+                span: p_name_tok.span.clone(),
             });
             if !self.match_token(TokenKind::Comma) {
                 break;
@@ -1147,7 +1190,9 @@ impl Parser {
         }
 
         let mut body = None;
-        if self.check(TokenKind::OpenBrace) {
+        if self.match_token(TokenKind::Semicolon) {
+            body = None;
+        } else if self.check(TokenKind::OpenBrace) {
             if !is_default {
                 println!(
                     "\x1b[1;33m⚠ warning:\x1b[0m trait method '{}' has a body but is not marked with 'default'\n  --> {}:{}:{}\n  = help: add 'default' keyword: 'default fn {}...'",
@@ -1182,6 +1227,7 @@ impl Parser {
             name_span: name_tok.span,
             generic_params,
             is_default,
+            is_async,
         })
     }
 
@@ -1588,7 +1634,12 @@ impl Parser {
         self.consume(TokenKind::OpenBrace, "expected '{' for code block")?;
         let mut statements = Vec::new();
         while !self.check(TokenKind::CloseBrace) && !self.check(TokenKind::EOF) {
+            while self.match_token(TokenKind::Semicolon) {}
+            if self.check(TokenKind::CloseBrace) || self.check(TokenKind::EOF) {
+                break;
+            }
             statements.push(self.parse_statement()?);
+            while self.match_token(TokenKind::Semicolon) {}
         }
         self.consume(TokenKind::CloseBrace, "expected '}' to close code block")?;
         Ok(statements)
@@ -2061,7 +2112,12 @@ impl Parser {
                     if self.match_token(TokenKind::OpenBrace) {
                         let mut stmts = Vec::new();
                         while !self.check(TokenKind::CloseBrace) && !self.check(TokenKind::EOF) {
+                            while self.match_token(TokenKind::Semicolon) {}
+                            if self.check(TokenKind::CloseBrace) || self.check(TokenKind::EOF) {
+                                break;
+                            }
                             stmts.push(self.parse_statement()?);
+                            while self.match_token(TokenKind::Semicolon) {}
                         }
                         let close_tok = self.consume(
                             TokenKind::CloseBrace,
@@ -2914,6 +2970,7 @@ impl Parser {
                 default_val,
                 is_ref,
                 is_mut,
+                span: p_name_tok.span.clone(),
             });
 
             if !self.match_token(TokenKind::Comma) {

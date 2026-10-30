@@ -1,8 +1,6 @@
 package camera
 @Docs("Captures a single frame from the camera as an image.\n\n**Example:**\n```flame\nlet frame = camera.capture()\n```")
-export fn capture(index: Int = 0, path: String) {
-}
+export fn capture(index: Int = 0, path: String) {}
 
 @Docs("Lists available camera devices attached to the system.")
-export fn devices() -> [String] {
-}
+export fn devices() -> [String];

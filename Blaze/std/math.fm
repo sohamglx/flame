@@ -7,40 +7,40 @@ export const PI: Float = 3.141592653589793
 export const E: Float = 2.718281828459045
 
 @Docs("Returns the absolute value of `x`.")
-export fn abs(x: Float) -> Float {}
+export fn abs(x: Float) -> Float;
 
 @Docs("Returns the square root of `x`.\n\n**Example:**\n```flame\nlet s = math.sqrt(25.0)\n```")
-export fn sqrt(x: Float) -> Float {}
+export fn sqrt(x: Float) -> Float;
 
 @Docs("Returns `base` raised to the power of `exp`.\n\n**Example:**\n```flame\nlet p = math.pow(2.0, 8.0)\n```")
-export fn pow(base: Float, exp: Float) -> Float {}
+export fn pow(base: Float, exp: Float) -> Float;
 
 @Docs("Returns the sine of `x` (measured in radians).\n\n**Example:**\n```flame\nlet val = math.sin(0.5)\n```")
-export fn sin(x: Float) -> Float {}
+export fn sin(x: Float) -> Float;
 
 @Docs("Returns the cosine of `x` (measured in radians).")
-export fn cos(x: Float) -> Float {}
+export fn cos(x: Float) -> Float;
 
 @Docs("Returns the tangent of `x` (measured in radians).")
-export fn tan(x: Float) -> Float {}
+export fn tan(x: Float) -> Float;
 
 @Docs("Returns the smallest integer greater than or equal to `x`.")
-export fn ceil(x: Float) -> Float {}
+export fn ceil(x: Float) -> Float;
 
 @Docs("Returns the largest integer less than or equal to `x`.")
-export fn floor(x: Float) -> Float {}
+export fn floor(x: Float) -> Float;
 
 @Docs("Rounds `x` to the nearest integer.")
-export fn round(x: Float) -> Float {}
+export fn round(x: Float) -> Float;
 
 @Docs("Returns the smaller of `a` and `b`.")
-export fn min(a: Float, b: Float) -> Float {}
+export fn min(a: Float, b: Float) -> Float;
 
 @Docs("Returns the greater of `a` and `b`.")
-export fn max(a: Float, b: Float) -> Float {}
+export fn max(a: Float, b: Float) -> Float;
 
 @Docs("Returns the natural logarithm (base e) of `x`.")
-export fn log(x: Float) -> Float {}
+export fn log(x: Float) -> Float;
 
 @Docs("Returns the base 10 logarithm of `x`.")
-export fn log10(x: Float) -> Float {}
+export fn log10(x: Float) -> Float;

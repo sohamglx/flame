@@ -2,16 +2,16 @@ package math_lib
 
 let internal_offset = 100
 
-fn internal_helper() -> Int {
-    return 42
+fn internal_helper(x: Int) -> Int {
+    return x
 }
 
 @Docs("Computes the sum of two numbers.")
 export fn add(a: Int, b: Int) -> Int {
-    return a + b + internal_helper()
+    return internal_helper(a) + b
 }
 
 @Docs("Multiplies two numbers.")
 export fn multiply(a: Int, b: Int) -> Int {
-    return a * b
+    return internal_helper(a) * b
 }

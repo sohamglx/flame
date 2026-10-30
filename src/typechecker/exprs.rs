@@ -46,32 +46,23 @@ impl TypeChecker {
                             if p.is_mut {
                                 mods.push_str("mut ");
                             }
-                            let type_str = match &p.ty {
-                                Type::Named(n) => n.clone(),
-                                Type::Int => "Int".to_string(),
-                                Type::Float => "Float".to_string(),
-                                Type::String => "String".to_string(),
-                                Type::Bool => "Bool".to_string(),
-                                t => format!("{:?}", t),
+                            let type_str = self.format_type(&p.ty);
+                            let default_str = if p.has_default {
+                                " = nil"
+                            } else {
+                                ""
                             };
                             format!(
-                                "{}{}: {}{}",
+                                "{}{}: {}{}{}",
                                 if p.is_mut && !p.is_ref { "mut " } else { "" },
                                 p.name,
                                 mods,
-                                type_str
+                                type_str,
+                                default_str
                             )
                         })
                         .collect();
-                    let ret_str = match &func.return_type {
-                        Type::Named(n) => n.clone(),
-                        Type::Int => "Int".to_string(),
-                        Type::Float => "Float".to_string(),
-                        Type::String => "String".to_string(),
-                        Type::Bool => "Bool".to_string(),
-                        Type::Nil => "Nil".to_string(),
-                        t => format!("{:?}", t),
-                    };
+                    let ret_str = self.format_type(&func.return_type);
                     let mut hover_str = format!(
                         "```flame\nfn {}({}){}\n```",
                         name,
@@ -348,7 +339,21 @@ impl TypeChecker {
                 inner: Box::new(self.infer_expr_type(inner)),
                 mutable: *is_mut,
             },
-            Expr::Await(inner, _) => self.infer_expr_type(inner),
+            Expr::Await(inner, span) => {
+                if self.current_return_type.is_some() && !self.current_function_is_async {
+                    self.error(
+                        "'await' is only allowed in 'async' functions or at the top level of a file".to_string(),
+                        span.clone(),
+                        Some("async functions allow awaiting promises/futures".to_string()),
+                        Some("add 'async' to the function signature".to_string()),
+                    );
+                }
+                let prev_in_await = self.in_await;
+                self.in_await = true;
+                let ty = self.infer_expr_type(inner);
+                self.in_await = prev_in_await;
+                ty
+            }
             Expr::ThreadSpawn(_, _) => Type::Named("ThreadHandler".to_string()),
             Expr::Block(stmts, _) => {
                 self.push_scope();
@@ -573,9 +578,7 @@ impl TypeChecker {
                 self.current_return_type = Some(ret_ty.clone());
                 let prev_expected = self.expected_closure_type.take();
 
-                for stmt in body {
-                    self.check_stmt(stmt);
-                }
+                self.check_block_stmts(body, true);
                 self.pop_scope();
                 self.expected_closure_type = prev_expected;
                 self.current_return_type = prev_return;
@@ -719,6 +722,11 @@ impl TypeChecker {
                         }
                         _ => (var.ty.clone(), false),
                     };
+
+                    let clean_ty_str = self.format_type(&target_ty);
+                    let mut_str = if var.is_mut { "mut " } else { "" };
+                    let hover_str = format!("```flame\nlet {}{}: {}\n```", mut_str, name, clean_ty_str);
+                    self.insert_hover_info(left_span.clone(), hover_str);
 
                     if !is_ref_mut && !var.is_mut && !self.in_expect_panic {
                         self.error(
@@ -1250,16 +1258,27 @@ impl TypeChecker {
                     "```flame\n{}.{}: {}\n```\nProperty of `{}`",
                     struct_name, member, formatted_ty, struct_name
                 );
-                self.insert_hover_info(member_span, doc.clone());
-                self.insert_hover_info(span.clone(), doc);
+                self.insert_hover_info(member_span, doc);
                 return ty;
             }
+        }
+
+        if member == "type" {
+            let member_span = Span {
+                start: span.end.saturating_sub(member.len()),
+                end: span.end,
+                line: span.line,
+                col: span.col + (span.end - span.start).saturating_sub(member.len()),
+            };
+            let doc = "```flame\nfn type() -> String\n```\nReturns the runtime type name of the value as a string (e.g. `\"String\"`, `\"Int\"`, concrete struct name).\n\n**Example**:\n```flame\nlet a = \"hello\"\nlet b = \"hii\"\nif a.type() == b.type() {\n    // Types match\n}\n```".to_string();
+            self.insert_hover_info(member_span, doc);
+            return Type::Function(vec![], Box::new(Type::String));
         }
 
         match member {
             "toString" | "toChar" | "trim" | "toUpperCase" | "toLowerCase" | "replace" | "join"
             | "push_str" | "push" | "pop" | "clear" | "remove" | "insert" | "slice"
-            | "substring" => return Type::String,
+            | "substring" | "toJson" => return Type::String,
             "toInt" | "tryInt" | "len" => return Type::Int,
             "toFloat" | "tryFloat" => return Type::Float,
             "toBool" | "tryBool" | "contains" | "startsWith" | "endsWith" | "isEmpty" => {
@@ -1471,6 +1490,14 @@ impl TypeChecker {
                         self.traits.get(base_name).and_then(|t| t.methods.get(member)).cloned()
                     });
                 if let Some(sig) = found_sig {
+                    if sig.is_declaration {
+                        self.error(
+                            format!("cannot execute declaration '{}': function is declared without an implementation", member),
+                            span.clone(),
+                            Some("Method is declared with ';' but has no implementation body.".to_string()),
+                            Some("Provide an implementation with '{ ... }' or call an implemented method.".to_string()),
+                        );
+                    }
                     let mut params_str = Vec::new();
                     for p in &sig.params {
                         let is_already_ref = matches!(p.ty, Type::Reference { .. });
@@ -1826,6 +1853,27 @@ impl TypeChecker {
             );
         }
 
+        if let Some(sig) = &func_sig {
+            if sig.is_async && !self.in_await {
+                let fn_name = callee_name.as_deref().unwrap_or("function");
+                self.error(
+                    format!("cannot call async function '{}' without 'await'", fn_name),
+                    span.clone(),
+                    Some(format!("function '{}' is declared as 'async' and must be awaited", fn_name)),
+                    Some(format!("use 'await {}(...)'", fn_name)),
+                );
+            }
+            if sig.is_declaration {
+                let fn_name = callee_name.as_deref().unwrap_or("function");
+                self.error(
+                    format!("cannot execute declaration '{}': function is declared without an implementation", fn_name),
+                    span.clone(),
+                    Some("Function is declared with ';' but has no implementation body.".to_string()),
+                    Some("Provide an implementation with '{ ... }' or call an implemented function.".to_string()),
+                );
+            }
+        }
+
         if let Type::Function(params, ret) = &callee_ty {
             let is_external_js = func_sig.as_ref().map_or(false, |s| {
                 s.hover_doc.as_ref().map_or(false, |d| d.contains("External JavaScript"))
@@ -1865,13 +1913,19 @@ impl TypeChecker {
             if !is_external_js {
                 for (idx, expected) in params.iter().enumerate() {
                     if let Some((_, arg)) = args.get(idx) {
+                        let prev_in_await = self.in_await;
+                        self.in_await = false;
                         let actual = self.infer_expr_type(arg);
+                        self.in_await = prev_in_await;
                         self.expect_assignable(expected, &actual, &arg.span(), "function argument");
                     }
                 }
             } else {
                 for (_, arg) in args {
+                    let prev_in_await = self.in_await;
+                    self.in_await = false;
                     self.infer_expr_type(arg);
+                    self.in_await = prev_in_await;
                 }
             }
 
@@ -1967,6 +2021,14 @@ impl TypeChecker {
 
         if let Expr::Identifier(name, id_span) = callee {
             if let Some(sig) = self.functions.get(name).cloned() {
+                if sig.is_async && !self.in_await {
+                    self.error(
+                        format!("cannot call async function '{}' without 'await'", name),
+                        span.clone(),
+                        Some(format!("function '{}' is declared as 'async' and must be awaited", name)),
+                        Some(format!("use 'await {}(...)'", name)),
+                    );
+                }
                 self.check_call_args(&sig.params, args, span, name);
 
                 let mut params_str = Vec::new();
@@ -1993,9 +2055,22 @@ impl TypeChecker {
                 } else {
                     format!(" -> {}", self.format_type(&sig.return_type))
                 };
+                let gen_str = if sig.generic_params.is_empty() {
+                    "".to_string()
+                } else {
+                    format!(
+                        "<{}>",
+                        sig.generic_params
+                            .iter()
+                            .map(|p| p.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                };
                 let mut hover_str = format!(
-                    "```flame\nfn {}({}){}\n```",
+                    "```flame\nfn {}{}({}){}\n```",
                     name,
+                    gen_str,
                     params_str.join(", "),
                     ret_str
                 );
@@ -2144,6 +2219,14 @@ impl TypeChecker {
 
                     let prefixed_member = format!("{}.{}", prefix, member);
                     if let Some(sig) = self.functions.get(&prefixed_member).cloned() {
+                        if sig.is_async && !self.in_await {
+                            self.error(
+                                format!("cannot call async function '{}' without 'await'", prefixed_member),
+                                span.clone(),
+                                Some(format!("function '{}' is declared as 'async' and must be awaited", prefixed_member)),
+                                Some(format!("use 'await {}(...)'", prefixed_member)),
+                            );
+                        }
                         let is_external_js = sig.hover_doc.as_ref().map_or(false, |d| d.contains("External JavaScript"));
                         if !is_external_js {
                             self.check_call_args(&sig.params, args, span, member);
@@ -2179,6 +2262,14 @@ impl TypeChecker {
                     if name.starts_with("plugin:") {
                         if let Some(funcs) = self.plugin_functions.get(prefix) {
                             if let Some(sig) = funcs.get(member).cloned() {
+                                if sig.is_async && !self.in_await {
+                                    self.error(
+                                        format!("cannot call async function '{}.{}' without 'await'", prefix, member),
+                                        span.clone(),
+                                        Some(format!("function '{}.{}' is declared as 'async' and must be awaited", prefix, member)),
+                                        Some(format!("use 'await {}.{}(...)'", prefix, member)),
+                                    );
+                                }
                                 self.check_call_args(&sig.params, args, span, member);
                                 let params_str = sig
                                     .params
@@ -2276,6 +2367,14 @@ impl TypeChecker {
                     });
 
                 if let Some(sig) = sig_opt {
+                    if sig.is_async && !self.in_await {
+                        self.error(
+                            format!("cannot call async method '{}' without 'await'", member),
+                            span.clone(),
+                            Some(format!("method '{}' is declared as 'async' and must be awaited", member)),
+                            Some(format!("use 'await {}.{}(...)'", struct_name, member)),
+                        );
+                    }
                     let params_to_check = if sig.is_static {
                         &sig.params[..]
                     } else if !sig.params.is_empty() {
@@ -2340,7 +2439,29 @@ impl TypeChecker {
                 return Type::Unknown;
             }
 
-            if let Type::Byte = &inner_ty {
+            let is_bytes_or_byte = matches!(&inner_ty, Type::Byte)
+                || matches!(&inner_ty, Type::Named(name) if name == "Bytes");
+            if is_bytes_or_byte {
+                let callee_span = callee.span();
+                let dot_member_span = Span {
+                    start: callee_span.end.saturating_sub(member.len()),
+                    end: callee_span.end,
+                    line: callee_span.line,
+                    col: callee_span.col + (callee_span.end - callee_span.start).saturating_sub(member.len()),
+                };
+                let (hover_sig, hover_desc) = match member.as_str() {
+                    "toHex" => ("fn toHex(&self) -> String".to_string(), "Formats binary bytes as a hexadecimal string."),
+                    "toBase64" => ("fn toBase64(&self) -> String".to_string(), "Encodes binary bytes into Base64 ASCII string."),
+                    "toUtf8" => ("fn toUtf8(&self) -> String".to_string(), "Decodes binary bytes into a UTF-8 string. Panics if invalid UTF-8."),
+                    "tryUtf8" => ("fn tryUtf8(&self) -> String?".to_string(), "Attempts to decode binary bytes into a UTF-8 string, returning nil if invalid."),
+                    "concat" => ("fn concat(&self, other: Bytes) -> Bytes".to_string(), "Concatenates two byte buffers into a new Bytes buffer."),
+                    "len" | "length" => ("fn len(&self) -> Int".to_string(), "Returns the number of bytes."),
+                    "type" => ("fn type(&self) -> String".to_string(), "Returns the runtime type name (\"Bytes\" or \"Byte\")."),
+                    _ => (format!("fn {}(...)", member), "Byte/Bytes method."),
+                };
+                let hover_doc = format!("```flame\n{}\n```\n{}", hover_sig, hover_desc);
+                self.insert_hover_info(dot_member_span, hover_doc);
+
                 match member.as_str() {
                     "toHex" | "toBase64" | "toUtf8" | "tryUtf8" => {
                         self.check_call_args(&[], args, span, member);
@@ -2354,7 +2475,7 @@ impl TypeChecker {
                         self.check_call_args(
                             &[ParamInfo {
                                 name: "other".into(),
-                                ty: Type::Byte,
+                                ty: Type::Named("Bytes".to_string()),
                                 is_ref: false,
                                 is_mut: false,
                                 has_default: false,
@@ -2363,7 +2484,7 @@ impl TypeChecker {
                             span,
                             member,
                         );
-                        return Type::Byte;
+                        return Type::Named("Bytes".to_string());
                     }
                     "len" => {
                         self.check_call_args(&[], args, span, member);

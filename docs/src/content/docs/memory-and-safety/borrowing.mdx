@@ -1,68 +1,129 @@
 ---
 title: Borrowing & References
-description: Immutable references (&T), mutable references (&mut T), and compile-time borrow checker rules in Flame.
+description: Immutable references (&T), mutable references (&mut T), place projections, disjoint field borrows, and compile-time safety in Flame.
 ---
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 
-Instead of transferring ownership, you can **borrow** values using references. A reference allows you to inspect or modify data without taking ownership of it.
+Instead of permanently transferring ownership with a move, you can **borrow** access to values using references. A reference allows you to inspect or mutate data without taking ownership or triggering drops when the reference goes out of scope.
 
 ---
 
 ## Immutable References (`&T`)
 
-An immutable reference allows read-only access to a value. You can create multiple immutable references to the same data simultaneously.
+An immutable reference provides shared, read-only access to a place. You may create any number of simultaneous immutable references to the same data:
 
 ```flame
-fn calculate_length(&s: String) -> Int {
+fn calculate_length(s: &String) -> Int {
     return s.len()
 }
 
 let name = "Flame Language"
     
-// Pass `name` as an immutable reference
+// Borrow `name` immutably
 let len = calculate_length(&name)
     
-// `name` remains fully valid and owned by `main`!
-print($"The string '{name}' has length {len}")
+// `name` remains fully valid and owned!
+println($"The string '{name}' has length {len}")
 ```
 
 ---
 
 ## Mutable References (`&mut T`)
 
-To modify a borrowed value in-place, pass a mutable reference using `&mut`:
+To modify borrowed data in-place without taking ownership, create a mutable reference using `&mut`:
 
 ```flame
-fn append_exclamation(&mut s: String) {
+fn append_exclamation(s: &mut String) {
     s.push_str("!")
 }
 
 let mut greeting = "Hello"
 append_exclamation(&mut greeting)
-print(greeting) // "Hello!"
+println(greeting) // "Hello!"
 ```
 
 ---
 
-## The Borrowing Rules
+## The Core Borrowing Rules
 
-Flame's compiler enforces two fundamental borrowing rules at compile time:
+Flame's borrow checker statically enforces two invariants at compile time:
 
-<Aside type="caution" title="Core Safety Invariant">
-At any given time, you can have **either**:
-- **Any number of immutable references (`&T`)**, OR
-- **Exactly one mutable reference (`&mut T`)** to a particular piece of data.
+<Aside type="caution" title="The Aliasing XOR Mutability Invariant">
+For any given place at any point in execution, you may have **either**:
+- **One or more shared immutable references (`&T`)**, OR
+- **Exactly one exclusive mutable reference (`&mut T`)**.
 </Aside>
 
-### Why?
-This prevents **data races** and **iterator invalidation** at compile time with zero runtime locks!
+This rule eliminates **data races** across threads, **aliased mutations**, and **iterator invalidation** at compile time with zero runtime synchronization overhead:
 
 ```flame
 let mut data = "test"
 
-let r1 = &data // OK: first immutable borrow
-let r2 = &data // OK: second immutable borrow
-// let r3 = &mut data // ERROR: cannot borrow `data` as mutable while immutable references exist!
+let r1 = &data // OK: shared immutable borrow
+let r2 = &data // OK: second shared immutable borrow
+
+// ❌ Compile Error: cannot borrow 'data' as mutable because it is also borrowed as immutable
+// let r3 = &mut data
 ```
+
+---
+
+## Place Projections & Disjoint Field Borrowing
+
+Flame's borrow checker is **place-aware**. It tracks access paths down through struct fields and array indexes:
+
+### Disjoint Struct Fields (Allowed)
+
+When two references target distinct, disjoint fields of a struct, Flame recognizes that their memory locations do not overlap. Both fields can be mutably borrowed at the same time:
+
+```flame
+struct User {
+    first_name: String,
+    last_name: String,
+}
+
+let mut u = User {
+    first_name: "John",
+    last_name: "Doe",
+}
+
+// ✅ Simultaneous mutable borrows to disjoint fields are safe:
+let first = &mut u.first_name
+let last = &mut u.last_name
+
+first.push_str("athan")
+last.push_str(" Senior")
+
+println($"{u.first_name} {u.last_name}") // "Johnathan Doe Senior"
+```
+
+### Overlapping Places (Rejected)
+
+If two references target overlapping paths—such as the parent struct and one of its fields, or the exact same field twice—the compiler rejects the conflicting borrow:
+
+```flame
+let mut u = User { first_name: "John", last_name: "Doe" }
+
+let parent_ref = &mut u
+
+// ❌ Compile Error: cannot borrow 'u.first_name' as mutable more than once at a time
+// let field_ref = &mut u.first_name
+```
+
+---
+
+## Prevention of Dangling References
+
+Flame statically guarantees that references can never outlive the data they point to. Attempting to return a reference to a local variable allocated on the stack produces an immediate compile-time diagnostic:
+
+```flame
+// ❌ Compile Error: cannot return reference to local variable 'x'
+fn dangling_pointer() -> &Int {
+    let x = 42
+    return &x
+}
+```
+
+By verifying lifetimes and place projections at compile time, Flame ensures **100% memory safety with zero garbage collection pauses**.

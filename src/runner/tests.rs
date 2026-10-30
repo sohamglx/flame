@@ -362,6 +362,63 @@ main()
         assert_eq!(result.to_string(), "10|20|200|connected");
     }
 
+    #[test]
+    fn test_calling_declaration_fails_at_runtime() {
+        let code = r#"
+        fn calc(a: Int, b: Int) -> Int;
+        calc(1, 2)
+        "#;
+        let result = run_flame(code);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("cannot execute declaration 'calc': function is declared without an implementation"),
+            "Expected declaration execution error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_test_functions_excluded_from_normal_run() {
+        let code = r#"
+        @Test
+        fn test_isolated() -> Int {
+            return 42
+        }
+
+        test_isolated()
+        "#;
+        let result = run_flame(code);
+        assert!(result.is_err(), "Calling @Test function during normal run must fail");
+    }
+
+    #[test]
+    fn test_test_functions_included_and_executed_in_test_mode() {
+        let code = r#"
+        @Test
+        fn test_something() -> Bool {
+            return true
+        }
+        "#;
+        let mut lexer = Lexer::new(code);
+        let mut tokens = Vec::new();
+        loop {
+            let tok = lexer.next_token();
+            let is_eof = tok.kind == crate::lexer::TokenKind::EOF;
+            tokens.push(tok);
+            if is_eof { break; }
+        }
+        let mut parser = Parser::new(tokens, "test.flame".to_string());
+        let stmts = parser.parse().unwrap();
+        let mut runner = Runner::new(PathBuf::from("test.flame"));
+        runner.test_mode = true;
+        let run_res = runner.run(&stmts);
+        assert!(run_res.is_ok());
+        let stats = crate::test_engine::execute_test_suite(&mut runner, &stmts, "test.flame");
+        assert_eq!(stats.passed, 1);
+        assert_eq!(stats.failed, 0);
+    }
+
 
 
     

@@ -4,39 +4,99 @@ use crate::lexer::Span;
 use crate::parser::*;
 use std::collections::HashMap;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Place {
-    Var(String),
-    Field(String, String),
+pub enum Projection {
+    Field(String),
     Index(String),
+    Deref,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Place {
+    pub root: String,
+    pub projections: Vec<Projection>,
 }
 
 impl Place {
-    pub fn root_var(&self) -> &str {
-        match self {
-            Place::Var(v) => v,
-            Place::Field(v, _) => v,
-            Place::Index(v) => v,
+    pub fn var(name: String) -> Self {
+        Self {
+            root: name,
+            projections: Vec::new(),
         }
+    }
+
+    pub fn root_var(&self) -> &str {
+        &self.root
+    }
+
+    pub fn overlaps(&self, other: &Place) -> bool {
+        if self.root != other.root {
+            return false;
+        }
+        let min_len = self.projections.len().min(other.projections.len());
+        for i in 0..min_len {
+            match (&self.projections[i], &other.projections[i]) {
+                (Projection::Field(f1), Projection::Field(f2)) => {
+                    if f1 != f2 {
+                        return false;
+                    }
+                }
+                (Projection::Index(i1), Projection::Index(i2)) => {
+                    if i1 != i2 {
+                        if let (Ok(n1), Ok(n2)) = (i1.parse::<i64>(), i2.parse::<i64>()) {
+                            if n1 != n2 {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                (Projection::Deref, Projection::Deref) => {}
+                _ => {}
+            }
+        }
+        true
+    }
+
+    pub fn to_display_string(&self) -> String {
+        let mut s = self.root.clone();
+        for proj in &self.projections {
+            match proj {
+                Projection::Field(f) => {
+                    s.push('.');
+                    s.push_str(f);
+                }
+                Projection::Index(idx) => {
+                    s.push('[');
+                    s.push_str(idx);
+                    s.push(']');
+                }
+                Projection::Deref => {
+                    s = format!("*{}", s);
+                }
+            }
+        }
+        s
     }
 }
 
 pub fn expr_to_place(expr: &Expr) -> Option<Place> {
     match expr {
-        Expr::Identifier(name, _) => Some(Place::Var(name.clone())),
-        Expr::Dot(inner, member, _) => {
-            if let Expr::Identifier(owner, _) = &**inner {
-                Some(Place::Field(owner.clone(), member.clone()))
-            } else {
-                None
-            }
+        Expr::Identifier(name, _) => Some(Place::var(name.clone())),
+        Expr::Dot(inner, member, _) | Expr::SafeDot(inner, member, _) => {
+            let mut place = expr_to_place(inner)?;
+            place.projections.push(Projection::Field(member.clone()));
+            Some(place)
         }
-        Expr::Index(inner, _, _) => {
-            if let Expr::Identifier(owner, _) = &**inner {
-                Some(Place::Index(owner.clone()))
-            } else {
-                None
-            }
+        Expr::Index(inner, idx_expr, _) => {
+            let mut place = expr_to_place(inner)?;
+            let idx_str = match &**idx_expr {
+                Expr::Literal(LiteralValue::Int(n), _) => n.to_string(),
+                Expr::Identifier(name, _) => name.clone(),
+                _ => format!("{:?}", idx_expr),
+            };
+            place.projections.push(Projection::Index(idx_str));
+            Some(place)
         }
         _ => None,
     }
@@ -60,6 +120,7 @@ pub struct LocalVar {
     pub decl_span: Span,
     pub ty: Type,
     pub moved_at: Option<Span>,
+    pub conditionally_moved: Option<Span>,
     pub points_to_local: Option<String>,
 }
 
@@ -71,12 +132,82 @@ pub fn is_copy_type(ty: &Type) -> bool {
     }
 }
 
+pub fn parse_basic_type_name(name: &str) -> Type {
+    match name.trim() {
+        "Int" | "i64" | "i32" | "usize" | "isize" => Type::Int,
+        "Float" | "f64" | "f32" => Type::Float,
+        "String" | "str" => Type::String,
+        "Bool" | "bool" => Type::Bool,
+        "Byte" | "u8" => Type::Byte,
+        "Nil" | "void" | "()" => Type::Nil,
+        s if s.starts_with("&mut ") => Type::Reference {
+            inner: Box::new(parse_basic_type_name(&s[5..])),
+            mutable: true,
+        },
+        s if s.starts_with('&') => Type::Reference {
+            inner: Box::new(parse_basic_type_name(&s[1..])),
+            mutable: false,
+        },
+        s => Type::Named(s.to_string()),
+    }
+}
+
+pub fn infer_simple_type(
+    expr: &Expr,
+    locals: &HashMap<String, LocalVar>,
+    known_types: &HashMap<String, Type>,
+) -> Type {
+    match expr {
+        Expr::Literal(LiteralValue::Int(_), _) => Type::Int,
+        Expr::Literal(LiteralValue::Float(_), _) => Type::Float,
+        Expr::Literal(LiteralValue::String(_), _) => Type::String,
+        Expr::Literal(LiteralValue::Bool(_), _) => Type::Bool,
+        Expr::Literal(LiteralValue::Nil, _) => Type::Nil,
+        Expr::Identifier(name, _) => {
+            if let Some(t) = known_types.get(name) {
+                t.clone()
+            } else if let Some(local) = locals.get(name) {
+                local.ty.clone()
+            } else {
+                Type::Unknown
+            }
+        }
+        Expr::Borrow(inner, is_mut, _) => {
+            let inner_ty = infer_simple_type(inner, locals, known_types);
+            Type::Reference {
+                inner: Box::new(inner_ty),
+                mutable: *is_mut,
+            }
+        }
+        Expr::StructInit(callee, _, _) => {
+            if let Expr::Identifier(name, _) = &**callee {
+                Type::Struct(name.clone())
+            } else {
+                Type::Unknown
+            }
+        }
+        Expr::Binary(left, op, _, _) => match op {
+            BinaryOp::Eq
+            | BinaryOp::Ne
+            | BinaryOp::Lt
+            | BinaryOp::Le
+            | BinaryOp::Gt
+            | BinaryOp::Ge
+            | BinaryOp::And
+            | BinaryOp::Or => Type::Bool,
+            _ => infer_simple_type(left, locals, known_types),
+        },
+        _ => Type::Unknown,
+    }
+}
+
 pub struct BorrowChecker<'a> {
     pub filepath: &'a str,
     pub diagnostics: Vec<Diagnostic>,
     pub locals: HashMap<String, LocalVar>,
     pub loans: Vec<Loan>,
     pub current_func_return_is_ref: bool,
+    pub known_types: HashMap<String, Type>,
 }
 
 impl<'a> BorrowChecker<'a> {
@@ -87,7 +218,13 @@ impl<'a> BorrowChecker<'a> {
             locals: HashMap::new(),
             loans: Vec::new(),
             current_func_return_is_ref: false,
+            known_types: HashMap::new(),
         }
+    }
+
+    pub fn with_known_types(mut self, known_types: HashMap<String, Type>) -> Self {
+        self.known_types = known_types;
+        self
     }
 
     pub fn check_function(
@@ -104,6 +241,11 @@ impl<'a> BorrowChecker<'a> {
         self.current_func_return_is_ref = ret_is_ref;
 
         for p in params {
+            let p_ty = if let Some(t) = self.known_types.get(&p.name) {
+                t.clone()
+            } else {
+                parse_basic_type_name(&p.type_name)
+            };
             self.locals.insert(
                 p.name.clone(),
                 LocalVar {
@@ -112,8 +254,9 @@ impl<'a> BorrowChecker<'a> {
                     is_param: true,
                     is_ref: p.is_ref || p.type_name.trim().starts_with('&'),
                     decl_span: Span::dummy(),
-                    ty: Type::Unknown,
+                    ty: p_ty,
                     moved_at: None,
+                    conditionally_moved: None,
                     points_to_local: None,
                 },
             );
@@ -134,6 +277,7 @@ impl<'a> BorrowChecker<'a> {
             Stmt::LetDecl {
                 name,
                 is_mut,
+                type_ann,
                 value,
                 span: _,
                 name_span,
@@ -142,6 +286,7 @@ impl<'a> BorrowChecker<'a> {
             | Stmt::ConstDecl {
                 name,
                 is_mut,
+                type_ann,
                 value,
                 span: _,
                 name_span,
@@ -150,13 +295,23 @@ impl<'a> BorrowChecker<'a> {
                 // 1. Check all reads in value for use-after-move
                 self.check_reads_in_expr(value);
 
-                // 2. Check if value is a move of a local variable
+                // 2. Resolve variable type
+                let ty = if let Some(type_name) = type_ann {
+                    parse_basic_type_name(type_name)
+                } else if let Some(t) = self.known_types.get(name) {
+                    t.clone()
+                } else {
+                    infer_simple_type(value, &self.locals, &self.known_types)
+                };
+
+                // 3. Check if value is a move of a local variable
                 if let Expr::Identifier(src_name, src_span) = value {
                     if let Some(src_local) = self.locals.get(src_name).cloned() {
                         if !src_local.is_param && !src_local.is_ref && !is_copy_type(&src_local.ty)
                         {
+                            let place = Place::var(src_name.clone());
                             if let Some((loan, use_span)) =
-                                self.find_active_loan(src_name, remaining_stmts)
+                                self.find_active_loan(&place, remaining_stmts)
                             {
                                 self.diagnostics.push(
                                     Diagnostic::new_error(
@@ -171,7 +326,7 @@ impl<'a> BorrowChecker<'a> {
                                     )
                                     .with_note(format!(
                                         "borrow of '{}' occurs at line {}; borrow later used at line {}",
-                                        src_name, loan.loan_span.line, use_span.line
+                                        loan.place.to_display_string(), loan.loan_span.line, use_span.line
                                     )),
                                 );
                             } else {
@@ -182,7 +337,7 @@ impl<'a> BorrowChecker<'a> {
                     }
                 }
 
-                // 3. Check if value is a borrow expression
+                // 4. Check if value is a borrow expression
                 if let Expr::Borrow(inner, is_borrow_mut, borrow_span) = value {
                     if let Some(place) = expr_to_place(inner) {
                         let root = place.root_var().to_string();
@@ -198,6 +353,11 @@ impl<'a> BorrowChecker<'a> {
                         } else {
                             None
                         };
+                        let inner_ty = if let Some(loc) = self.locals.get(&root) {
+                            loc.ty.clone()
+                        } else {
+                            Type::Unknown
+                        };
                         self.locals.insert(
                             name.clone(),
                             LocalVar {
@@ -207,10 +367,11 @@ impl<'a> BorrowChecker<'a> {
                                 is_ref: true,
                                 decl_span: name_span.clone(),
                                 ty: Type::Reference {
-                                    inner: Box::new(Type::Unknown),
+                                    inner: Box::new(inner_ty),
                                     mutable: *is_borrow_mut,
                                 },
                                 moved_at: None,
+                                conditionally_moved: None,
                                 points_to_local: points_to,
                             },
                         );
@@ -227,8 +388,9 @@ impl<'a> BorrowChecker<'a> {
                         is_param: false,
                         is_ref: false,
                         decl_span: name_span.clone(),
-                        ty: Type::Unknown,
+                        ty,
                         moved_at: None,
+                        conditionally_moved: None,
                         points_to_local: None,
                     },
                 );
@@ -255,27 +417,177 @@ impl<'a> BorrowChecker<'a> {
                 else_branch,
                 ..
             } => {
+                // 1. Check reads in condition against current state
                 self.check_reads_in_expr(cond);
+
+                // 2. Snapshot state before entering then_branch
+                let pre_if_locals = self.locals.clone();
+                let pre_if_loans = self.loans.clone();
+
+                // 3. Analyze then_branch starting from snapshot
                 self.check_block(then_branch);
-                if let Some(eb) = else_branch {
+                let then_exit_locals = self.locals.clone();
+                let then_exit_loans = self.loans.clone();
+
+                // 4. Analyze else_branch starting from PRE-IF snapshot
+                let (else_exit_locals, else_exit_loans) = if let Some(eb) = else_branch {
+                    self.locals = pre_if_locals.clone();
+                    self.loans = pre_if_loans.clone();
                     self.check_block(eb);
+                    (self.locals.clone(), self.loans.clone())
+                } else {
+                    (pre_if_locals.clone(), pre_if_loans.clone())
+                };
+
+                // 5. Compute join of then_exit and else_exit
+                let mut joined_locals = pre_if_locals;
+                for (name, pre_local) in &mut joined_locals {
+                    let then_loc = then_exit_locals.get(name);
+                    let else_loc = else_exit_locals.get(name);
+
+                    let then_moved = then_loc.and_then(|l| l.moved_at.clone());
+                    let else_moved = else_loc.and_then(|l| l.moved_at.clone());
+
+                    let then_cond = then_loc.and_then(|l| l.conditionally_moved.clone());
+                    let else_cond = else_loc.and_then(|l| l.conditionally_moved.clone());
+
+                    if then_moved.is_some() && else_moved.is_some() {
+                        pre_local.moved_at = then_moved;
+                        pre_local.conditionally_moved = None;
+                    } else if then_moved.is_some()
+                        || else_moved.is_some()
+                        || then_cond.is_some()
+                        || else_cond.is_some()
+                    {
+                        let span = then_moved.or(else_moved).or(then_cond).or(else_cond);
+                        pre_local.conditionally_moved = span;
+                    }
                 }
+
+                let mut joined_loans = pre_if_loans;
+                for loan in then_exit_loans
+                    .into_iter()
+                    .chain(else_exit_loans.into_iter())
+                {
+                    if !joined_loans
+                        .iter()
+                        .any(|l| l.place == loan.place && l.loan_span == loan.loan_span)
+                    {
+                        joined_loans.push(loan);
+                    }
+                }
+
+                self.locals = joined_locals;
+                self.loans = joined_loans;
             }
 
             Stmt::WhileStmt { cond, body, .. } => {
                 self.check_reads_in_expr(cond);
+
+                let pre_loop_locals = self.locals.clone();
                 self.check_block(body);
+
+                // Any non-Copy variable declared before the loop moved inside the loop
+                // causes a use-after-move on iteration 2
+                for (name, pre_local) in &pre_loop_locals {
+                    if !pre_local.is_param && !pre_local.is_ref && !is_copy_type(&pre_local.ty) {
+                        if let Some(post_local) = self.locals.get(name) {
+                            if let Some(m_span) = &post_local.moved_at {
+                                if pre_local.moved_at.is_none() {
+                                    self.diagnostics.push(
+                                        Diagnostic::new_error(
+                                            format!("cannot move out of '{}' in a loop", name),
+                                            self.filepath.to_string(),
+                                            m_span.clone(),
+                                            Some("cannot move out of variable in a loop".to_string()),
+                                            Some("try borrowing with '&' or cloning with '.clone()' instead".to_string()),
+                                        )
+                                        .with_note(format!("'{}' is moved here, which would cause a use-after-move on subsequent iterations", name)),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // After loop, mark any variable moved in loop body as conditionally moved
+                for (name, pre_local) in &mut self.locals {
+                    if pre_local.moved_at.is_some()
+                        && pre_loop_locals
+                            .get(name)
+                            .map_or(false, |l| l.moved_at.is_none())
+                    {
+                        let span = pre_local.moved_at.take();
+                        pre_local.conditionally_moved = span;
+                    }
+                }
             }
 
             Stmt::ForStmt { iterable, body, .. } => {
                 self.check_reads_in_expr(iterable);
+
+                let pre_loop_locals = self.locals.clone();
                 self.check_block(body);
+
+                for (name, pre_local) in &pre_loop_locals {
+                    if !pre_local.is_param && !pre_local.is_ref && !is_copy_type(&pre_local.ty) {
+                        if let Some(post_local) = self.locals.get(name) {
+                            if let Some(m_span) = &post_local.moved_at {
+                                if pre_local.moved_at.is_none() {
+                                    self.diagnostics.push(
+                                        Diagnostic::new_error(
+                                            format!("cannot move out of '{}' in a loop", name),
+                                            self.filepath.to_string(),
+                                            m_span.clone(),
+                                            Some("cannot move out of variable in a loop".to_string()),
+                                            Some("try borrowing with '&' or cloning with '.clone()' instead".to_string()),
+                                        )
+                                        .with_note(format!("'{}' is moved here, which would cause a use-after-move on subsequent iterations", name)),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             Stmt::MatchStmt { target, arms, .. } => {
                 self.check_reads_in_expr(target);
+                let pre_match_locals = self.locals.clone();
+
+                let mut arm_exit_locals = Vec::new();
                 for arm in arms {
+                    self.locals = pre_match_locals.clone();
                     self.check_reads_in_expr(&arm.body);
+                    arm_exit_locals.push(self.locals.clone());
+                }
+
+                if !arms.is_empty() {
+                    let mut joined_locals = pre_match_locals;
+                    for (name, pre_local) in &mut joined_locals {
+                        let all_moved = arm_exit_locals
+                            .iter()
+                            .all(|l| l.get(name).map_or(false, |v| v.moved_at.is_some()));
+                        let any_moved = arm_exit_locals.iter().any(|l| {
+                            l.get(name).map_or(false, |v| {
+                                v.moved_at.is_some() || v.conditionally_moved.is_some()
+                            })
+                        });
+
+                        if all_moved {
+                            pre_local.moved_at = arm_exit_locals[0]
+                                .get(name)
+                                .and_then(|v| v.moved_at.clone());
+                        } else if any_moved {
+                            let span = arm_exit_locals.iter().find_map(|l| {
+                                l.get(name).and_then(|v| {
+                                    v.moved_at.clone().or_else(|| v.conditionally_moved.clone())
+                                })
+                            });
+                            pre_local.conditionally_moved = span;
+                        }
+                    }
+                    self.locals = joined_locals;
                 }
             }
 
@@ -306,6 +618,22 @@ impl<'a> BorrowChecker<'a> {
                 );
                 return;
             }
+            if let Some(c_span) = &local.conditionally_moved {
+                self.diagnostics.push(
+                    Diagnostic::new_error(
+                        format!("use of possibly-moved value: '{}'", root),
+                        self.filepath.to_string(),
+                        borrow_span.clone(),
+                        Some("value may have been moved in a previous branch".to_string()),
+                        None,
+                    )
+                    .with_note(format!(
+                        "value conditionally moved here at line {}",
+                        c_span.line
+                    )),
+                );
+                return;
+            }
             if is_borrow_mut && !local.is_mut && !local.is_ref {
                 self.diagnostics.push(Diagnostic::new_error(
                     format!(
@@ -323,16 +651,19 @@ impl<'a> BorrowChecker<'a> {
             }
         }
 
+        let place_display = place.to_display_string();
+
         for existing in &self.loans {
-            if existing.place.root_var() == root {
+            if existing.place.overlaps(place) {
                 if let Some(ref_name) = &existing.ref_var {
                     if let Some(use_span) = find_use_in_stmts(remaining_stmts, ref_name) {
+                        let existing_display = existing.place.to_display_string();
                         if existing.is_mut && is_borrow_mut {
                             self.diagnostics.push(
                                 Diagnostic::new_error(
                                     format!(
                                         "cannot borrow '{}' as mutable more than once at a time",
-                                        root
+                                        place_display
                                     ),
                                     self.filepath.to_string(),
                                     borrow_span.clone(),
@@ -349,7 +680,7 @@ impl<'a> BorrowChecker<'a> {
                                 Diagnostic::new_error(
                                     format!(
                                         "cannot borrow '{}' as mutable because it is also borrowed as immutable",
-                                        root
+                                        place_display
                                     ),
                                     self.filepath.to_string(),
                                     borrow_span.clone(),
@@ -357,8 +688,8 @@ impl<'a> BorrowChecker<'a> {
                                     None,
                                 )
                                 .with_note(format!(
-                                    "immutable borrow occurs here at line {}; immutable borrow later used at line {}",
-                                    existing.loan_span.line, use_span.line
+                                    "immutable borrow of '{}' occurs here at line {}; immutable borrow later used at line {}",
+                                    existing_display, existing.loan_span.line, use_span.line
                                 )),
                             );
                         } else if existing.is_mut && !is_borrow_mut {
@@ -366,7 +697,7 @@ impl<'a> BorrowChecker<'a> {
                                 Diagnostic::new_error(
                                     format!(
                                         "cannot borrow '{}' as immutable because it is also borrowed as mutable",
-                                        root
+                                        place_display
                                     ),
                                     self.filepath.to_string(),
                                     borrow_span.clone(),
@@ -374,8 +705,8 @@ impl<'a> BorrowChecker<'a> {
                                     None,
                                 )
                                 .with_note(format!(
-                                    "mutable borrow occurs here at line {}; mutable borrow later used at line {}",
-                                    existing.loan_span.line, use_span.line
+                                    "mutable borrow of '{}' occurs here at line {}; mutable borrow later used at line {}",
+                                    existing_display, existing.loan_span.line, use_span.line
                                 )),
                             );
                         }
@@ -401,10 +732,7 @@ impl<'a> BorrowChecker<'a> {
                         if !local.is_param {
                             self.diagnostics.push(
                                 Diagnostic::new_error(
-                                    format!(
-                                        "cannot return reference to local variable '{}'",
-                                        root
-                                    ),
+                                    format!("cannot return reference to local variable '{}'", root),
                                     self.filepath.to_string(),
                                     borrow_span.clone(),
                                     Some(
@@ -457,11 +785,11 @@ impl<'a> BorrowChecker<'a> {
 
     fn find_active_loan<'b>(
         &'b self,
-        var_name: &str,
+        place: &Place,
         remaining_stmts: &[Stmt],
     ) -> Option<(&'b Loan, Span)> {
         for loan in &self.loans {
-            if loan.place.root_var() == var_name {
+            if loan.place.overlaps(place) {
                 if let Some(ref_name) = &loan.ref_var {
                     if let Some(use_span) = find_use_in_stmts(remaining_stmts, ref_name) {
                         return Some((loan, use_span));
@@ -488,6 +816,20 @@ impl<'a> BorrowChecker<'a> {
                         )
                         .with_note(format!("value moved here at line {}", m_span.line)),
                     );
+                } else if let Some(c_span) = &local.conditionally_moved {
+                    self.diagnostics.push(
+                        Diagnostic::new_error(
+                            format!("use of possibly-moved value: '{}'", name),
+                            self.filepath.to_string(),
+                            span.clone(),
+                            Some("value may have been moved in a previous branch".to_string()),
+                            None,
+                        )
+                        .with_note(format!(
+                            "value conditionally moved here at line {}",
+                            c_span.line
+                        )),
+                    );
                 }
             }
         }
@@ -496,13 +838,13 @@ impl<'a> BorrowChecker<'a> {
     fn check_assignments_in_expr(&mut self, expr: &Expr, remaining_stmts: &[Stmt]) {
         match expr {
             Expr::Binary(left, op, _, span) if op.is_assignment_or_compound() => {
-                if let Expr::Identifier(name, _) = &**left {
-                    if let Some((loan, use_span)) = self.find_active_loan(name, remaining_stmts) {
+                if let Some(place) = expr_to_place(left) {
+                    if let Some((loan, use_span)) = self.find_active_loan(&place, remaining_stmts) {
                         self.diagnostics.push(
                             Diagnostic::new_error(
                                 format!(
                                     "cannot assign to '{}' because it is borrowed",
-                                    name
+                                    place.to_display_string()
                                 ),
                                 self.filepath.to_string(),
                                 span.clone(),
@@ -511,9 +853,17 @@ impl<'a> BorrowChecker<'a> {
                             )
                             .with_note(format!(
                                 "borrow of '{}' occurs at line {}; borrow later used at line {}",
-                                name, loan.loan_span.line, use_span.line
+                                loan.place.to_display_string(),
+                                loan.loan_span.line,
+                                use_span.line
                             )),
                         );
+                    } else if place.projections.is_empty() {
+                        // Re-initialize a moved variable on direct assignment
+                        if let Some(local) = self.locals.get_mut(place.root_var()) {
+                            local.moved_at = None;
+                            local.conditionally_moved = None;
+                        }
                     }
                 }
             }
@@ -558,7 +908,6 @@ fn collect_expr_reads(expr: &Expr, reads: &mut Vec<(String, Span)>) {
         }
         Expr::Binary(left, op, right, _) => {
             if op.is_assignment_or_compound() {
-                // If it's a compound assign, left is read too; if plain assign, only right is read
                 if *op != BinaryOp::Assign {
                     collect_expr_reads(left, reads);
                 }

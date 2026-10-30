@@ -307,6 +307,47 @@ pub fn find_declaration_in_stmts(
     None
 }
 
+fn search_expr_for_local_symbol(
+    expr: &crate::parser::Expr,
+    clean: &str,
+    cursor_line: usize,
+    filepath: &str,
+) -> Option<JsonDefinition> {
+    match expr {
+        crate::parser::Expr::Closure {
+            params, body, span, ..
+        } => {
+            for p in params {
+                if p.name == clean {
+                    return Some(JsonDefinition {
+                        file: filepath.to_string(),
+                        line: span.line,
+                        column: span.col,
+                        end_line: Some(span.line),
+                        end_column: Some(span.col + p.name.len()),
+                    });
+                }
+            }
+            search_body_for_local_symbol(body, clean, cursor_line, filepath)
+        }
+        crate::parser::Expr::Call(callee, args, _) => {
+            if let Some(def) = search_expr_for_local_symbol(callee, clean, cursor_line, filepath) {
+                return Some(def);
+            }
+            for (_, arg) in args {
+                if let Some(def) = search_expr_for_local_symbol(arg, clean, cursor_line, filepath) {
+                    return Some(def);
+                }
+            }
+            None
+        }
+        crate::parser::Expr::Dot(inner, _, _) => {
+            search_expr_for_local_symbol(inner, clean, cursor_line, filepath)
+        }
+        _ => None,
+    }
+}
+
 fn search_body_for_local_symbol(
     body: &[crate::parser::Stmt],
     clean: &str,
@@ -316,7 +357,10 @@ fn search_body_for_local_symbol(
     for b_stmt in body {
         match b_stmt {
             crate::parser::Stmt::LetDecl {
-                name, name_span, ..
+                name,
+                name_span,
+                value,
+                ..
             } => {
                 if name == clean && name_span.line <= cursor_line {
                     return Some(JsonDefinition {
@@ -327,9 +371,15 @@ fn search_body_for_local_symbol(
                         end_column: Some(name_span.col + name.len()),
                     });
                 }
+                if let Some(def) = search_expr_for_local_symbol(value, clean, cursor_line, filepath) {
+                    return Some(def);
+                }
             }
             crate::parser::Stmt::ConstDecl {
-                name, name_span, ..
+                name,
+                name_span,
+                value,
+                ..
             } => {
                 if name == clean {
                     return Some(JsonDefinition {
@@ -339,6 +389,14 @@ fn search_body_for_local_symbol(
                         end_line: Some(name_span.line),
                         end_column: Some(name_span.col + name.len()),
                     });
+                }
+                if let Some(def) = search_expr_for_local_symbol(value, clean, cursor_line, filepath) {
+                    return Some(def);
+                }
+            }
+            crate::parser::Stmt::ExprStmt(expr) => {
+                if let Some(def) = search_expr_for_local_symbol(expr, clean, cursor_line, filepath) {
+                    return Some(def);
                 }
             }
             crate::parser::Stmt::FuncDecl {
@@ -360,6 +418,20 @@ fn search_body_for_local_symbol(
     None
 }
 
+fn find_param_col_on_sig_line(filepath: &str, line: usize, name: &str) -> (usize, usize) {
+    if let Ok(content) = std::fs::read_to_string(filepath) {
+        if let Some(sig_line) = content.lines().nth(line.saturating_sub(1)) {
+            let pattern = format!(r"\b{}\b", regex::escape(name));
+            if let Ok(re) = regex::Regex::new(&pattern) {
+                if let Some(m) = re.find(sig_line) {
+                    return (m.start() + 1, m.end() + 1);
+                }
+            }
+        }
+    }
+    (1, 1 + name.len())
+}
+
 pub fn find_local_symbol(
     stmts: &[crate::parser::Stmt],
     symbol: &str,
@@ -368,21 +440,23 @@ pub fn find_local_symbol(
 ) -> Option<JsonDefinition> {
     let clean = symbol.trim_start_matches('@');
 
-    // 1. Check enclosing function / impl method parameters and local declarations
-    for stmt in stmts {
+    // 1. Check enclosing function / annotation / impl method parameters and local declarations
+    for (i, stmt) in stmts.iter().enumerate() {
         if let crate::parser::Stmt::FuncDecl {
             params, body, span, ..
         } = stmt
         {
-            if cursor_line >= span.line {
+            let next_start = stmts.get(i + 1).map(|s| s.span().line).unwrap_or(usize::MAX);
+            if cursor_line >= span.line && cursor_line < next_start {
                 for p in params {
                     if p.name == clean {
+                        let (col, end_col) = find_param_col_on_sig_line(filepath, span.line, &p.name);
                         return Some(JsonDefinition {
                             file: filepath.to_string(),
                             line: span.line,
-                            column: span.col,
+                            column: col,
                             end_line: Some(span.line),
-                            end_column: Some(span.col + p.name.len()),
+                            end_column: Some(end_col),
                         });
                     }
                 }
@@ -393,22 +467,82 @@ pub fn find_local_symbol(
                         return Some(def);
                     }
                 }
+                if cursor_line == span.line {
+                    if let Ok(content) = std::fs::read_to_string(filepath) {
+                        if let Some(sig_line) = content.lines().nth(span.line.saturating_sub(1)) {
+                            let pattern = format!(r"\b{}\b", regex::escape(clean));
+                            if let Ok(re) = regex::Regex::new(&pattern) {
+                                if let Some(m) = re.find(sig_line) {
+                                    return Some(JsonDefinition {
+                                        file: filepath.to_string(),
+                                        line: span.line,
+                                        column: m.start() + 1,
+                                        end_line: Some(span.line),
+                                        end_column: Some(m.end() + 1),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else if let crate::parser::Stmt::AnnotationDecl {
+            params, body, span, ..
+        } = stmt
+        {
+            let next_start = stmts.get(i + 1).map(|s| s.span().line).unwrap_or(usize::MAX);
+            if cursor_line >= span.line && cursor_line < next_start {
+                for p in params {
+                    if p.name == clean {
+                        let (col, end_col) = find_param_col_on_sig_line(filepath, span.line, &p.name);
+                        return Some(JsonDefinition {
+                            file: filepath.to_string(),
+                            line: span.line,
+                            column: col,
+                            end_line: Some(span.line),
+                            end_column: Some(end_col),
+                        });
+                    }
+                }
+                if let Some(def) = search_body_for_local_symbol(body, clean, cursor_line, filepath) {
+                    return Some(def);
+                }
+                if cursor_line == span.line {
+                    if let Ok(content) = std::fs::read_to_string(filepath) {
+                        if let Some(sig_line) = content.lines().nth(span.line.saturating_sub(1)) {
+                            let pattern = format!(r"\b{}\b", regex::escape(clean));
+                            if let Ok(re) = regex::Regex::new(&pattern) {
+                                if let Some(m) = re.find(sig_line) {
+                                    return Some(JsonDefinition {
+                                        file: filepath.to_string(),
+                                        line: span.line,
+                                        column: m.start() + 1,
+                                        end_line: Some(span.line),
+                                        end_column: Some(m.end() + 1),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
             }
         } else if let crate::parser::Stmt::ImplDecl { methods, .. } = stmt {
-            for m in methods {
+            for (m_idx, m) in methods.iter().enumerate() {
                 if let crate::parser::Stmt::FuncDecl {
                     params, body, span, ..
                 } = m
                 {
-                    if cursor_line >= span.line {
+                    let next_start = methods.get(m_idx + 1).map(|next_m| next_m.span().line).unwrap_or(usize::MAX);
+                    if cursor_line >= span.line && cursor_line < next_start {
                         for p in params {
                             if p.name == clean {
+                                let (col, end_col) = find_param_col_on_sig_line(filepath, span.line, &p.name);
                                 return Some(JsonDefinition {
                                     file: filepath.to_string(),
                                     line: span.line,
-                                    column: span.col,
+                                    column: col,
                                     end_line: Some(span.line),
-                                    end_column: Some(span.col + p.name.len()),
+                                    end_column: Some(end_col),
                                 });
                             }
                         }
@@ -420,6 +554,24 @@ pub fn find_local_symbol(
                                 filepath,
                             ) {
                                 return Some(def);
+                            }
+                        }
+                        if cursor_line == span.line {
+                            if let Ok(content) = std::fs::read_to_string(filepath) {
+                                if let Some(sig_line) = content.lines().nth(span.line.saturating_sub(1)) {
+                                    let pattern = format!(r"\b{}\b", regex::escape(clean));
+                                    if let Ok(re) = regex::Regex::new(&pattern) {
+                                        if let Some(m) = re.find(sig_line) {
+                                            return Some(JsonDefinition {
+                                                file: filepath.to_string(),
+                                                line: span.line,
+                                                column: m.start() + 1,
+                                                end_line: Some(span.line),
+                                                end_column: Some(m.end() + 1),
+                                            });
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

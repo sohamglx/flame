@@ -254,20 +254,20 @@ export function clearEditor() {
 import std.web
 import "playground.js" as scrypt
 
-fn handleSelect(e: Unknown) {
+fn handleSelect(e: Event) {
     let selected = e.target.value
     // Directly call the external JavaScript function!
     scrypt.loadExample(selected)
 }
 
-fn handleReset(e: Unknown) {
+fn handleReset(e: Event) {
     scrypt.clearEditor()
 }
 ```
 
 #### What Flame Provides for JavaScript Imports:
 - **Intelligent Signature Inspection**: Flame scans exported JS functions (`export function name(args)` or `function name(args)`) and provides autocomplete for member functions.
-- **Unified IDE Experience**: Hovering over `scrypt.loadExample` reveals the signature (`fn loadExample(name: Unknown) -> Unknown`) and notes `External JavaScript function in playground.js`.
+- **Unified IDE Experience**: Hovering over `scrypt.loadExample` reveals the signature (`fn loadExample(name: String) -> Nil`) and notes `External JavaScript function in playground.js`.
 - **Go-to-Definition**: Running Go-to-Definition on `loadExample` or `scrypt` jumps straight to the exact line in your `.js` file.
 - **Flexible Argument Passing**: Dynamic external JS calls support optional arguments and JavaScript conventions without strict static type mismatches.
 

@@ -17,7 +17,7 @@ pub fn def() -> NativeModuleDef {
             NativeFunctionDef {
                 name: "post".to_string(),
                 description: "Sends an HTTP POST request with a JSON body.".to_string(),
-                params: vec![("url".to_string(), "String".to_string()), ("body".to_string(), "Any".to_string())],
+                params: vec![("url".to_string(), "String".to_string()), ("body".to_string(), "Unknown".to_string())],
                 return_type: "Response".to_string(),
             },
         ],

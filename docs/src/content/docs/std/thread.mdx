@@ -224,20 +224,26 @@ while !event_rx.isEmpty() {
 | `thread.id` | *None* | `String` | Returns a formatted string representation of the active thread ID. |
 | `thread.yield` | *None* | `Nil` | Yields the processor, allowing other threads on the OS scheduler to run. |
 | `thread.yieldNow` | *None* | `Nil` | Immediately yields execution time slice to allow other threads to progress. |
-| `thread.channel` | *None* | `(Sender, Receiver)` | Creates a multi-producer, single-consumer communication channel. |
-| `thread.spawn` | `callback: Function` | `ThreadHandler` | Spawns a background concurrent execution thread. |
+| `thread.channel<T>` | *None* | `(Sender<T>, Receiver<T>)` | Creates a multi-producer, single-consumer communication channel. |
+| `thread.spawn<T>` | `func: () -> T` | `ThreadHandler<T>` | Spawns a background concurrent execution thread. |
 
-### Sender Methods (`Sender`)
-
-| Method | Arguments | Returns | Description |
-| :--- | :--- | :--- | :--- |
-| `tx.send(value)` | `value: Any` | `Nil` | Sends a message value across the channel to the connected `Receiver`. Thread-safe. |
-| `tx.clone()` | *None* | `Sender` | Creates a new `Sender` handle connected to the same `Receiver` for multi-thread dispatching. |
-
-### Receiver Methods (`Receiver`)
+### Thread Handler (`ThreadHandler<T>`)
 
 | Method | Arguments | Returns | Description |
 | :--- | :--- | :--- | :--- |
-| `rx.recv()` | *None* | `Any` | Blocks execution until a message is received from the channel. |
-| `rx.tryRecv()` | *None* | `Any \| Nil` | Returns the next message if available, otherwise returns `nil` immediately without blocking. |
-| `rx.isEmpty()` | *None* | `Bool` | Returns `true` if no messages are currently queued in the channel. |
+| `handle.join()` | *None* | `T` | Blocks execution waiting for the OS worker thread to complete and returns its computed value. |
+
+### Sender Methods (`Sender<T>`)
+
+| Method | Arguments | Returns | Description |
+| :--- | :--- | :--- | :--- |
+| `tx.send(val)` | `val: T` | `Bool` | Sends a message value across the channel to the connected `Receiver`. Thread-safe. |
+| `tx.clone()` | *None* | `Sender<T>` | Creates a new `Sender` handle connected to the same `Receiver` for multi-thread dispatching. |
+
+### Receiver Methods (`Receiver<T>`)
+
+| Method | Arguments | Returns | Description |
+| :--- | :--- | :--- | :--- |
+| `rx.recv()` | *None* | `T` | Blocks execution until a message is received from the channel. |
+| `rx.tryRecv()` | *None* | `T?` | Returns the next message if available, otherwise returns `nil` immediately without blocking. |
+

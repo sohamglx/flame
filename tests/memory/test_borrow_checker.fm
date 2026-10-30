@@ -1,6 +1,175 @@
+// ==============================================================================
+// Flame Memory Safety & Borrow Checker Test Suite
+// ==============================================================================
+// Covers:
+// 1. Universal runtime .type() introspection and comparison
+// 2. Primitive Copy semantics (Int, Float, Bool)
+// 3. Disjoint struct field borrowing (&mut on distinct fields)
+// 4. Control-flow move tracking and re-initialization
+// 5. Value-producing if-expressions
+// 6. Memory safety panic assertions (@ExpectPanic):
+//    - Use-after-move
+//    - Move inside loop back-edge
+//    - Conflicting mutable borrows to the same field
+//    - Returning reference to local variable
+//    - Simultaneous mutable and immutable borrows
+//    - Multiple mutable references to the same variable
+//    - Dangling reference outliving owner
+// ==============================================================================
+
+struct User {
+    first_name: String,
+    last_name: String,
+}
+
+struct Point {
+    x: Int,
+    y: Int,
+}
+
+struct Sensor {
+    id: Int,
+    is_active: Bool,
+}
+
+@Test
+fn test_type_comparison() {
+    // String runtime type comparison
+    let a = "hello"
+    let b = "hii"
+    if a.type() == b.type() {
+        println("strings match type: " + a.type())
+    } else {
+        panic("a.type() == b.type() failed for strings")
+    }
+
+    // Number runtime type comparison
+    let x = 100
+    let y = 200
+    if x.type() == y.type() {
+        println("ints match type: " + x.type())
+    } else {
+        panic("x.type() == y.type() failed for ints")
+    }
+
+    let f1 = 3.14
+    let f2 = 2.718
+    if f1.type() == f2.type() {
+        println("floats match type: " + f1.type())
+    } else {
+        panic("f1.type() == f2.type() failed for floats")
+    }
+
+    // Struct runtime type comparison
+    let p1 = Point {x: 1, y: 2}
+    let p2 = Point {x: 10, y: 20}
+    let u1 = User {first_name: "Alice", last_name: "Smith"}
+
+    if p1.type() == p2.type() {
+        println("points match type: " + p1.type())
+    } else {
+        panic("p1.type() == p2.type() failed")
+    }
+
+    if p1.type() != u1.type() {
+        println("point != user match: " + p1.type() + " vs " + u1.type())
+    } else {
+        panic("p1.type() != u1.type() failed")
+    }
+}
+
+@Test
+fn test_primitive_copy_semantics() {
+    // Primitive types (Int, Float, Bool) implement Copy and do not move
+    let count = 100
+    let copied_count = count
+    println($"Count copy: original={count}, copy={copied_count}")
+    assertEq(count, 100)
+    assertEq(copied_count, 100)
+
+    let flag = true
+    let copied_flag = flag
+    assertEq(flag, true)
+    assertEq(copied_flag, true)
+
+    let pi = 3.14159
+    let copied_pi = pi
+    assertEq(pi, 3.14159)
+    assertEq(copied_pi, 3.14159)
+}
+
+@Test
+fn test_disjoint_struct_field_borrowing() {
+    // Borrowing distinct fields of the same struct simultaneously is memory-safe
+    let mut u = User {
+        first_name: "Alice",
+        last_name: "Smith",
+    }
+
+    let r1 = &mut u.first_name
+    let r2 = &mut u.last_name
+    println($"User disjoint borrow: {r1} {r2}")
+    assertEq(r1, "Alice")
+    assertEq(r2, "Smith")
+}
+
+@Test
+fn test_control_flow_move_and_reinitialization() {
+    let b = 0
+    let mut token = "initial_token"
+
+    if b == 1 {
+        let moved_token = token
+        println(moved_token)
+    } else {
+        println("Token preserved along active path")
+    }
+
+    // Reassignment restores ownership to the place
+    token = "refreshed_token"
+    println($"Reassigned token: {token}")
+    assertEq(token, "refreshed_token")
+}
+
+@Test
+fn test_if_expression_value_production() {
+    let b = 0
+    let status = if b == 0 {"connected"} else {"offline"}
+    println($"Connection status: {status}")
+    assertEq(status, "connected")
+
+    let active = if b != 0 {true} else {false}
+    assertEq(active, false)
+}
+
+@Test
+fn test_optional_types_and_assertion_messages() {
+    // Declaring Optional Types (Type?)
+    let active_sensor: Sensor? = nil
+    let calibration_offset: Float? =-0.045
+    let fault_message: String? = nil
+
+    // assertEq with omitted optional message parameter (actual, expected)
+    assertEq(active_sensor, nil)
+    assertEq(calibration_offset, -0.045)
+    assertEq(fault_message, nil)
+
+    // assertEq with explicit optional message parameter (actual, expected, msg: String? = nil)
+    assertEq(active_sensor, nil, "Active sensor must be nil when uninitialized")
+    assertEq(calibration_offset, -0.045, "Calibration offset must match baseline")
+    assertEq(fault_message, nil, "Fault message should be nil when healthy")
+
+    // assertEq with nil message parameter
+    assertEq(calibration_offset, -0.045, nil)
+}
+
+// ------------------------------------------------------------------------------
+// Negative Safety Tests (Invalid Programs Handled by @ExpectPanic)
+// ------------------------------------------------------------------------------
+
 @Test
 @ExpectPanic
-fn use_after_move() {
+fn test_use_after_move() {
     let a = "hello"
     let b = a
 
@@ -9,7 +178,33 @@ fn use_after_move() {
 
 @Test
 @ExpectPanic
-fn return_reference_to_local_variable() -> &Int {
+fn test_move_inside_loop() {
+    let mut counter = 0
+    let resource = "heavy_res"
+    while counter < 3 {
+        let inside = resource
+        println(inside)
+        counter = counter + 1
+    }
+}
+
+@Test
+@ExpectPanic
+fn test_conflicting_mutable_field_borrows() {
+    let mut u = User {
+        first_name: "Alice",
+        last_name: "Smith",
+    }
+
+    let r1 = &mut u.first_name
+    let r2 = &mut u.first_name
+    println(r1)
+    println(r2)
+}
+
+@Test
+@ExpectPanic
+fn test_return_reference_to_local_variable() -> &Int {
     let x = 42
 
     return &x
@@ -17,7 +212,7 @@ fn return_reference_to_local_variable() -> &Int {
 
 @Test
 @ExpectPanic
-fn mutable_immutable_borrow() {
+fn test_mutable_and_immutable_borrow() {
     let mut x = 10
 
     let a = &x
@@ -29,7 +224,7 @@ fn mutable_immutable_borrow() {
 
 @Test
 @ExpectPanic
-fn two_mutable_references() {
+fn test_two_mutable_references() {
     let mut x = 10
 
     let a = &mut x
@@ -39,6 +234,7 @@ fn two_mutable_references() {
     b += 1
 }
 
+@ExpectPanic
 fn create_dangling_reference() -> &Int {
     let x = 42
 
@@ -47,7 +243,7 @@ fn create_dangling_reference() -> &Int {
 
 @Test
 @ExpectPanic
-fn reference_outlives_owner() {
+fn test_reference_outlives_owner() {
     let reference = create_dangling_reference()
 
     println(reference)

@@ -16,4 +16,4 @@ export const second: Quantity = Quantity {}
 export const kilogram: Quantity = Quantity {}
 
 @Docs("Creates a new custom unit by specifying exponents for kilograms (`kg`), meters (`m`), and seconds (`s`).\n\n**Example:**\n```flame\nlet speed = unit.Equation(0, 1, -1)\n```")
-export fn Equation(kg: Int, m: Int, s: Int) -> Quantity {}
+export fn Equation(kg: Int, m: Int, s: Int) -> Quantity;

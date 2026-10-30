@@ -27,13 +27,16 @@ fn test_type_conv() {
     s.type().assertEq("String")
     let b = s.toByte()
 
-    b.type().assertEq("Byte")
+    b.type().assertEq("Bytes")
     b.toHex().assertEq("313233")
     // toBase64 gives "MTIz" for "123"
     b.toBase64().assertEq("MTIz")
     let b2 = "456".toByte()
 
-    b.concat(b2).type().assertEq("Byte")
+    b.concat(b2).type().assertEq("Bytes")
+
+    let single_b = 65.toByte()
+    single_b.type().assertEq("Byte")
 }
 
 @Test

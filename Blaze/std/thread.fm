@@ -1,25 +1,53 @@
 package thread
 
-@Docs("Suspends current thread execution for the specified milliseconds.\n\n**Example:**\n```flame\nthread.sleep(1000)\n```")
-export fn sleep(ms: Int) {
+@Docs("Handle to a spawned background OS worker thread.")
+export struct ThreadHandler<T> {
+    id: Int,
+    osId: Int,
+    threadId: Int,
 }
+
+impl<T> ThreadHandler<T> {
+    @Docs("Waits for the OS thread to complete execution and returns its result.")
+    fn join(&self) -> T;
+}
+
+@Docs("Channel sender handle to send messages across threads.")
+export struct Sender<T> {}
+
+impl<T> Sender<T> {
+    @Docs("Sends a message into the channel.")
+    fn send(&self, val: T) -> Bool;
+
+    @Docs("Clones this sender handle.")
+    fn clone(&self) -> Sender<T>;
+}
+
+@Docs("Channel receiver handle to receive messages across threads.")
+export struct Receiver<T> {}
+
+impl<T> Receiver<T> {
+    @Docs("Blocks until a message arrives on the channel.")
+    fn recv(&self) -> T;
+
+    @Docs("Tries to receive a message without blocking.")
+    fn tryRecv(&self) -> T?;
+}
+
+@Docs("Suspends current thread execution for the specified milliseconds.\n\n**Example:**\n```flame\nthread.sleep(1000)\n```")
+export fn sleep(ms: Int);
 
 @Docs("Spawns a new operating system thread executing the given closure or function.\n\n**Example:**\n```flame\nthread.spawn(|| {\n    println(\"running in background\")\n})\n```")
-export fn spawn(func: Any) -> Unknown {
-}
+export fn spawn<T>(func: () -> T) -> ThreadHandler<T>;
 
 @Docs("Returns the identifier string of the current OS thread.\n\n**Example:**\n```flame\nlet tid = thread.id()\n```")
-export fn id() -> String {
-}
+export fn id() -> String;
 
 @Docs("Yields execution time slice back to the OS scheduler.")
-export fn yield() {
-}
+export fn yield();
 
 @Docs("Yields execution to allow other threads to run.")
-export fn yieldNow() {
-}
+export fn yieldNow();
 
-@Docs("Creates a message channel and returns `(Sender, Receiver)`.")
-export fn channel() -> Unknown {
-}
+@Docs("Creates a message channel and returns `(Sender<T>, Receiver<T>)`.\n\n**Example:**\n```flame\nlet (tx, rx) = thread.channel<String>()\n```")
+export fn channel<T>() -> (Sender<T>, Receiver<T>);

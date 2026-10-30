@@ -74,6 +74,15 @@ fn get_memory_bytes() -> u64 {
 }
 
 pub fn execute_test_suite(runner: &mut Runner, stmts: &[Stmt], filename: &str) -> TestStats {
+    execute_test_suite_filtered(runner, stmts, filename, None)
+}
+
+pub fn execute_test_suite_filtered(
+    runner: &mut Runner,
+    stmts: &[Stmt],
+    filename: &str,
+    test_filter: Option<&str>,
+) -> TestStats {
     let mut stats = TestStats {
         passed: 0,
         failed: 0,
@@ -92,9 +101,14 @@ pub fn execute_test_suite(runner: &mut Runner, stmts: &[Stmt], filename: &str) -
     let mut has_only_test = false;
 
     for stmt in stmts {
+        let check_stmt = if let Stmt::ExportDecl(inner, _) = stmt {
+            inner.as_ref()
+        } else {
+            stmt
+        };
         if let Stmt::FuncDecl {
             name, annotations, ..
-        } = stmt
+        } = check_stmt
         {
             for anno in annotations {
                 match anno.name.as_str() {
@@ -146,9 +160,14 @@ pub fn execute_test_suite(runner: &mut Runner, stmts: &[Stmt], filename: &str) -
         let mut parameterized_args = None;
 
         for stmt in stmts {
+            let check_stmt = if let Stmt::ExportDecl(inner, _) = stmt {
+                inner.as_ref()
+            } else {
+                stmt
+            };
             if let Stmt::FuncDecl {
                 name, annotations, ..
-            } = stmt
+            } = check_stmt
             {
                 if name == func_name {
                     for anno in annotations {
@@ -215,6 +234,13 @@ pub fn execute_test_suite(runner: &mut Runner, stmts: &[Stmt], filename: &str) -
                         }
                     }
                 }
+            }
+        }
+
+        if let Some(filter) = test_filter {
+            if func_name != filter && !func_name.contains(filter) {
+                stats.filtered += 1;
+                continue;
             }
         }
 

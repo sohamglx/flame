@@ -63,6 +63,7 @@ pub struct Param {
     pub default_val: Option<Expr>,
     pub is_ref: bool,
     pub is_mut: bool,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -225,6 +226,7 @@ pub enum Stmt {
         name_span: Span,
         generic_params: Vec<GenericParam>,
         is_default: bool,
+        is_async: bool,
     },
     AnnotationDecl {
         name: String,
@@ -346,6 +348,14 @@ impl Stmt {
             Stmt::PluginDecl { span, .. } => span.clone(),
             Stmt::AnnotationDecl { span, .. } => span.clone(),
             Stmt::PackageDecl { span, .. } => span.clone(),
+        }
+    }
+
+    pub fn is_declaration(&self) -> bool {
+        match self {
+            Stmt::FuncDecl { body, .. } => body.is_none(),
+            Stmt::ExportDecl(inner, _) => inner.is_declaration(),
+            _ => false,
         }
     }
 }

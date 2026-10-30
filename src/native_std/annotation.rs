@@ -33,7 +33,7 @@ pub fn def() -> NativeModuleDef {
                     ("name".to_string(), "String".to_string()),
                     ("kind".to_string(), "String".to_string()),
                     ("parameters".to_string(), "Array".to_string()),
-                    ("return_type".to_string(), "String".to_string()),
+                    ("returnType".to_string(), "String".to_string()),
                     ("annotations".to_string(), "Array".to_string()),
                 ],
                 methods: vec![

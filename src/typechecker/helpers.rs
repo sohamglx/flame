@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use super::checker::*;
+use super::types::*;
 use crate::diagnostics::Diagnostic;
 use crate::lexer::Span;
 use crate::parser::*;
-use super::checker::*;
-use super::types::*;
+use std::collections::{HashMap, HashSet};
 
 impl TypeChecker {
     pub(crate) fn check_call_args(
@@ -15,7 +15,11 @@ impl TypeChecker {
     ) {
         let min_args = params.iter().filter(|p| !p.has_default).count();
         let max_args = params.len();
-        if name != "print" && name != "eprint" && (args.len() < min_args || args.len() > max_args) {
+        if name != "print"
+            && name != "eprint"
+            && name != "println"
+            && (args.len() < min_args || args.len() > max_args)
+        {
             self.error(
                 if min_args == max_args {
                     format!(
@@ -40,6 +44,8 @@ impl TypeChecker {
         }
 
         for (idx, (_, arg)) in args.iter().enumerate() {
+            let prev_in_await = self.in_await;
+            self.in_await = false;
             let prev_expected = self.expected_closure_type.take();
             if let Some(param) = params.get(idx) {
                 let ty = match &param.ty {
@@ -50,7 +56,8 @@ impl TypeChecker {
             }
             let actual = self.infer_expr_type(arg);
             self.expected_closure_type = prev_expected;
-            if name == "print" || name == "eprint" {
+            self.in_await = prev_in_await;
+            if name == "print" || name == "eprint" || name == "println" {
                 continue;
             }
             if let Some(param) = params.get(idx) {
@@ -124,14 +131,22 @@ impl TypeChecker {
                 }
             }
             if !missing.is_empty() {
-                let missing_str = missing.iter().map(|m| format!("`{}`", m)).collect::<Vec<_>>().join(", ");
-                self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
-                    format!("not all struct fields initialized, missing: {}", missing_str),
-                    self.filepath.clone(),
-                    span.clone(),
-                    None,
-                    Some(format!("provide missing field(s) for struct '{}'", name)),
-                ));
+                let missing_str = missing
+                    .iter()
+                    .map(|m| format!("`{}`", m))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.diagnostics
+                    .push(crate::diagnostics::Diagnostic::new_error(
+                        format!(
+                            "not all struct fields initialized, missing: {}",
+                            missing_str
+                        ),
+                        self.filepath.clone(),
+                        span.clone(),
+                        None,
+                        Some(format!("provide missing field(s) for struct '{}'", name)),
+                    ));
             }
             for (arg_name, expr) in args {
                 if let Some(arg_name) = arg_name {
@@ -175,14 +190,22 @@ impl TypeChecker {
                     }
                 }
                 if !missing.is_empty() {
-                    let missing_str = missing.iter().map(|m| format!("`{}`", m)).collect::<Vec<_>>().join(", ");
-                    self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
-                        format!("not all struct fields initialized, missing: {}", missing_str),
-                        self.filepath.clone(),
-                        span.clone(),
-                        None,
-                        Some(format!("provide missing field(s) for struct '{}'", name)),
-                    ));
+                    let missing_str = missing
+                        .iter()
+                        .map(|m| format!("`{}`", m))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    self.diagnostics
+                        .push(crate::diagnostics::Diagnostic::new_error(
+                            format!(
+                                "not all struct fields initialized, missing: {}",
+                                missing_str
+                            ),
+                            self.filepath.clone(),
+                            span.clone(),
+                            None,
+                            Some(format!("provide missing field(s) for struct '{}'", name)),
+                        ));
                 }
             }
             for (idx, (_, expr)) in args.iter().enumerate() {
@@ -199,7 +222,13 @@ impl TypeChecker {
         }
     }
 
-    pub(crate) fn expect_assignable(&mut self, expected: &Type, actual: &Type, span: &Span, context: &str) {
+    pub(crate) fn expect_assignable(
+        &mut self,
+        expected: &Type,
+        actual: &Type,
+        span: &Span,
+        context: &str,
+    ) {
         if !self.is_compatible(expected, actual) {
             self.error(
                 format!(
@@ -216,14 +245,48 @@ impl TypeChecker {
     }
 
     pub(crate) fn is_compatible(&self, expected: &Type, actual: &Type) -> bool {
+        if matches!(expected, Type::Unknown) || matches!(actual, Type::Unknown) {
+            return true;
+        }
+        if let Type::Named(name) = expected {
+            if name.len() == 1 && name.chars().next().unwrap().is_uppercase() {
+                return true;
+            }
+        }
+        if let Type::Named(name) = actual {
+            if name.len() == 1 && name.chars().next().unwrap().is_uppercase() {
+                return true;
+            }
+        }
+        if let Type::Reference { inner, .. } = actual {
+            if let Type::Named(name) = &**inner {
+                if name.len() == 1 && name.chars().next().unwrap().is_uppercase() {
+                    return true;
+                }
+            }
+        }
+        if let Type::Reference { inner, .. } = expected {
+            if let Type::Named(name) = &**inner {
+                if name.len() == 1 && name.chars().next().unwrap().is_uppercase() {
+                    return true;
+                }
+            }
+        }
+
         if let Type::Union(expected_types) = expected {
             if let Type::Union(actual_types) = actual {
-                return actual_types.iter().all(|act| expected_types.iter().any(|exp| self.is_compatible(exp, act)));
+                return actual_types.iter().all(|act| {
+                    expected_types
+                        .iter()
+                        .any(|exp| self.is_compatible(exp, act))
+                });
             }
             return expected_types.iter().any(|t| self.is_compatible(t, actual));
         }
         if let Type::Union(actual_types) = actual {
-            return actual_types.iter().all(|act| self.is_compatible(expected, act));
+            return actual_types
+                .iter()
+                .all(|act| self.is_compatible(expected, act));
         }
 
         if let Type::Nullable(inner) = expected {
@@ -240,15 +303,6 @@ impl TypeChecker {
                 return self.is_compatible(expected_inner, actual_inner);
             }
             return false;
-        }
-
-        if matches!(expected, Type::Unknown) || matches!(actual, Type::Unknown) {
-            return true;
-        }
-        if let Type::Named(name) = expected {
-            if name.len() == 1 && name.chars().next().unwrap().is_uppercase() {
-                return true;
-            }
         }
         if expected == actual {
             return true;
@@ -365,26 +419,28 @@ impl TypeChecker {
             (Type::Named(name), Type::Byte) if name == "Bytes" => true,
             (Type::Byte, Type::Named(name)) if name == "Bytes" => true,
             (Type::Formula(_, _), Type::Formula(_, _)) => true,
+            (Type::Formula(_, _), Type::Named(name)) if name == "Formula" || name == "Object" => {
+                true
+            }
+            (Type::Named(name), Type::Formula(_, _)) if name == "Formula" || name == "Object" => {
+                true
+            }
             (Type::Function(e_params, e_ret), Type::Function(a_params, a_ret)) => {
                 if self.strict_closures {
                     if e_params.len() != a_params.len() {
                         false
                     } else {
-                        e_params
-                            .iter()
-                            .zip(a_params.iter())
-                            .all(|(ep, ap)| {
-                                if matches!(ap, Type::Unknown) {
-                                    false
-                                } else {
-                                    self.is_compatible(ep, ap)
-                                }
-                            })
-                            && (if matches!(**a_ret, Type::Unknown) && **e_ret != Type::Nil {
+                        e_params.iter().zip(a_params.iter()).all(|(ep, ap)| {
+                            if matches!(ap, Type::Unknown) {
                                 false
                             } else {
-                                self.is_compatible(e_ret, a_ret)
-                            })
+                                self.is_compatible(ep, ap)
+                            }
+                        }) && (if matches!(**a_ret, Type::Unknown) && **e_ret != Type::Nil {
+                            false
+                        } else {
+                            self.is_compatible(e_ret, a_ret)
+                        })
                     }
                 } else {
                     true
@@ -418,8 +474,12 @@ impl TypeChecker {
                 } else if c == ')' || c == ']' || c == '>' {
                     depth -= 1;
                 } else if c == ':' && depth == 0 {
-                    colon_pos = Some(idx);
-                    break;
+                    let is_double_colon = trimmed[idx..].starts_with("::")
+                        || (idx > 0 && trimmed[..idx].ends_with(':'));
+                    if !is_double_colon {
+                        colon_pos = Some(idx);
+                        break;
+                    }
                 }
             }
             if let Some(pos) = colon_pos {
@@ -456,7 +516,10 @@ impl TypeChecker {
             union_parts.push(u_curr.trim().to_string());
         }
         if union_parts.len() > 1 {
-            let types: Vec<Type> = union_parts.into_iter().map(|p| self.parse_type_name(&p)).collect();
+            let types: Vec<Type> = union_parts
+                .into_iter()
+                .map(|p| self.parse_type_name(&p))
+                .collect();
             return Type::Union(types);
         }
 
@@ -518,9 +581,7 @@ impl TypeChecker {
                 let inner = &trimmed[1..trimmed.len() - 1];
                 Type::Vector(Box::new(self.parse_type_name(inner)))
             }
-            _ if trimmed.starts_with("Vec<") => {
-                Type::Unknown
-            }
+            _ if trimmed.starts_with("Vec<") => Type::Unknown,
             _ if trimmed.starts_with('(') && trimmed.ends_with(')') => {
                 let inner = &trimmed[1..trimmed.len() - 1];
                 if inner.trim().is_empty() {
@@ -657,7 +718,13 @@ impl TypeChecker {
         }
     }
 
-    pub(crate) fn error_binary_mismatch(&mut self, op: &BinaryOp, left: &Type, right: &Type, span: &Span) {
+    pub(crate) fn error_binary_mismatch(
+        &mut self,
+        op: &BinaryOp,
+        left: &Type,
+        right: &Type,
+        span: &Span,
+    ) {
         self.error(
             format!(
                 "operator {:?} cannot be applied to {} and {}",
@@ -684,13 +751,18 @@ impl TypeChecker {
     }
 
     pub(crate) fn define_var(&mut self, name: String, info: VarInfo) {
+        self.all_vars.insert(name.clone(), info.clone());
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name, info);
         }
     }
 
     pub fn lookup_var(&self, name: &str) -> Option<&VarInfo> {
-        self.scopes.iter().rev().find_map(|scope| scope.get(name))
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(name))
+            .or_else(|| self.all_vars.get(name))
     }
 
     pub(crate) fn error(
@@ -701,9 +773,7 @@ impl TypeChecker {
         suggestion: Option<String>,
     ) {
         if self.diagnostics.iter().any(|d| {
-            d.filepath == self.filepath
-                && d.span.line == span.line
-                && d.message == message
+            d.filepath == self.filepath && d.span.line == span.line && d.message == message
         }) {
             return;
         }
@@ -725,19 +795,12 @@ impl TypeChecker {
         note: Option<String>,
     ) {
         if self.diagnostics.iter().any(|d| {
-            d.filepath == self.filepath
-                && d.span.line == span.line
-                && d.message == message
+            d.filepath == self.filepath && d.span.line == span.line && d.message == message
         }) {
             return;
         }
-        let mut diag = Diagnostic::new_warning(
-            message,
-            self.filepath.clone(),
-            span,
-            label,
-            suggestion,
-        );
+        let mut diag =
+            Diagnostic::new_warning(message, self.filepath.clone(), span, label, suggestion);
         diag.note = note;
         self.diagnostics.push(diag);
     }
@@ -746,27 +809,47 @@ impl TypeChecker {
         let base = name.split('<').next().unwrap_or(name).trim();
         matches!(
             base,
-            "String" | "string"
-            | "Int" | "int"
-            | "Num" | "num"
-            | "Float" | "float"
-            | "Bool" | "bool"
-            | "Byte" | "byte"
-            | "Char" | "char"
-            | "Array" | "array"
-            | "Map" | "map"
-            | "Option" | "option"
-            | "Result" | "result"
-            | "Vector" | "vector"
-            | "Void" | "void"
-            | "Any" | "any"
-            | "Never" | "never"
-            | "Nil" | "nil"
-            | "Self" | "self"
+            "String"
+                | "string"
+                | "Int"
+                | "int"
+                | "Num"
+                | "num"
+                | "Float"
+                | "float"
+                | "Bool"
+                | "bool"
+                | "Byte"
+                | "byte"
+                | "Char"
+                | "char"
+                | "Array"
+                | "array"
+                | "Map"
+                | "map"
+                | "Option"
+                | "option"
+                | "Result"
+                | "result"
+                | "Vector"
+                | "vector"
+                | "Void"
+                | "void"
+                | "Any"
+                | "any"
+                | "Never"
+                | "never"
+                | "Nil"
+                | "nil"
+                | "Self"
+                | "self"
         )
     }
 
-    pub(crate) fn check_generic_param_bounds(&mut self, generic_params: &[crate::parser::GenericParam]) {
+    pub(crate) fn check_generic_param_bounds(
+        &mut self,
+        generic_params: &[crate::parser::GenericParam],
+    ) {
         for p in generic_params {
             for bound in &p.bounds {
                 let base_bound = bound.split('<').next().unwrap_or(bound).trim();
@@ -907,6 +990,168 @@ impl TypeChecker {
             hover_doc: doc,
             span: func_span.clone(),
         })
+    }
+
+    pub(crate) fn load_fmi_file(&mut self, fmi: &std::path::Path, mod_name: &str) {
+        if let Ok(content) = std::fs::read_to_string(fmi) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                let mut methods = HashMap::new();
+                let mut p_funcs = HashMap::new();
+                if let Some(funcs) = json.get("functions").and_then(|f| f.as_array()) {
+                    for func in funcs {
+                        if let (Some(name), Some(ret_str)) = (
+                            func.get("flame_name")
+                                .and_then(|n| n.as_str())
+                                .or(func.get("name").and_then(|n| n.as_str())),
+                            func.get("return_type").and_then(|r| r.as_str()),
+                        ) {
+                            let ret_ty = self.parse_type_name(ret_str);
+                            methods.insert(name.to_string(), ret_ty.clone());
+
+                            let mut params = Vec::new();
+                            if let Some(ps) = func.get("params").and_then(|p| p.as_array()) {
+                                for p in ps {
+                                    if let (Some(p_name), Some(p_ty_str)) = (
+                                        p.get("name").and_then(|n| n.as_str()),
+                                        p.get("type_name").and_then(|t| t.as_str()),
+                                    ) {
+                                        params.push(ParamInfo {
+                                            name: p_name.to_string(),
+                                            ty: self.parse_type_name(p_ty_str),
+                                            is_ref: p
+                                                .get("is_ref")
+                                                .and_then(|r| r.as_bool())
+                                                .unwrap_or(false),
+                                            is_mut: p
+                                                .get("is_mut")
+                                                .and_then(|m| m.as_bool())
+                                                .unwrap_or(false),
+                                            has_default: p_ty_str.ends_with('?')
+                                                || p.get("default_val").is_some(),
+                                        });
+                                    }
+                                }
+                            }
+
+                            let doc = func
+                                .get("docs")
+                                .and_then(|d| d.as_str())
+                                .map(|s| s.to_string());
+                            let is_async = func
+                                .get("is_async")
+                                .and_then(|a| a.as_bool())
+                                .unwrap_or(false);
+
+                            let sig = FunctionSig {
+                                is_static: true,
+                                is_async,
+                                params,
+                                return_type: ret_ty,
+                                hover_doc: doc,
+                                generic_params: Vec::new(),
+                                is_declaration: false,
+                            };
+                            p_funcs.insert(name.to_string(), sig.clone());
+                            self.functions.insert(format!("{}.{}", mod_name, name), sig);
+                        }
+                    }
+                }
+                self.plugin_functions
+                    .entry(mod_name.to_string())
+                    .or_default()
+                    .extend(p_funcs);
+                if let Some(structs) = json.get("structs").and_then(|s| s.as_array()) {
+                    for s in structs {
+                        if let Some(struct_name) = s.get("name").and_then(|n| n.as_str()) {
+                            methods.insert(
+                                struct_name.to_string(),
+                                Type::Struct(struct_name.to_string()),
+                            );
+
+                            self.structs.insert(
+                                struct_name.to_string(),
+                                StructInfo {
+                                    fields: Vec::new(),
+                                    hover_doc: Some("**Native Plugin Struct**".to_string()),
+                                    generic_params: Vec::new(),
+                                },
+                            );
+
+                            if let Some(s_methods) = s.get("methods").and_then(|m| m.as_array()) {
+                                let mut struct_methods = HashMap::new();
+                                for m in s_methods {
+                                    if let (Some(m_name), Some(ret_str)) = (
+                                        m.get("flame_name")
+                                            .and_then(|n| n.as_str())
+                                            .or(m.get("name").and_then(|n| n.as_str())),
+                                        m.get("return_type").and_then(|r| r.as_str()),
+                                    ) {
+                                        let is_static = m
+                                            .get("is_static")
+                                            .and_then(|st| st.as_bool())
+                                            .unwrap_or(false);
+                                        let mut params = Vec::new();
+                                        if let Some(ps) = m.get("params").and_then(|p| p.as_array())
+                                        {
+                                            for p in ps {
+                                                if let (Some(p_name), Some(p_ty_str)) = (
+                                                    p.get("name").and_then(|n| n.as_str()),
+                                                    p.get("type_name").and_then(|t| t.as_str()),
+                                                ) {
+                                                    params.push(ParamInfo {
+                                                        name: p_name.to_string(),
+                                                        ty: self.parse_type_name(p_ty_str),
+                                                        is_ref: p
+                                                            .get("is_ref")
+                                                            .and_then(|r| r.as_bool())
+                                                            .unwrap_or(false),
+                                                        is_mut: p
+                                                            .get("is_mut")
+                                                            .and_then(|m| m.as_bool())
+                                                            .unwrap_or(false),
+                                                        has_default: p_ty_str.ends_with('?')
+                                                            || p.get("default_val").is_some(),
+                                                    });
+                                                }
+                                            }
+                                        }
+
+                                        let doc = m
+                                            .get("docs")
+                                            .and_then(|d| d.as_str())
+                                            .map(|s| s.to_string());
+                                        let is_async = m
+                                            .get("is_async")
+                                            .and_then(|a| a.as_bool())
+                                            .unwrap_or(false);
+                                        struct_methods.insert(
+                                            m_name.to_string(),
+                                            FunctionSig {
+                                                is_static,
+                                                is_async,
+                                                params,
+                                                return_type: self.parse_type_name(ret_str),
+                                                hover_doc: doc,
+                                                generic_params: Vec::new(),
+                                                is_declaration: false,
+                                            },
+                                        );
+                                    }
+                                }
+                                self.methods
+                                    .entry(struct_name.to_string())
+                                    .or_default()
+                                    .extend(struct_methods);
+                            }
+                        }
+                    }
+                }
+                self.plugin_methods
+                    .entry(mod_name.to_string())
+                    .or_default()
+                    .extend(methods);
+            }
+        }
     }
 }
 

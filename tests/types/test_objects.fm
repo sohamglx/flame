@@ -1,7 +1,6 @@
 import std.json
 import std.thread
 
-
 struct Duration {
     h: Int
     min: Int
@@ -12,7 +11,6 @@ impl Duration {
     fn totalSeconds(self) -> Int {
         return self.h * 3600 + self.min * 60 + self.sec
     }
-
 }
 
 struct Battery {
@@ -45,7 +43,6 @@ fn test_nested_objects() {
             stats: {
                 age: 17
             }
-
         }
 
         assertEq(user.name, "Soham")
@@ -63,7 +60,6 @@ fn test_struct_instance_and_methods() {
                 min: 22
                 sec: 49
             }
-
         }
 
         assertEq(battery.percent, 26)
@@ -91,3 +87,63 @@ fn test_formula_destructuring() {
     }
 }
 
+struct Point {
+    x: Int,
+    y: Int,
+}
+
+struct User {
+    first_name: String,
+    last_name: String,
+}
+
+
+// ------------------------------------------------------------------------------
+// Positive Safety Tests (Valid Programs)
+// ------------------------------------------------------------------------------
+
+@Test
+fn test_type_comparison() {
+    // String type comparison
+    let a = "hello"
+    let b = "hii"
+    if a.type() == b.type() {
+        println("strings match type: " + a.type())
+    } else {
+        panic("a.type() == b.type() failed for strings")
+    }
+
+    // Primitive number type comparison
+    let x = 100
+    let y = 200
+    if x.type() == y.type() {
+        println("ints match type: " + x.type())
+    } else {
+        panic("x.type() == y.type() failed for ints")
+    }
+
+    let f1 = 3.14
+    let f2 = 2.718
+    if f1.type() == f2.type() {
+        println("floats match type: " + f1.type())
+    } else {
+        panic("f1.type() == f2.type() failed for floats")
+    }
+
+    // Struct type comparison
+    let p1 = Point {x: 1, y: 2}
+    let p2 = Point {x: 10, y: 20}
+    let u1 = User {first_name: "Alice", last_name: "Smith"}
+
+    if p1.type() == p2.type() {
+        println("points match type: " + p1.type())
+    } else {
+        panic("p1.type() == p2.type() failed")
+    }
+
+    if p1.type() != u1.type() {
+        println("point != user match: " + p1.type() + " vs " + u1.type())
+    } else {
+        panic("p1.type() != u1.type() failed")
+    }
+}

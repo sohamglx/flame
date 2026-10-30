@@ -111,7 +111,7 @@ annotation Route(path: String) {
     let name = ctx.target.name              // String (e.g. "get_users")
     let kind = ctx.target.kind              // String: "function", "struct", "enum", "variable"
     let params = ctx.target.parameters      // [ParameterInfo]
-    let ret = ctx.target.return_type        // String
+    let ret = ctx.target.returnType        // String
     let annos = ctx.target.annotations      // [AnnotationInfo]
 
     // Inspect compiler & build configuration:

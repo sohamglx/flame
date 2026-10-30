@@ -67,6 +67,12 @@ impl Runner {
         evaled_args: Vec<Value>,
     ) -> Result<Value, String> {
         match callback_val {
+            Value::Declaration { name, .. } => {
+                return Err(format!(
+                    "cannot execute declaration '{}': function is declared without an implementation",
+                    name
+                ));
+            }
             Value::Function {
                 params,
                 body,

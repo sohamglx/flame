@@ -1,56 +1,144 @@
 ---
 title: Ownership & Move Semantics
-description: Memory safety without garbage collection, ownership rules, move semantics, and RAII destruction in Flame.
+description: Memory safety without garbage collection, ownership rules, Copy vs Move semantics, control-flow tracking, and RAII destruction in Flame.
 ---
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 
-Flame achieves high performance and complete memory safety through a **compile-time ownership model** inspired by Rust. This eliminates both memory leaks and the unpredictable latency spikes of a Garbage Collector (GC).
+Flame achieves predictable, high-performance systems execution and complete memory safety through a **compile-time ownership and borrow-checking system** inspired by Rust. Flame has **zero Garbage Collector (GC)**—memory is reclaimed deterministically at compile-time via RAII when owners go out of scope, eliminating memory management pitfalls (such as use-after-free and double-free) with zero GC pauses, zero runtime sweeps, and zero runtime overhead.
 
 ---
 
 ## The Three Rules of Ownership
 
-1. **Every value in Flame has a variable that is called its *owner*.**
-2. **There can only be one owner at a time.**
-3. **When the owner goes out of scope, the value is dropped automatically from memory (RAII).**
+1. **Every value in Flame has an owner** represented by a variable binding.
+2. **There can only be one owner at any given point in time.**
+3. **When the owner goes out of scope, the value is dropped deterministically** and its backing memory or resources are freed immediately (RAII).
 
 ---
 
-## Move Semantics
+## Value Categories: `Copy` vs `Move`
 
-When a variable is assigned to another variable or passed by value to a function, ownership of the data is **moved**:
+Values in Flame fall into two distinct semantic categories when bound, assigned, or passed into functions:
+
+### 1. `Copy` Semantics (Stack Primitives)
+
+Primitive data types whose sizes are statically fixed and inexpensive to duplicate live entirely on the stack. Copying them creates an independent, bitwise duplicate rather than transferring ownership:
+
+* `Int` (e.g., `42`)
+* `Float` (e.g., `3.14`)
+* `Bool` (`true`, `false`)
+* `Byte` (e.g., `0xFF`)
+* `Nil`
+* Immutable references (`&T`)
+
+```flame
+let x = 42
+let y = x // x is COPIED, not moved
+
+// Both x and y remain completely valid and independent!
+println($"x = {x}, y = {y}")
+```
+
+### 2. `Move` Semantics (Heap & Resource Types)
+
+Types that manage heap-allocated buffers or OS resources (such as `String`, user-defined `struct`, dynamically sized vectors `[T]`, and file handles) implement **Move** semantics.
+
+When a non-`Copy` variable is assigned to another variable or passed by value to a function, ownership transfers to the destination place. The original place becomes invalidated:
 
 ```flame
 fn consume_data(s: String) {
-    print($"Received: {s}")
+    println($"Received: {s}")
 } // `s` is dropped here when the function exits
 
 let original = "Hello Flame"
 
-// Ownership is transferred (moved) to `consume_data`
+// Ownership transfers (moves) to consume_data
 consume_data(original)
-    
-// ERROR: `original` was moved and is no longer valid!
-// print(original)
+
+// ❌ Compile Error: use of moved value: 'original'
+// println(original)
+```
+
+---
+
+## Control-Flow-Aware Move Tracking
+
+Flame's compiler performs path-sensitive control-flow analysis to ensure no variable can ever be accessed after it might have been moved.
+
+### Branch Isolation (`if` / `else`)
+
+When branching logic moves a variable, Flame tracks whether the move occurred unconditionally across all branches or conditionally along only a subset:
+
+```flame
+let resource = "database_connection"
+
+if condition {
+    let transferred = resource // Moved in 'then' branch
+    println(transferred)
+} else {
+    println("Resource preserved along this branch")
+}
+
+// ❌ Compile Error: use of conditionally moved value: 'resource'
+// println(resource)
+```
+
+If a variable is moved across **all** possible execution paths, it is permanently marked as moved. If it is moved along only one path, the compiler marks it as *conditionally moved* and statically prevents subsequent reads.
+
+### Loop Back-Edge Invariants
+
+Moving an outer non-`Copy` variable inside a `while` or `for` loop body without restoring it is strictly forbidden at compile time, because subsequent iterations would encounter an invalid, moved place:
+
+```flame
+let config = "app_config"
+let mut i = 0
+
+while i < 3 {
+    // ❌ Compile Error: cannot move out of 'config' in a loop
+    let current = config
+    println(current)
+    i = i + 1
+}
+```
+
+---
+
+## Re-initialization & Assignment
+
+Assigning a new value to a moved variable restores its ownership. Once re-initialized, the variable is fully valid again for moves and borrows:
+
+```flame
+let mut token = "initial_token"
+
+// Move token into consumer
+let consumed = token
+println(consumed)
+
+// Token is currently moved...
+// Re-assigning re-initializes ownership:
+token = "refreshed_token"
+
+// ✅ Fully valid!
+println($"Re-initialized token: {token}")
 ```
 
 ---
 
 ## Scope & Deterministic Drops (RAII)
 
-Memory is freed the moment an owner exits its lexical `{ ... }` block:
+Memory and resources are released the exact moment an owner exits its lexical block `{ ... }`:
 
 ```flame
 {
     let buffer = [1, 2, 3, 4, 5]
-    print(buffer.len()) // 5
-} // `buffer` goes out of scope; heap allocation is freed immediately!
+    println(buffer.len()) // 5
+} // `buffer` exits scope here; heap buffer is reclaimed immediately!
 
 // `buffer` is inaccessible here
 ```
 
-<Aside type="tip">
-If you want to use a value in multiple places without transferring ownership, use [References & Borrowing](/memory-and-safety/borrowing/) instead of moving.
+<Aside type="tip" title="Borrowing vs Moving">
+If a function or block only needs to inspect or update data without taking ownership or freeing it, use [References & Borrowing](/memory-and-safety/borrowing/) instead of moving.
 </Aside>

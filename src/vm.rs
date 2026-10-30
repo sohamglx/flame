@@ -43,6 +43,12 @@ pub enum Value {
         env: Arc<Mutex<Env>>,
         annotations: Vec<Annotation>,
     },
+    Declaration {
+        name: String,
+        params: Vec<Param>,
+        return_type: Option<String>,
+        annotations: Vec<Annotation>,
+    },
     Break,
     Return(Box<Value>),
     Moved(String),
@@ -352,6 +358,7 @@ impl fmt::Display for Value {
                 write!(f, "{} {{ {} }}", name, s.join(", "))
             }
             Value::Function { .. } => write!(f, "<function>"),
+            Value::Declaration { name, .. } => write!(f, "<declaration {}>", name),
             Value::Break => write!(f, "<break>"),
             Value::Return(val) => write!(f, "<return {}>", val),
             Value::NativeFunction(_) => write!(f, "<native function>"),
@@ -419,6 +426,7 @@ impl Value {
             | Value::Float(_)
             | Value::Byte(_)
             | Value::Function { .. }
+            | Value::Declaration { .. }
             | Value::NativeCallback(_)
             | Value::NativeClosure(_)
             | Value::StructConstructor { .. }
@@ -511,12 +519,16 @@ impl Value {
             Value::String(_) => "String",
             Value::Tuple(_) | Value::SharedTuple(_) => "Tuple",
             Value::Byte(_) => "Byte",
-            Value::Bytes(_) => "Byte",
+            Value::Bytes(_) => "Bytes",
             Value::Object(_) | Value::SharedObject(_) => "Object",
             Value::Formula(_) => "Formula",
             Value::Unit(_) => "Unit",
             Value::Quantity(_, _) => "Quantity",
             Value::Ref(_) | Value::RefPath(_, _) => "Ref",
+            Value::ThreadHandler(_) => "ThreadHandler",
+            Value::Sender(_) => "Sender",
+            Value::Receiver(_) => "Receiver",
+            Value::Range(_, _) => "Range",
             Value::StructInstance { .. } => "StructInstance", // Will map to actual name downstream if needed
             _ => "Unknown",
         }
@@ -582,6 +594,9 @@ impl Value {
                 obj_ptr: *ptr as *mut std::ffi::c_void,
             },
             Value::Return(inner) | Value::Ref(inner) => inner.pack(),
+            Value::Declaration { name, .. } => {
+                panic!("cannot pass declaration '{}' to native FFI", name);
+            }
             Value::Function { .. } | Value::NativeCallback(_) | Value::NativeClosure(_) => {
                 let fn_id = register_callback_value(self.clone());
                 CValue {
@@ -839,11 +854,53 @@ pub static CHANNEL_COUNTER: OnceLock<Mutex<u64>> = OnceLock::new();
 pub static CHILD_PROCESSES: OnceLock<Mutex<HashMap<u64, Child>>> = OnceLock::new();
 pub static CHILD_PROCESS_COUNTER: OnceLock<Mutex<u64>> = OnceLock::new();
 
+pub static THREAD_OS_IDS: OnceLock<Mutex<HashMap<u64, i64>>> = OnceLock::new();
+
 pub fn get_threads() -> &'static Mutex<HashMap<u64, JoinHandle<Value>>> {
     THREADS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 pub fn get_thread_counter() -> &'static Mutex<u64> {
     THREAD_COUNTER.get_or_init(|| Mutex::new(0))
+}
+pub fn get_thread_os_ids() -> &'static Mutex<HashMap<u64, i64>> {
+    THREAD_OS_IDS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn get_current_os_thread_id() -> i64 {
+    #[cfg(target_os = "linux")]
+    {
+        unsafe { libc::syscall(libc::SYS_gettid) as i64 }
+    }
+    #[cfg(target_os = "android")]
+    {
+        unsafe { libc::gettid() as i64 }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut tid: u64 = 0;
+        unsafe { libc::pthread_threadid_np(0, &mut tid) };
+        tid as i64
+    }
+    #[cfg(windows)]
+    {
+        extern "system" {
+            fn GetCurrentThreadId() -> u32;
+        }
+        unsafe { GetCurrentThreadId() as i64 }
+    }
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        windows
+    )))]
+    {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        std::thread::current().id().hash(&mut hasher);
+        (hasher.finish() & 0x7FFFFFFF) as i64
+    }
 }
 pub fn get_channels() -> &'static Mutex<HashMap<u64, std::sync::mpsc::Sender<Value>>> {
     CHANNELS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -893,6 +950,7 @@ pub struct VarEntry {
 #[derive(Debug, Clone)]
 pub struct Env {
     pub variables: HashMap<String, VarEntry>,
+    pub field_borrows: HashMap<String, (usize, bool)>,
     pub parent: Option<Arc<Mutex<Env>>>,
 }
 
@@ -900,6 +958,7 @@ impl Env {
     pub fn new() -> Self {
         Self {
             variables: HashMap::new(),
+            field_borrows: HashMap::new(),
             parent: None,
         }
     }
@@ -907,6 +966,7 @@ impl Env {
     pub fn fork(&self) -> Self {
         Self {
             variables: self.variables.clone(),
+            field_borrows: self.field_borrows.clone(),
             parent: None,
         }
     }
@@ -924,6 +984,7 @@ impl Env {
         }
         Self {
             variables: vars,
+            field_borrows: self.field_borrows.clone(),
             parent: None,
         }
     }
@@ -931,6 +992,7 @@ impl Env {
     pub fn new_child(parent: Arc<Mutex<Env>>) -> Self {
         Self {
             variables: HashMap::new(),
+            field_borrows: HashMap::new(),
             parent: Some(parent),
         }
     }
@@ -1036,6 +1098,41 @@ impl Env {
         } else if let Some(parent) = &self.parent {
             parent.lock().unwrap().release_borrow(name, is_mut);
         }
+    }
+
+    pub fn borrow_field(&mut self, owner: &str, member: &str, is_mut: bool) -> Result<(), String> {
+        let field_path = format!("{}.{}", owner, member);
+        if let Some(parent) = &self.parent {
+            parent.lock().unwrap().borrow_field(owner, member, is_mut)?;
+        }
+        let entry = self
+            .field_borrows
+            .entry(field_path.clone())
+            .or_insert((0, false));
+        if is_mut {
+            if entry.0 > 0 {
+                return Err(format!(
+                    "cannot borrow '{}' as mutable because it is also borrowed as immutable",
+                    field_path
+                ));
+            }
+            if entry.1 {
+                return Err(format!(
+                    "cannot borrow '{}' as mutable more than once at a time",
+                    field_path
+                ));
+            }
+            entry.1 = true;
+        } else {
+            if entry.1 {
+                return Err(format!(
+                    "cannot borrow '{}' as immutable because it is also borrowed as mutable",
+                    field_path
+                ));
+            }
+            entry.0 += 1;
+        }
+        Ok(())
     }
 
     pub fn assign(&mut self, name: String, val: Value) -> Result<(), String> {

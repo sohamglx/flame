@@ -1,7 +1,7 @@
+use crate::parser::{Expr, JsxChild, Stmt};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use crate::parser::{Expr, JsxChild, Stmt};
 
 pub struct WebBuildResult {
     pub dist_dir: PathBuf,
@@ -55,11 +55,21 @@ fn extract_string_list(raw: &str) -> Vec<String> {
         let inner = &trimmed[1..trimmed.len() - 1];
         inner
             .split(',')
-            .map(|s| s.trim().trim_matches('"').trim_matches('\'').trim().to_string())
+            .map(|s| {
+                s.trim()
+                    .trim_matches('"')
+                    .trim_matches('\'')
+                    .trim()
+                    .to_string()
+            })
             .filter(|s| !s.is_empty())
             .collect()
     } else {
-        let single = trimmed.trim_matches('"').trim_matches('\'').trim().to_string();
+        let single = trimmed
+            .trim_matches('"')
+            .trim_matches('\'')
+            .trim()
+            .to_string();
         if !single.is_empty() {
             vec![single]
         } else {
@@ -269,7 +279,12 @@ fn compile_wasm_stmt(
             code.push(0x0F); // return
             true
         }
-        Stmt::IfStmt { cond, then_branch, else_branch, .. } => {
+        Stmt::IfStmt {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
             if !compile_wasm_expr(cond, locals, func_indices, code) {
                 return false;
             }
@@ -325,9 +340,7 @@ fn compile_wasm_stmt(
                 false
             }
         }
-        Stmt::ExprStmt(expr) => {
-            compile_wasm_expr(expr, locals, func_indices, code)
-        }
+        Stmt::ExprStmt(expr) => compile_wasm_expr(expr, locals, func_indices, code),
         _ => false,
     }
 }
@@ -467,7 +480,12 @@ impl WebCompiler {
             Stmt::ExportDecl(inner, _) => {
                 self.process_stmt(inner);
             }
-            Stmt::ImportDecl { path, alias, is_quoted, .. } => {
+            Stmt::ImportDecl {
+                path,
+                alias,
+                is_quoted,
+                ..
+            } => {
                 if *is_quoted {
                     if let Some(file_str) = path.first() {
                         let trimmed = file_str.trim().trim_matches('"').trim_matches('\'').trim();
@@ -478,7 +496,11 @@ impl WebCompiler {
                             if let Some(a) = alias {
                                 self.css_aliases.insert(a.clone(), trimmed.to_string());
                             }
-                        } else if trimmed.ends_with(".js") || trimmed.ends_with(".mjs") || trimmed.ends_with(".cjs") || trimmed.ends_with(".ts") {
+                        } else if trimmed.ends_with(".js")
+                            || trimmed.ends_with(".mjs")
+                            || trimmed.ends_with(".cjs")
+                            || trimmed.ends_with(".ts")
+                        {
                             if !self.custom_js_files.contains(&trimmed.to_string()) {
                                 self.custom_js_files.push(trimmed.to_string());
                             }
@@ -488,25 +510,37 @@ impl WebCompiler {
                         } else {
                             let bind_name = alias.clone().unwrap_or_else(|| {
                                 let p = std::path::Path::new(trimmed);
-                                p.file_stem().and_then(|s| s.to_str()).unwrap_or("resource").to_string()
+                                p.file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("resource")
+                                    .to_string()
                             });
-                            let resolved = crate::stdlib::locate_resource_file(&std::path::PathBuf::from("."), trimmed)
-                                .or_else(|| {
-                                    let p = std::path::PathBuf::from(trimmed);
-                                    if p.exists() { Some(p) } else { None }
-                                });
+                            let resolved = crate::stdlib::locate_resource_file(
+                                &std::path::PathBuf::from("."),
+                                trimmed,
+                            )
+                            .or_else(|| {
+                                let p = std::path::PathBuf::from(trimmed);
+                                if p.exists() { Some(p) } else { None }
+                            });
                             if let Some(r_path) = resolved {
                                 if let Ok(content) = std::fs::read_to_string(&r_path) {
                                     if trimmed.ends_with(".json") || trimmed.ends_with(".fmi") {
-                                        self.data_resources.push((bind_name, content.trim().to_string()));
+                                        self.data_resources
+                                            .push((bind_name, content.trim().to_string()));
                                     } else if trimmed.ends_with(".toml") {
-                                        if let Ok(toml_val) = toml::from_str::<toml::Value>(&content) {
+                                        if let Ok(toml_val) =
+                                            toml::from_str::<toml::Value>(&content)
+                                        {
                                             if let Ok(json_str) = serde_json::to_string(&toml_val) {
                                                 self.data_resources.push((bind_name, json_str));
                                             }
                                         }
                                     } else {
-                                        let json_str = serde_json::to_string(&content).unwrap_or_else(|_| format!("\"{}\"", content.escape_default()));
+                                        let json_str = serde_json::to_string(&content)
+                                            .unwrap_or_else(|_| {
+                                                format!("\"{}\"", content.escape_default())
+                                            });
                                         self.data_resources.push((bind_name, json_str));
                                     }
                                 }
@@ -515,11 +549,30 @@ impl WebCompiler {
                     }
                 }
             }
-            Stmt::LetDecl { name, annotations, value, .. } | Stmt::ConstDecl { name, annotations, value, .. } => {
-                let is_state = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("state"));
-                let is_computed = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("computed"));
-                let is_style = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("style"));
-                let is_script = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("script") || a.name.eq_ignore_ascii_case("js"));
+            Stmt::LetDecl {
+                name,
+                annotations,
+                value,
+                ..
+            }
+            | Stmt::ConstDecl {
+                name,
+                annotations,
+                value,
+                ..
+            } => {
+                let is_state = annotations
+                    .iter()
+                    .any(|a| a.name.eq_ignore_ascii_case("state"));
+                let is_computed = annotations
+                    .iter()
+                    .any(|a| a.name.eq_ignore_ascii_case("computed"));
+                let is_style = annotations
+                    .iter()
+                    .any(|a| a.name.eq_ignore_ascii_case("style"));
+                let is_script = annotations.iter().any(|a| {
+                    a.name.eq_ignore_ascii_case("script") || a.name.eq_ignore_ascii_case("js")
+                });
                 if is_style {
                     if let Expr::Literal(crate::parser::LiteralValue::String(s), _) = value {
                         let trimmed = s.trim();
@@ -552,20 +605,53 @@ impl WebCompiler {
                 }
                 self.global_stmts.push(stmt.clone());
             }
-            Stmt::FuncDecl { name, body, annotations, params, .. } => {
-                let is_web = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("web"));
-                let is_page = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("page"));
-                let is_component = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("component"));
-                let is_layout = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("layout"));
-                let is_style = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("style"));
-                let is_script = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("script") || a.name.eq_ignore_ascii_case("js"));
-                let is_wasm = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("wasm"));
-                let is_computed = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("computed"));
-                let is_effect = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("effect"));
+            Stmt::FuncDecl {
+                name,
+                body,
+                annotations,
+                params,
+                ..
+            } => {
+                if body.is_none()
+                    || annotations
+                        .iter()
+                        .any(|a| crate::parser::is_test_annotation(&a.name))
+                {
+                    return;
+                }
+                let is_web = annotations
+                    .iter()
+                    .any(|a| a.name.eq_ignore_ascii_case("web"));
+                let is_page = annotations
+                    .iter()
+                    .any(|a| a.name.eq_ignore_ascii_case("page"));
+                let is_component = annotations
+                    .iter()
+                    .any(|a| a.name.eq_ignore_ascii_case("component"));
+                let is_layout = annotations
+                    .iter()
+                    .any(|a| a.name.eq_ignore_ascii_case("layout"));
+                let is_style = annotations
+                    .iter()
+                    .any(|a| a.name.eq_ignore_ascii_case("style"));
+                let is_script = annotations.iter().any(|a| {
+                    a.name.eq_ignore_ascii_case("script") || a.name.eq_ignore_ascii_case("js")
+                });
+                let is_wasm = annotations
+                    .iter()
+                    .any(|a| a.name.eq_ignore_ascii_case("wasm"));
+                let is_computed = annotations
+                    .iter()
+                    .any(|a| a.name.eq_ignore_ascii_case("computed"));
+                let is_effect = annotations
+                    .iter()
+                    .any(|a| a.name.eq_ignore_ascii_case("effect"));
 
                 if is_script {
                     for ann in annotations {
-                        if ann.name.eq_ignore_ascii_case("script") || ann.name.eq_ignore_ascii_case("js") {
+                        if ann.name.eq_ignore_ascii_case("script")
+                            || ann.name.eq_ignore_ascii_case("js")
+                        {
                             for arg in &ann.args {
                                 let trimmed = arg.trim().trim_matches('"').trim_matches('\'');
                                 if trimmed.ends_with(".js") {
@@ -599,7 +685,8 @@ impl WebCompiler {
                 if is_wasm {
                     let param_names = params.iter().map(|p| p.name.clone()).collect();
                     let body_stmts = body.clone().unwrap_or_default();
-                    self.wasm_functions.push((name.clone(), param_names, body_stmts));
+                    self.wasm_functions
+                        .push((name.clone(), param_names, body_stmts));
                 }
 
                 if is_web {
@@ -619,7 +706,11 @@ impl WebCompiler {
                                     } else if key == "css" || key == "style" || key == "styles" {
                                         let items = extract_string_list(raw_val);
                                         for item in items {
-                                            let resolved = self.css_aliases.get(&item).cloned().unwrap_or(item);
+                                            let resolved = self
+                                                .css_aliases
+                                                .get(&item)
+                                                .cloned()
+                                                .unwrap_or(item);
                                             if !self.custom_css_files.contains(&resolved) {
                                                 self.custom_css_files.push(resolved);
                                             }
@@ -627,7 +718,8 @@ impl WebCompiler {
                                     } else if key == "js" || key == "script" || key == "scripts" {
                                         let items = extract_string_list(raw_val);
                                         for item in items {
-                                            let resolved = self.js_aliases.get(&item).cloned().unwrap_or(item);
+                                            let resolved =
+                                                self.js_aliases.get(&item).cloned().unwrap_or(item);
                                             if !self.custom_js_files.contains(&resolved) {
                                                 self.custom_js_files.push(resolved);
                                             }
@@ -637,8 +729,16 @@ impl WebCompiler {
                                     self.port = p;
                                 } else {
                                     let trimmed = arg.trim().trim_matches('"').trim_matches('\'');
-                                    let resolved_css = self.css_aliases.get(trimmed).cloned().unwrap_or_else(|| trimmed.to_string());
-                                    let resolved_js = self.js_aliases.get(trimmed).cloned().unwrap_or_else(|| trimmed.to_string());
+                                    let resolved_css = self
+                                        .css_aliases
+                                        .get(trimmed)
+                                        .cloned()
+                                        .unwrap_or_else(|| trimmed.to_string());
+                                    let resolved_js = self
+                                        .js_aliases
+                                        .get(trimmed)
+                                        .cloned()
+                                        .unwrap_or_else(|| trimmed.to_string());
                                     if resolved_css.ends_with(".css") {
                                         if !self.custom_css_files.contains(&resolved_css) {
                                             self.custom_css_files.push(resolved_css);
@@ -679,7 +779,10 @@ impl WebCompiler {
                                     if !self.custom_css_files.contains(&trimmed.to_string()) {
                                         self.custom_css_files.push(trimmed.to_string());
                                     }
-                                } else if trimmed.contains('{') || trimmed.contains(';') || trimmed.contains(':') {
+                                } else if trimmed.contains('{')
+                                    || trimmed.contains(';')
+                                    || trimmed.contains(':')
+                                {
                                     self.css_blocks.push(trimmed.to_string());
                                 }
                             }
@@ -688,7 +791,10 @@ impl WebCompiler {
                     if let Some(body_stmts) = body {
                         for inner in body_stmts {
                             match inner {
-                                Stmt::ExprStmt(Expr::Literal(crate::parser::LiteralValue::String(s), _)) => {
+                                Stmt::ExprStmt(Expr::Literal(
+                                    crate::parser::LiteralValue::String(s),
+                                    _,
+                                )) => {
                                     let trimmed = s.trim();
                                     if trimmed.ends_with(".css") && !trimmed.contains('{') {
                                         if !self.custom_css_files.contains(&trimmed.to_string()) {
@@ -698,7 +804,10 @@ impl WebCompiler {
                                         self.css_blocks.push(s.clone());
                                     }
                                 }
-                                Stmt::ReturnStmt(Some(Expr::Literal(crate::parser::LiteralValue::String(s), _)), _) => {
+                                Stmt::ReturnStmt(
+                                    Some(Expr::Literal(crate::parser::LiteralValue::String(s), _)),
+                                    _,
+                                ) => {
                                     let trimmed = s.trim();
                                     if trimmed.ends_with(".css") && !trimmed.contains('{') {
                                         if !self.custom_css_files.contains(&trimmed.to_string()) {
@@ -709,19 +818,32 @@ impl WebCompiler {
                                     }
                                 }
                                 Stmt::ExprStmt(Expr::InterpolatedString(segments, _)) => {
-                                    let s: String = segments.iter().filter_map(|p| match p {
-                                        crate::parser::InterpolatedSegment::Text(t) => Some(t.as_str()),
-                                        _ => None,
-                                    }).collect();
+                                    let s: String = segments
+                                        .iter()
+                                        .filter_map(|p| match p {
+                                            crate::parser::InterpolatedSegment::Text(t) => {
+                                                Some(t.as_str())
+                                            }
+                                            _ => None,
+                                        })
+                                        .collect();
                                     if !s.is_empty() {
                                         self.css_blocks.push(s);
                                     }
                                 }
-                                Stmt::ReturnStmt(Some(Expr::InterpolatedString(segments, _)), _) => {
-                                    let s: String = segments.iter().filter_map(|p| match p {
-                                        crate::parser::InterpolatedSegment::Text(t) => Some(t.as_str()),
-                                        _ => None,
-                                    }).collect();
+                                Stmt::ReturnStmt(
+                                    Some(Expr::InterpolatedString(segments, _)),
+                                    _,
+                                ) => {
+                                    let s: String = segments
+                                        .iter()
+                                        .filter_map(|p| match p {
+                                            crate::parser::InterpolatedSegment::Text(t) => {
+                                                Some(t.as_str())
+                                            }
+                                            _ => None,
+                                        })
+                                        .collect();
                                     if !s.is_empty() {
                                         self.css_blocks.push(s);
                                     }
@@ -769,16 +891,30 @@ impl WebCompiler {
                     let body_stmts = body.clone().unwrap_or_default();
                     for inner in &body_stmts {
                         match inner {
-                            Stmt::LetDecl { name, annotations, .. } | Stmt::ConstDecl { name, annotations, .. } => {
-                                if annotations.iter().any(|a| a.name.eq_ignore_ascii_case("state")) {
+                            Stmt::LetDecl {
+                                name, annotations, ..
+                            }
+                            | Stmt::ConstDecl {
+                                name, annotations, ..
+                            } => {
+                                if annotations
+                                    .iter()
+                                    .any(|a| a.name.eq_ignore_ascii_case("state"))
+                                {
                                     self.state_vars.insert(name.clone());
                                 }
-                                if annotations.iter().any(|a| a.name.eq_ignore_ascii_case("style")) {
+                                if annotations
+                                    .iter()
+                                    .any(|a| a.name.eq_ignore_ascii_case("style"))
+                                {
                                     self.process_stmt(inner);
                                 }
                             }
                             Stmt::FuncDecl { annotations, .. } => {
-                                if annotations.iter().any(|a| a.name.eq_ignore_ascii_case("style")) {
+                                if annotations
+                                    .iter()
+                                    .any(|a| a.name.eq_ignore_ascii_case("style"))
+                                {
                                     self.process_stmt(inner);
                                 }
                             }
@@ -832,16 +968,30 @@ impl WebCompiler {
                     let body_stmts = body.clone().unwrap_or_default();
                     for inner in &body_stmts {
                         match inner {
-                            Stmt::LetDecl { name, annotations, .. } | Stmt::ConstDecl { name, annotations, .. } => {
-                                if annotations.iter().any(|a| a.name.eq_ignore_ascii_case("state")) {
+                            Stmt::LetDecl {
+                                name, annotations, ..
+                            }
+                            | Stmt::ConstDecl {
+                                name, annotations, ..
+                            } => {
+                                if annotations
+                                    .iter()
+                                    .any(|a| a.name.eq_ignore_ascii_case("state"))
+                                {
                                     self.state_vars.insert(name.clone());
                                 }
-                                if annotations.iter().any(|a| a.name.eq_ignore_ascii_case("style")) {
+                                if annotations
+                                    .iter()
+                                    .any(|a| a.name.eq_ignore_ascii_case("style"))
+                                {
                                     self.process_stmt(inner);
                                 }
                             }
                             Stmt::FuncDecl { annotations, .. } => {
-                                if annotations.iter().any(|a| a.name.eq_ignore_ascii_case("style")) {
+                                if annotations
+                                    .iter()
+                                    .any(|a| a.name.eq_ignore_ascii_case("style"))
+                                {
                                     self.process_stmt(inner);
                                 }
                             }
@@ -881,7 +1031,10 @@ impl WebCompiler {
                     .and_then(|n| n.to_str())
                     .unwrap_or(js_file);
                 let mod_alias = format!("_custom_mod{}", idx);
-                js.push_str(&format!("import * as {} from \"./{}\";\n", mod_alias, file_name));
+                js.push_str(&format!(
+                    "import * as {} from \"./{}\";\n",
+                    mod_alias, file_name
+                ));
                 js.push_str(&format!(
                     "if (typeof window !== 'undefined' && {}) {{\n  for (const [k, v] of Object.entries({})) {{\n    if (k !== 'default' && !(k in window)) window[k] = v;\n  }}\n}}\n",
                     mod_alias, mod_alias
@@ -889,7 +1042,10 @@ impl WebCompiler {
                 for (alias, target) in &self.js_aliases {
                     if target == js_file || target.ends_with(file_name) {
                         js.push_str(&format!("const {} = {};\n", alias, mod_alias));
-                        js.push_str(&format!("if (typeof window !== 'undefined') window.{} = {};\n", alias, mod_alias));
+                        js.push_str(&format!(
+                            "if (typeof window !== 'undefined') window.{} = {};\n",
+                            alias, mod_alias
+                        ));
                     }
                 }
             }
@@ -900,7 +1056,10 @@ impl WebCompiler {
             js.push_str("// Embedded Resource Imports\n");
             for (alias, val_expr) in &self.data_resources {
                 js.push_str(&format!("const {} = {};\n", alias, val_expr));
-                js.push_str(&format!("if (typeof window !== 'undefined') window.{} = {};\n", alias, val_expr));
+                js.push_str(&format!(
+                    "if (typeof window !== 'undefined') window.{} = {};\n",
+                    alias, val_expr
+                ));
             }
             js.push_str("\n");
         }
@@ -1091,7 +1250,9 @@ _initWasm();
         for state_var in &state_vars {
             let mut val_expr = None;
             'found_init: for stmt in &global_stmts {
-                if let Stmt::LetDecl { name, value, .. } | Stmt::ConstDecl { name, value, .. } = stmt {
+                if let Stmt::LetDecl { name, value, .. } | Stmt::ConstDecl { name, value, .. } =
+                    stmt
+                {
                     if name == state_var {
                         val_expr = Some(value.clone());
                         break 'found_init;
@@ -1101,7 +1262,9 @@ _initWasm();
             if val_expr.is_none() {
                 'found_page: for page in &pages {
                     for stmt in &page.func_body {
-                        if let Stmt::LetDecl { name, value, .. } | Stmt::ConstDecl { name, value, .. } = stmt {
+                        if let Stmt::LetDecl { name, value, .. }
+                        | Stmt::ConstDecl { name, value, .. } = stmt
+                        {
                             if name == state_var {
                                 val_expr = Some(value.clone());
                                 break 'found_page;
@@ -1113,7 +1276,9 @@ _initWasm();
             if val_expr.is_none() {
                 'found_comp: for comp in &components {
                     for stmt in &comp.body {
-                        if let Stmt::LetDecl { name, value, .. } | Stmt::ConstDecl { name, value, .. } = stmt {
+                        if let Stmt::LetDecl { name, value, .. }
+                        | Stmt::ConstDecl { name, value, .. } = stmt
+                        {
                             if name == state_var {
                                 val_expr = Some(value.clone());
                                 break 'found_comp;
@@ -1127,36 +1292,87 @@ _initWasm();
             } else {
                 "0".to_string()
             };
-            js.push_str(&format!("_createSignal(\"{}\", {});\n", state_var, init_val_js));
+            js.push_str(&format!(
+                "_createSignal(\"{}\", {});\n",
+                state_var, init_val_js
+            ));
         }
 
         // Global functions & non-state let bindings
         for stmt in &global_stmts {
             match stmt {
-                Stmt::LetDecl { name, value, annotations, .. }
-                | Stmt::ConstDecl { name, value, annotations, .. } => {
-                    let is_state = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("state")) || self.state_vars.contains(name);
+                Stmt::LetDecl {
+                    name,
+                    value,
+                    annotations,
+                    ..
+                }
+                | Stmt::ConstDecl {
+                    name,
+                    value,
+                    annotations,
+                    ..
+                } => {
+                    let is_state = annotations
+                        .iter()
+                        .any(|a| a.name.eq_ignore_ascii_case("state"))
+                        || self.state_vars.contains(name);
                     if !is_state {
                         let val_js = self.expr_to_js(value);
                         js.push_str(&format!("let {} = {};\n", name, val_js));
                     }
                 }
-                Stmt::FuncDecl { name, params, body, annotations, .. } => {
-                    let is_web = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("web"));
-                    let is_page = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("page"));
-                    let is_comp = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("component"));
-                    let is_style = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("style"));
-                    let is_wasm = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("wasm"));
-                    let is_compute = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("compute"));
-                    let is_computed = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("computed"));
+                Stmt::FuncDecl {
+                    name,
+                    params,
+                    body,
+                    annotations,
+                    ..
+                } => {
+                    let is_web = annotations
+                        .iter()
+                        .any(|a| a.name.eq_ignore_ascii_case("web"));
+                    let is_page = annotations
+                        .iter()
+                        .any(|a| a.name.eq_ignore_ascii_case("page"));
+                    let is_comp = annotations
+                        .iter()
+                        .any(|a| a.name.eq_ignore_ascii_case("component"));
+                    let is_style = annotations
+                        .iter()
+                        .any(|a| a.name.eq_ignore_ascii_case("style"));
+                    let is_wasm = annotations
+                        .iter()
+                        .any(|a| a.name.eq_ignore_ascii_case("wasm"));
+                    let is_compute = annotations
+                        .iter()
+                        .any(|a| a.name.eq_ignore_ascii_case("compute"));
+                    let is_computed = annotations
+                        .iter()
+                        .any(|a| a.name.eq_ignore_ascii_case("computed"));
+
+                    if body.is_none()
+                        || annotations
+                            .iter()
+                            .any(|a| crate::parser::is_test_annotation(&a.name))
+                    {
+                        continue;
+                    }
 
                     if !is_web && !is_page && !is_comp && !is_style {
                         let is_async = Self::body_has_await(body.as_deref().unwrap_or(&[]));
                         let async_prefix = if is_async { "async " } else { "" };
-                        let param_str = params.iter().map(|p| p.name.clone()).collect::<Vec<_>>().join(", ");
+                        let param_str = params
+                            .iter()
+                            .map(|p| p.name.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ");
                         if is_wasm {
                             let fallback_name = format!("_fallback_{}", name);
-                            js.push_str(&format!("\n{}function {}({}) {{\n", async_prefix, fallback_name, param_str));
+                            js.push_str(&format!(
+                                "\n{}function {}({}) {{\n",
+                                async_prefix, fallback_name, param_str
+                            ));
                             if let Some(body_stmts) = body {
                                 for b in body_stmts {
                                     self.compile_stmt(b, &mut js, 1);
@@ -1175,7 +1391,10 @@ _initWasm();
                             } else {
                                 ""
                             };
-                            js.push_str(&format!("\n{}{}function {}({}) {{\n", comment, async_prefix, name, param_str));
+                            js.push_str(&format!(
+                                "\n{}{}function {}({}) {{\n",
+                                comment, async_prefix, name, param_str
+                            ));
                             if let Some(body_stmts) = body {
                                 for b in body_stmts {
                                     self.compile_stmt(b, &mut js, 1);
@@ -1211,7 +1430,10 @@ _initWasm();
             let is_async = Self::body_has_await(&comp.body);
             let async_prefix = if is_async { "async " } else { "" };
             if !comp.params.is_empty() {
-                js.push_str(&format!("\n{}function {}(_props) {{\n", async_prefix, comp_name));
+                js.push_str(&format!(
+                    "\n{}function {}(_props) {{\n",
+                    async_prefix, comp_name
+                ));
                 for (idx, p) in comp.params.iter().enumerate() {
                     js.push_str(&format!(
                         "  let {} = (_props && typeof _props === 'object' && !Array.isArray(_props) && !(typeof Node !== 'undefined' && _props instanceof Node) && _props.constructor === Object && _props[\"{}\"] !== undefined) ? _props[\"{}\"] : arguments[{}];\n",
@@ -1251,7 +1473,10 @@ _initWasm();
             }
 
             if !returned_elem {
-                js.push_str(&format!("  const {} = document.createElement(\"div\");\n", root_var));
+                js.push_str(&format!(
+                    "  const {} = document.createElement(\"div\");\n",
+                    root_var
+                ));
                 js.push_str(&format!("  return {};\n", root_var));
             }
             js.push_str("}\n");
@@ -1265,7 +1490,10 @@ _initWasm();
             let func_name = format!("_render_page_{}", page.func_name);
             js.push_str(&format!("\n{}function {}() {{\n", async_prefix, func_name));
             if !page.title.is_empty() {
-                js.push_str(&format!("  document.title = \"{}\";\n", page.title.replace('"', "\\\"")));
+                js.push_str(&format!(
+                    "  document.title = \"{}\";\n",
+                    page.title.replace('"', "\\\"")
+                ));
             }
             let mut returned = false;
             for stmt in &page.func_body {
@@ -1299,7 +1527,10 @@ _initWasm();
         js.push_str("const _routes = [\n");
         for page in &self.pages {
             let render_fn = format!("_render_page_{}", page.func_name);
-            js.push_str(&format!("  {{ path: \"{}\", render: {} }},\n", page.path, render_fn));
+            js.push_str(&format!(
+                "  {{ path: \"{}\", render: {} }},\n",
+                page.path, render_fn
+            ));
         }
         js.push_str("];\n\n");
 
@@ -1345,12 +1576,21 @@ if (document.readyState === "loading") {
     fn stmt_has_await(stmt: &Stmt) -> bool {
         match stmt {
             Stmt::ExprStmt(e) => Self::expr_has_await(e),
-            Stmt::LetDecl { value, .. } | Stmt::ConstDecl { value, .. } => Self::expr_has_await(value),
+            Stmt::LetDecl { value, .. } | Stmt::ConstDecl { value, .. } => {
+                Self::expr_has_await(value)
+            }
             Stmt::ReturnStmt(opt, _) => opt.as_ref().map_or(false, Self::expr_has_await),
-            Stmt::IfStmt { cond, then_branch, else_branch, .. } => {
+            Stmt::IfStmt {
+                cond,
+                then_branch,
+                else_branch,
+                ..
+            } => {
                 Self::expr_has_await(cond)
                     || then_branch.iter().any(Self::stmt_has_await)
-                    || else_branch.as_ref().map_or(false, |b| b.iter().any(Self::stmt_has_await))
+                    || else_branch
+                        .as_ref()
+                        .map_or(false, |b| b.iter().any(Self::stmt_has_await))
             }
             Stmt::WhileStmt { cond, body, .. } => {
                 Self::expr_has_await(cond) || body.iter().any(Self::stmt_has_await)
@@ -1373,18 +1613,23 @@ if (document.readyState === "loading") {
                 Self::expr_has_await(callee) || args.iter().any(|(_, e)| Self::expr_has_await(e))
             }
             Expr::Dot(obj, _, _) | Expr::SafeDot(obj, _, _) => Self::expr_has_await(obj),
-            Expr::Index(obj, idx, _) => {
-                Self::expr_has_await(obj) || Self::expr_has_await(idx)
-            }
+            Expr::Index(obj, idx, _) => Self::expr_has_await(obj) || Self::expr_has_await(idx),
             Expr::VectorLiteral(elements, _) | Expr::Tuple(elements, _) => {
                 elements.iter().any(Self::expr_has_await)
             }
             Expr::Block(stmts, _) => stmts.iter().any(Self::stmt_has_await),
             Expr::Closure { body, .. } => body.iter().any(Self::stmt_has_await),
-            Expr::If { cond, then_branch, else_branch, .. } => {
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+                ..
+            } => {
                 Self::expr_has_await(cond)
                     || Self::expr_has_await(then_branch)
-                    || else_branch.as_ref().map_or(false, |e| Self::expr_has_await(e))
+                    || else_branch
+                        .as_ref()
+                        .map_or(false, |e| Self::expr_has_await(e))
             }
             _ => false,
         }
@@ -1396,8 +1641,22 @@ if (document.readyState === "loading") {
             Stmt::ExportDecl(inner, _) => {
                 self.compile_stmt(inner, out, indent);
             }
-            Stmt::LetDecl { name, value, annotations, .. } | Stmt::ConstDecl { name, value, annotations, .. } => {
-                let is_state = annotations.iter().any(|a| a.name.eq_ignore_ascii_case("state")) || self.state_vars.contains(name);
+            Stmt::LetDecl {
+                name,
+                value,
+                annotations,
+                ..
+            }
+            | Stmt::ConstDecl {
+                name,
+                value,
+                annotations,
+                ..
+            } => {
+                let is_state = annotations
+                    .iter()
+                    .any(|a| a.name.eq_ignore_ascii_case("state"))
+                    || self.state_vars.contains(name);
                 if !is_state {
                     let val_js = self.expr_to_js(value);
                     out.push_str(&format!("{pad}let {} = {};\n", name, val_js));
@@ -1415,7 +1674,12 @@ if (document.readyState === "loading") {
                     out.push_str(&format!("{pad}return;\n"));
                 }
             }
-            Stmt::IfStmt { cond, then_branch, else_branch, .. } => {
+            Stmt::IfStmt {
+                cond,
+                then_branch,
+                else_branch,
+                ..
+            } => {
                 let cond_js = self.expr_to_js(cond);
                 out.push_str(&format!("{pad}if ({}) {{\n", cond_js));
                 for s in then_branch {
@@ -1437,9 +1701,17 @@ if (document.readyState === "loading") {
                 }
                 out.push_str(&format!("{pad}}}\n"));
             }
-            Stmt::ForStmt { var_name, iterable, body, .. } => {
+            Stmt::ForStmt {
+                var_name,
+                iterable,
+                body,
+                ..
+            } => {
                 let iter_js = self.expr_to_js(iterable);
-                out.push_str(&format!("{pad}for (const {} of {}) {{\n", var_name, iter_js));
+                out.push_str(&format!(
+                    "{pad}for (const {} of {}) {{\n",
+                    var_name, iter_js
+                ));
                 for s in body {
                     self.compile_stmt(s, out, indent + 1);
                 }
@@ -1458,7 +1730,12 @@ if (document.readyState === "loading") {
     ) -> String {
         let pad = "  ".repeat(indent);
         match expr {
-            Expr::JsxElement { tag, attributes, children, .. } => {
+            Expr::JsxElement {
+                tag,
+                attributes,
+                children,
+                ..
+            } => {
                 // If tag starts with uppercase, treat as custom component call
                 let is_custom_component = tag.chars().next().map_or(false, |c| c.is_uppercase());
                 if is_custom_component {
@@ -1510,7 +1787,8 @@ if (document.readyState === "loading") {
                                         "{pad}{}.addEventListener(\"{}\", {}(event) => {{\n{}{pad}}});\n",
                                         el_var, evt_name, async_prefix, body_str
                                     ));
-                                    if evt_name == "change" && (tag == "input" || tag == "textarea") {
+                                    if evt_name == "change" && (tag == "input" || tag == "textarea")
+                                    {
                                         out.push_str(&format!(
                                             "{pad}{}.addEventListener(\"input\", {}(event) => {{\n{}{pad}}});\n",
                                             el_var, async_prefix, body_str
@@ -1523,7 +1801,11 @@ if (document.readyState === "loading") {
                                     let param_str = if params.is_empty() {
                                         "event".to_string()
                                     } else {
-                                        params.iter().map(|p| p.name.clone()).collect::<Vec<_>>().join(", ")
+                                        params
+                                            .iter()
+                                            .map(|p| p.name.clone())
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
                                     };
                                     let mut body_str = String::new();
                                     for s in body {
@@ -1533,19 +1815,23 @@ if (document.readyState === "loading") {
                                         "{pad}{}.addEventListener(\"{}\", {}({}) => {{\n{}{pad}}});\n",
                                         el_var, evt_name, async_prefix, param_str, body_str
                                     ));
-                                    if evt_name == "change" && (tag == "input" || tag == "textarea") {
+                                    if evt_name == "change" && (tag == "input" || tag == "textarea")
+                                    {
                                         out.push_str(&format!(
                                             "{pad}{}.addEventListener(\"input\", {}({}) => {{\n{}{pad}}});\n",
                                             el_var, async_prefix, param_str, body_str
                                         ));
                                     }
                                 }
-                                Expr::Identifier(fn_name, _) if !self.state_vars.contains(fn_name) => {
+                                Expr::Identifier(fn_name, _)
+                                    if !self.state_vars.contains(fn_name) =>
+                                {
                                     out.push_str(&format!(
                                         "{pad}{}.addEventListener(\"{}\", (event) => {{ {}(event); }});\n",
                                         el_var, evt_name, fn_name
                                     ));
-                                    if evt_name == "change" && (tag == "input" || tag == "textarea") {
+                                    if evt_name == "change" && (tag == "input" || tag == "textarea")
+                                    {
                                         out.push_str(&format!(
                                             "{pad}{}.addEventListener(\"input\", (event) => {{ {}(event); }});\n",
                                             el_var, fn_name
@@ -1558,7 +1844,8 @@ if (document.readyState === "loading") {
                                         "{pad}{}.addEventListener(\"{}\", (event) => {{ ({}); }});\n",
                                         el_var, evt_name, handler_js
                                     ));
-                                    if evt_name == "change" && (tag == "input" || tag == "textarea") {
+                                    if evt_name == "change" && (tag == "input" || tag == "textarea")
+                                    {
                                         out.push_str(&format!(
                                             "{pad}{}.addEventListener(\"input\", (event) => {{ ({}); }});\n",
                                             el_var, handler_js
@@ -1608,11 +1895,17 @@ if (document.readyState === "loading") {
                             if attr.name == "class" {
                                 out.push_str(&format!("{pad}{}.className = {};\n", el_var, val_js));
                             } else if attr.name == "style" {
-                                out.push_str(&format!("{pad}{}.style.cssText = {};\n", el_var, val_js));
+                                out.push_str(&format!(
+                                    "{pad}{}.style.cssText = {};\n",
+                                    el_var, val_js
+                                ));
                             } else if attr.name == "value" {
                                 out.push_str(&format!("{pad}{}.value = {};\n", el_var, val_js));
                             } else if attr.name == "checked" {
-                                out.push_str(&format!("{pad}{}.checked = Boolean({});\n", el_var, val_js));
+                                out.push_str(&format!(
+                                    "{pad}{}.checked = Boolean({});\n",
+                                    el_var, val_js
+                                ));
                             } else {
                                 out.push_str(&format!(
                                     "{pad}{}.setAttribute(\"{}\", {});\n",
@@ -1692,10 +1985,7 @@ if (document.readyState === "loading") {
                         update_fn, expr_js, t_var
                     ));
                     for s in &refs {
-                        out.push_str(&format!(
-                            "{pad}_subscribe(\"{}\", {});\n",
-                            s, update_fn
-                        ));
+                        out.push_str(&format!("{pad}_subscribe(\"{}\", {});\n", s, update_fn));
                     }
                     out.push_str(&format!("{pad}{}();\n", update_fn));
                     out.push_str(&format!("{pad}{}.appendChild({});\n", parent_var, t_var));
@@ -1703,7 +1993,10 @@ if (document.readyState === "loading") {
                     let val_temp = format!("_val{}", self.var_counter);
                     self.var_counter += 1;
                     out.push_str(&format!("{pad}let {} = {};\n", val_temp, expr_js));
-                    out.push_str(&format!("{pad}if (typeof {val} === 'function') {val} = {val}();\n", val = val_temp));
+                    out.push_str(&format!(
+                        "{pad}if (typeof {val} === 'function') {val} = {val}();\n",
+                        val = val_temp
+                    ));
                     out.push_str(&format!(
                         "{pad}if (typeof {val} === 'object' && {val} instanceof Node) {{\n{pad}  {el}.appendChild({val});\n{pad}}} else if (Array.isArray({val}) || ({val} && typeof {val} !== 'string' && typeof {val}[Symbol.iterator] === 'function')) {{\n{pad}  for (const _item of {val}) {{\n{pad}    if (typeof _item === 'object' && _item instanceof Node) {{\n{pad}      {el}.appendChild(_item);\n{pad}    }} else {{\n{pad}      {el}.appendChild(document.createTextNode(String(_item)));\n{pad}    }}\n{pad}  }}\n{pad}}} else {{\n{pad}  {el}.appendChild(document.createTextNode(String({val})));\n{pad}}}\n",
                         val = val_temp,
@@ -1828,7 +2121,12 @@ if (document.readyState === "loading") {
                 self.collect_states(value, set);
             }
             Stmt::ReturnStmt(Some(expr), _) => self.collect_states(expr, set),
-            Stmt::IfStmt { cond, then_branch, else_branch, .. } => {
+            Stmt::IfStmt {
+                cond,
+                then_branch,
+                else_branch,
+                ..
+            } => {
                 self.collect_states(cond, set);
                 for s in then_branch {
                     self.collect_states_in_stmt(s, set);
@@ -1876,8 +2174,6 @@ if (document.readyState === "loading") {
             }
         }
     }
-
-
 
     pub fn compile_wasm(&mut self) {
         if !self.wasm_functions.is_empty() {
@@ -1946,12 +2242,24 @@ if (document.readyState === "loading") {
                     if self.state_vars.contains(id) {
                         let r_js = self.expr_to_js(right);
                         match op {
-                            crate::parser::BinaryOp::Assign => return format!("_setSignal(\"{}\", {})", id, r_js),
-                            crate::parser::BinaryOp::PlusAssign => return format!("_setSignal(\"{}\", s => s + ({}))", id, r_js),
-                            crate::parser::BinaryOp::MinusAssign => return format!("_setSignal(\"{}\", s => s - ({}))", id, r_js),
-                            crate::parser::BinaryOp::MulAssign => return format!("_setSignal(\"{}\", s => s * ({}))", id, r_js),
-                            crate::parser::BinaryOp::DivAssign => return format!("_setSignal(\"{}\", s => s / ({}))", id, r_js),
-                            crate::parser::BinaryOp::ModAssign => return format!("_setSignal(\"{}\", s => s % ({}))", id, r_js),
+                            crate::parser::BinaryOp::Assign => {
+                                return format!("_setSignal(\"{}\", {})", id, r_js);
+                            }
+                            crate::parser::BinaryOp::PlusAssign => {
+                                return format!("_setSignal(\"{}\", s => s + ({}))", id, r_js);
+                            }
+                            crate::parser::BinaryOp::MinusAssign => {
+                                return format!("_setSignal(\"{}\", s => s - ({}))", id, r_js);
+                            }
+                            crate::parser::BinaryOp::MulAssign => {
+                                return format!("_setSignal(\"{}\", s => s * ({}))", id, r_js);
+                            }
+                            crate::parser::BinaryOp::DivAssign => {
+                                return format!("_setSignal(\"{}\", s => s / ({}))", id, r_js);
+                            }
+                            crate::parser::BinaryOp::ModAssign => {
+                                return format!("_setSignal(\"{}\", s => s % ({}))", id, r_js);
+                            }
                             _ => {}
                         }
                     }
@@ -2031,7 +2339,11 @@ if (document.readyState === "loading") {
             Expr::Closure { params, body, .. } => {
                 let is_async = Self::body_has_await(body);
                 let async_prefix = if is_async { "async " } else { "" };
-                let param_str = params.iter().map(|p| p.name.clone()).collect::<Vec<_>>().join(", ");
+                let param_str = params
+                    .iter()
+                    .map(|p| p.name.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 let mut body_str = String::new();
                 for s in body {
                     self.compile_stmt(s, &mut body_str, 2);
@@ -2052,7 +2364,13 @@ if (document.readyState === "loading") {
                 for seg in segments {
                     match seg {
                         crate::parser::InterpolatedSegment::Text(t) => {
-                            parts.push(format!("\"{}\"", t.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r")));
+                            parts.push(format!(
+                                "\"{}\"",
+                                t.replace('\\', "\\\\")
+                                    .replace('"', "\\\"")
+                                    .replace('\n', "\\n")
+                                    .replace('\r', "\\r")
+                            ));
                         }
                         crate::parser::InterpolatedSegment::Expr(e) => {
                             let e_js = self.expr_to_js(e);
@@ -2101,7 +2419,12 @@ if (document.readyState === "loading") {
             Expr::Borrow(inner, _, _) => self.expr_to_js(inner),
             Expr::Cast(inner, _, _) => self.expr_to_js(inner),
             Expr::ThreadSpawn(inner, _) => self.expr_to_js(inner),
-            Expr::If { cond, then_branch, else_branch, .. } => {
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+                ..
+            } => {
                 let cond_js = self.expr_to_js(cond);
                 let then_js = self.expr_to_js(then_branch);
                 let else_js = if let Some(el) = else_branch {
@@ -2122,10 +2445,17 @@ fn collect_fm_files(dir: &Path, files: &mut Vec<PathBuf>) {
             let p = entry.path();
             if p.is_dir() {
                 let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if !name.starts_with('.') && name != "dist" && name != "target" && name != "node_modules" {
+                if !name.starts_with('.')
+                    && name != "dist"
+                    && name != "target"
+                    && name != "node_modules"
+                {
                     collect_fm_files(&p, files);
                 }
-            } else if p.is_file() && p.extension().map_or(false, |ext| ext == "fm" || ext == "flame") {
+            } else if p.is_file()
+                && p.extension()
+                    .map_or(false, |ext| ext == "fm" || ext == "flame")
+            {
                 files.push(p);
             }
         }
@@ -2212,7 +2542,11 @@ pub fn build_web_project(project_path: &Path) -> Result<WebBuildResult, String> 
             match parser.parse() {
                 Ok(stmts) => all_stmts.extend(stmts),
                 Err(err) => {
-                    eprintln!("\x1b[1;31merror:\x1b[0m failed to parse {}: {}", p.display(), err.message);
+                    eprintln!(
+                        "\x1b[1;31merror:\x1b[0m failed to parse {}: {}",
+                        p.display(),
+                        err.message
+                    );
                     return Err(format!("failed to parse {}: {}", p.display(), err.message));
                 }
             }
@@ -2233,13 +2567,18 @@ pub fn build_web_project(project_path: &Path) -> Result<WebBuildResult, String> 
 
     // Copy custom JS files into dist/
     for js_file in &compiler.custom_js_files {
-        if let Some(cand_path) = resolve_asset_file(js_file, &project_root, &src_dir, &ordered_files) {
+        if let Some(cand_path) =
+            resolve_asset_file(js_file, &project_root, &src_dir, &ordered_files)
+        {
             if let Some(file_name) = cand_path.file_name() {
                 let dist_js_file = dist_dir.join(file_name);
                 let _ = fs::copy(&cand_path, &dist_js_file);
             }
         } else {
-            eprintln!("\x1b[1;33mwarning:\x1b[0m JS file '{}' specified in @Web was not found", js_file);
+            eprintln!(
+                "\x1b[1;33mwarning:\x1b[0m JS file '{}' specified in @Web was not found",
+                js_file
+            );
         }
     }
 
@@ -2283,7 +2622,9 @@ pub fn build_web_project(project_path: &Path) -> Result<WebBuildResult, String> 
 
     // 1. Copy each custom CSS file to dist/<filename> and import it in app.css
     for css_file in &compiler.custom_css_files {
-        if let Some(cand_path) = resolve_asset_file(css_file, &project_root, &src_dir, &ordered_files) {
+        if let Some(cand_path) =
+            resolve_asset_file(css_file, &project_root, &src_dir, &ordered_files)
+        {
             if let Some(file_name_os) = cand_path.file_name() {
                 let file_name = file_name_os.to_string_lossy();
                 let dist_css_file = dist_dir.join(file_name_os);
@@ -2292,7 +2633,10 @@ pub fn build_web_project(project_path: &Path) -> Result<WebBuildResult, String> 
                 css_content.push_str(&format!("@import \"./{}\";\n", file_name));
             }
         } else {
-            eprintln!("\x1b[1;33mwarning:\x1b[0m CSS file '{}' specified in @Web or @Style was not found", css_file);
+            eprintln!(
+                "\x1b[1;33mwarning:\x1b[0m CSS file '{}' specified in @Web or @Style was not found",
+                css_file
+            );
         }
     }
 

@@ -153,18 +153,18 @@ import "scrypt.js" as scrypt
 import "theme.css" as theme
 import "style.css" as style
 
-fn handleExampleSelect(e: Unknown) {
+fn handleExampleSelect(e: Event) {
     // Read DOM event data directly
     let selected = e.target.value
     // Invoke external JS function with arguments
     scrypt.loadExample(selected)
 }
 
-fn handleRunClick(e: Unknown) {
+fn handleRunClick(e: Event) {
     scrypt.runFlameCode()
 }
 
-fn handleClearClick(e: Unknown) {
+fn handleClearClick(e: Event) {
     scrypt.clearEditor()
 }
 
@@ -196,7 +196,7 @@ fn main() {
 
 1. **Static Analysis & Typechecking**:
    - Flame's typechecker inspects `playground.js`, discovers `loadExample(name)`, and registers it under `scrypt.loadExample`.
-   - The IDE displays a single, clean Flame signature (`fn loadExample(name: Unknown) -> Unknown`) with documentation noting `External JavaScript function in playground.js`.
+   - The IDE displays a single, clean Flame signature (`fn loadExample(name: String) -> Nil`) with documentation noting `External JavaScript function in playground.js`.
    - Go-to-Definition on `loadExample` jumps directly to line 1 in `playground.js`.
 2. **ES Module Bundling**:
    - In `dist/app.js`, the compiler generates:
@@ -251,7 +251,7 @@ Defines a shared outer layout wrapper for all pages. Receives `children` as a pa
 
 ```flame
 @Layout
-fn AppLayout(children: Unknown) -> HtmlNode {
+fn AppLayout(children: HtmlNode) -> HtmlNode {
     return (
         <div class="app-layout">
             <NavBar />
@@ -564,21 +564,21 @@ The browser `Document` instance provides DOM querying and node creation:
 - `createTextNode(text: String) -> HtmlNode`
 - `querySelector(selector: String) -> Element`
 - `querySelectorAll(selector: String) -> [Element]`
-- `addEventListener(event: String, handler: Unknown)`
-- `removeEventListener(event: String, handler: Unknown)`
+- `addEventListener(event: String, handler: (Event) -> Nil)`
+- `removeEventListener(event: String, handler: (Event) -> Nil)`
 
 #### `Window` (`web.window`)
 The global browser `Window` instance provides window management, navigation, timers, and dialogs:
-- `addEventListener(event: String, handler: Unknown)`
-- `removeEventListener(event: String, handler: Unknown)`
+- `addEventListener(event: String, handler: (Event) -> Nil)`
+- `removeEventListener(event: String, handler: (Event) -> Nil)`
 - `alert(message: String)`
 - `prompt(message: String, defaultText: String = "") -> String`
 - `confirm(message: String) -> Bool`
-- `setTimeout(callback: Unknown, delayMs: Int) -> Int`
+- `setTimeout(callback: () -> Nil, delayMs: Int) -> Int`
 - `clearTimeout(id: Int)`
-- `setInterval(callback: Unknown, delayMs: Int) -> Int`
+- `setInterval(callback: () -> Nil, delayMs: Int) -> Int`
 - `clearInterval(id: Int)`
-- `requestAnimationFrame(callback: Unknown) -> Int`
+- `requestAnimationFrame(callback: (Float) -> Nil) -> Int`
 - `cancelAnimationFrame(id: Int)`
 - `performance.now() -> Float`
 - `location: Location`
@@ -602,10 +602,10 @@ Interactive DOM element wrapper:
 - `setAttribute(name: String, value: String)`
 - `getAttribute(name: String) -> String`
 - `removeAttribute(name: String)`
-- `appendChild(child: Unknown)`
-- `removeChild(child: Unknown)`
-- `addEventListener(event: String, handler: Unknown)`
-- `removeEventListener(event: String, handler: Unknown)`
+- `appendChild(child: Element)`
+- `removeChild(child: Element)`
+- `addEventListener(event: String, handler: (Event) -> Nil)`
+- `removeEventListener(event: String, handler: (Event) -> Nil)`
 - `focus()`
 - `blur()`
 
@@ -751,7 +751,7 @@ fn main() {
     setupCursor()
 
     @Layout
-    fn AppLayout(children: Unknown) -> HtmlNode {
+    fn AppLayout(children: HtmlNode) -> HtmlNode {
         return (
             <div class="app-layout">
                 <NavBar />

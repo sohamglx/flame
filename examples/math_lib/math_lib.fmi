@@ -1,0 +1,32 @@
+{
+  "module": "math_lib",
+  "kind": "flame",
+  "lib": null,
+  "functions": [
+    {
+      "name": "internal_helper",
+      "flame_name": "internal_helper",
+      "params": [
+        {
+          "name": "x",
+          "type_name": "Int",
+          "is_callback": false,
+          "is_ref": false,
+          "is_mut": false
+        }
+      ],
+      "return_type": "Int",
+      "is_static": false,
+      "is_generic": false,
+      "is_async": false,
+      "is_constructor": false,
+      "persistent_runtime": false,
+      "receiver": null,
+      "docs": null,
+      "requires": [],
+      "permissions": []
+    }
+  ],
+  "structs": [],
+  "docs": null
+}

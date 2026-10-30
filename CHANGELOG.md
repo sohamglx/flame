@@ -2,6 +2,97 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.7.2] - 2026-10-30 (Codename: *Seventh Spark*)
+
+### 🛡️ Advanced Borrow Checker, Sub-Path Tracking & Memory Safety System
+
+- **Disjoint Struct Field Borrowing (`Place` & `Projection`)**:
+  - Upgraded place representation in [src/typechecker/borrow.rs](src/typechecker/borrow.rs) from flat variables to a structured `Place { root: String, projections: Vec<Projection> }` supporting `Projection::Field`, `Projection::Index`, and `Projection::Deref`.
+  - Borrowing distinct fields on the same struct instance simultaneously (e.g. `let r1 = &mut u.first_name; let r2 = &mut u.last_name`) is now recognized as disjoint and memory-safe:
+    ```flame
+    let mut u = User { first_name: "Alice", last_name: "Smith" }
+    let r1 = &mut u.first_name
+    let r2 = &mut u.last_name // Valid! Disjoint field projections do not conflict
+    ```
+  - Conflicting loans on the exact same field or on a parent place and its field still reliably trigger compile-time and runtime diagnostics (`[E0499]`: `cannot borrow 'u.first_name' as mutable more than once at a time`).
+
+- **Scalar Primitive `Copy` Semantics (`is_copy_type`)**:
+  - Primitive scalar types (`Int`, `Float`, `Bool`, `Byte`, `Nil`) implement Copy semantics; variable assignment copies the value and never triggers a false-positive move or `use of moved value` error.
+  - Non-copy heap types (such as `String`, dynamic collections, and custom structs) continue to enforce single ownership and move semantics strictly.
+
+- **Path-Sensitive Control-Flow & Conditional Move Analysis**:
+  - In `if`/`else` control flow, the borrow checker now snapshots state before entering branches:
+    - A variable moved in only one branch is tracked as `conditionally_moved`.
+    - If moved along both branches, it is marked unconditionally moved.
+  - Eliminates false-positive move leakage across mutually exclusive execution paths while correctly rejecting uses of values moved along all paths.
+
+- **Loop Invariant & Back-Edge Move Safety (`while` loops)**:
+  - Prohibits moving non-Copy variables declared outside a loop inside the loop body (`cannot move out of '<name>' in a loop`).
+  - Diagnostic specifically notes that moving the variable causes a use-after-move on subsequent iterations, suggesting `&` borrow or `.clone()` instead.
+
+- **Place Reassignment Ownership Restoration**:
+  - Reassigning to a moved variable (`x = new_val`) restores active ownership to the place, permitting subsequent reads, moves, and borrows.
+
+- **Comprehensive 14/14 Memory Safety Verification Suite (`tests/memory/test_borrow_checker.fm`)**:
+  - Validates all positive cases (disjoint borrows, primitive copy, control-flow reinitialization, if-expression value production, optional types) and negative cases under `@ExpectPanic` (use-after-move, loop back-edge moves, conflicting mutable field borrows, returning reference to local, simultaneous mutable and immutable borrows, two mutable references, dangling reference outliving owner).
+
+### ⚡ Async/Await Expression Statements, Rust Double-Colon Paths & Receiver-Aware Signatures
+
+- **Expression Statement Semantics for `Nil`-Returning Functions**:
+  - Fixed return-type mismatch error (`type mismatch in return value: expected Nil, found ...`) when awaiting or calling functions at the end of a void function (such as `await flamer.listen()`).
+  - In Flame's newline-delimited syntax, trailing effect statements (`Expr::Call`, `Expr::Await`, `Expr::ThreadSpawn`) in a `Nil`-returning function discard their return values without requiring manual assignment or an explicit dummy return.
+
+- **Preservation of Rust Path Types (`::`) in Native FMI Interop**:
+  - Fixed type name parser in [src/typechecker/helpers.rs](src/typechecker/helpers.rs) (`parse_type_name`) to distinguish Rust namespace double colons `::` from closure parameter name separators (`:`).
+  - Rust path types like `std::io::Result<()>`, `std::sync::Arc<T>`, and `tokio::task::JoinHandle<()>` are parsed and formatted without losing their `std::` or namespace prefixes, eliminating `:io::Result<()>` prefix truncation.
+
+- **Receiver-Aware IDE Signature Help & Method Resolution**:
+  - In [src/cli/ide.rs](src/cli/ide.rs), signature help on method calls (`receiver.method()`, e.g. `flamer.get(...)`) now resolves against the receiver's concrete type (e.g. `FlamerServer`) and its native `.fmi` / AST methods.
+  - Prevents leaking global functions with identical names (such as `std.env.get(key: String) -> String`).
+  - Added backwards multiline call scanning for nested or multi-line chained calls.
+
+- **Transitive `.fmi` Package Import Resolution**:
+  - Enabled recursive native `.fmi` interface parsing and symbol loading for package dependencies in [src/typechecker/stmts.rs](src/typechecker/stmts.rs) even when `is_importing` is active.
+
+### 🔥 Long-Running Daemon Multi-Threaded Runtime & Entrypoint Injections
+
+- **Persistent Multi-Threaded Daemon Runtime**:
+  - Invoking `.listen()` engages `vm::set_event_loop_active(true)`, keeping multi-threaded servers active (e.g. `@Flamer(port: 3000)`) with graceful `Ctrl+C` interrupt handling.
+
+- **Entry Point Detection for Server & Daemon Annotations**:
+  - Automatically detects `@Flamer`, `@Server`, `@Daemon`, and `@App` annotations on `async fn main()` and executes the server entrypoint without requiring manual boilerplate.
+
+### ⚡ Universal Unknown Dynamic Typing, Project Auto-Discovery & Dual Byte/Bytes Architecture
+
+- **Dynamic `Unknown` Type for Built-in Signatures (Eliminating Generic `<T>`)**:
+  - Standardized universal built-in functions (`println`, `print`, `eprint`, `assertEq`, `assertNe`, `mockFunction`, etc.) to use `value: Unknown = ""` instead of generic `<T>(value: T)`.
+  - Flame uses `Unknown` as its dynamic type (compile-time and runtime), avoiding generic signature pollution on fundamental I/O and assertion functions.
+  - Calling `println()` with zero arguments prints an empty line as expected.
+  - Aligned [Blaze/std/builtins.fm](Blaze/std/builtins.fm) and [src/typechecker/builtins.rs](src/typechecker/builtins.rs) with canonical `fn println(value: Unknown = "")` hover docs.
+
+- **Standard Library Built-in Autocompletions in IDE**:
+  - Integrated `BLAZE_BUILTINS` into IDE bare-word autocompletion (`println`, `print`, `eprint`, `assert`, `assertEq`, `assertNe`, `assertTrue`, `assertFalse`, `panic`, `range`, `input`, `len`, `isEmpty`, etc.) with top sorting priority (`0_`) and rich documentation.
+  - Elevated `BLAZE_BUILTINS` to module scope in [src/ide/keywords.rs](src/ide/keywords.rs) for unified hover doc and autocompletion resolution.
+
+- **Automatic `flame.toml` Project Discovery in CLI & IDE**:
+  - Resolved `error: no flame.toml manifest file found in the current directory` when running or debugging files in nested project directories (e.g. `fmp run examples/demo_app/src/main.fm` from workspace root).
+  - In [ide/extension.js](ide/extension.js), implemented `findProjectDir(filePath)` which searches ancestor directories for `flame.toml` and automatically issues `cd "<projectDir>" && fmp run ...` or `fmp test ...` in the integrated terminal.
+  - In CLI commands ([src/cli/commands/run.rs](src/cli/commands/run.rs) and [src/cli/commands/test.rs](src/cli/commands/test.rs)), added ancestor directory lookup to automatically locate `flame.toml` and adjust working directory when invoked outside the project root.
+
+- **Dual Distinct `Byte` and `Bytes` Architecture**:
+  - Maintained clear architectural distinction between `Byte` (single 8-bit unsigned value, runtime `"Byte"`) and `Bytes` (contiguous dynamic byte buffer, runtime `"Bytes"`).
+  - Supported buffer and byte methods (`toHex`, `toBase64`, `toUtf8`, `tryUtf8`, `concat`, `len`, `type`) seamlessly across VM runtime and typechecker.
+  - Updated standard library tests in [tests/stdlib/test_features.fm](tests/stdlib/test_features.fm) to validate both `Bytes` buffers and single `Byte` primitives.
+
+- **IDE Hover & Symbol Scope Precision**:
+  - Resolved hover collision where chained calls like `.type()` clobbered hover documentation for callee expressions like `.concat()`.
+  - Removed aggressive regex parameter scanning in [src/ide/scanner.rs](src/ide/scanner.rs) that polluted the global variable scope.
+  - Refined parameter definition lookups in [src/ide/definition.rs](src/ide/definition.rs) to pinpoint exact column locations on signature lines.
+
+- **Single Test Filtering & Interactive CodeLens (`fmp test -f <name>`)**:
+  - Added `--filter <name>` (`-f <name>`) flag to CLI `fmp test` to filter and execute specific test functions.
+  - Added `▶︎ Run Test` and `⚙︎ Debug` CodeLens and Hover action buttons directly above `@Test` functions in the IDE.
+
 ## [0.7.1] - 2026-10-13 (Codename: *Seventh Spark - Patch 1*)
 
 ### ⚡ Daemon Runtimes, Annotation Scope Inference & IDE Autocomplete Ergonomics

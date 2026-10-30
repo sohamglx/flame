@@ -12,11 +12,28 @@ use super::test::collect_fm_files;
 
 pub fn run_file(path_str: &str, force_local: bool, script_args: &[String]) {
     let start_time = std::time::Instant::now();
-    let path = Path::new(path_str);
+    let initial_path = Path::new(path_str);
+    let mut resolved_path_str = path_str.to_string();
+
+    if !Path::new("flame.toml").exists() {
+        let mut curr = initial_path.parent();
+        while let Some(dir) = curr {
+            if dir.join("flame.toml").exists() {
+                if let Ok(rel) = initial_path.strip_prefix(dir) {
+                    resolved_path_str = rel.to_string_lossy().to_string();
+                }
+                let _ = std::env::set_current_dir(dir);
+                break;
+            }
+            curr = dir.parent();
+        }
+    }
+
+    let path = Path::new(&resolved_path_str);
     if !path.exists() {
         println!(
             "\x1b[1;31merror:\x1b[0m source file '{}' not found",
-            path_str
+            resolved_path_str
         );
         return;
     }
@@ -63,7 +80,7 @@ pub fn run_file(path_str: &str, force_local: bool, script_args: &[String]) {
     };
 
     let mut child = Command::new(&exe_path)
-        .env("FLAME_ENTRY_FILE", path_str)
+        .env("FLAME_ENTRY_FILE", &resolved_path_str)
         .args(script_args)
         .spawn()
         .expect("Failed to execute generated binary");
@@ -94,6 +111,23 @@ pub fn run_file(path_str: &str, force_local: bool, script_args: &[String]) {
 pub fn run_file_watch(path_str: &str, force_local: bool, script_args: &[String]) {
     println!("\x1b[1;36m    Watching\x1b[0m for changes in src/ and flame.toml (Ctrl+C to exit)...");
 
+    let initial_path = Path::new(path_str);
+    let mut resolved_path_str = path_str.to_string();
+
+    if !Path::new("flame.toml").exists() {
+        let mut curr = initial_path.parent();
+        while let Some(dir) = curr {
+            if dir.join("flame.toml").exists() {
+                if let Ok(rel) = initial_path.strip_prefix(dir) {
+                    resolved_path_str = rel.to_string_lossy().to_string();
+                }
+                let _ = std::env::set_current_dir(dir);
+                break;
+            }
+            curr = dir.parent();
+        }
+    }
+
     let pkg_name = get_manifest_pkg_name();
     let profile = "dev";
     let ext = std::env::consts::EXE_SUFFIX;
@@ -117,7 +151,7 @@ pub fn run_file_watch(path_str: &str, force_local: bool, script_args: &[String])
 
     let spawn_process = |exe: &Path| -> Option<std::process::Child> {
         Command::new(exe)
-            .env("FLAME_ENTRY_FILE", path_str)
+            .env("FLAME_ENTRY_FILE", &resolved_path_str)
             .args(script_args)
             .spawn()
             .ok()

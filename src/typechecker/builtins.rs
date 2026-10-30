@@ -10,83 +10,114 @@ impl TypeChecker {
         self.functions.insert(
             "print".to_string(),
             FunctionSig {
+                is_declaration: false,
+                is_async: false,
                 is_static: false,
                 params: vec![ParamInfo {
                     name: "value".to_string(),
-                    ty: Type::Unknown,
+                    ty: Type::Named("T".to_string()),
                     is_ref: false,
                     is_mut: false,
-                    has_default: false,
+                    has_default: true,
                 }],
-                hover_doc: Some("Prints a value to standard output without a newline.".to_string()),
+                hover_doc: Some("Prints a value to standard output without trailing newline.\n\n```flame\nfn print<T>(value: T = \"\")\n```\n\n**Example:**\n```flame\nprint(\"Processing...\")\n```".to_string()),
                 return_type: Type::Nil,
-                generic_params: Vec::new(),
+                generic_params: vec![crate::parser::GenericParam {
+                    name: "T".to_string(),
+                    bounds: Vec::new(),
+                    span: crate::lexer::Span::dummy(),
+                }],
             },
         );
         self.functions.insert(
             "eprint".to_string(),
             FunctionSig {
+                is_declaration: false,
+                is_async: false,
                 is_static: false,
                 params: vec![ParamInfo {
                     name: "value".to_string(),
-                    ty: Type::Unknown,
+                    ty: Type::Named("T".to_string()),
                     is_ref: false,
                     is_mut: false,
-                    has_default: false,
+                    has_default: true,
                 }],
-                hover_doc: Some("Prints a value to standard error without a newline.".to_string()),
+                hover_doc: Some("Prints a value to standard error.\n\n```flame\nfn eprint<T>(value: T = \"\")\n```\n\n**Example:**\n```flame\neprint(\"Error: operation failed\")\n```".to_string()),
                 return_type: Type::Nil,
-                generic_params: Vec::new(),
+                generic_params: vec![crate::parser::GenericParam {
+                    name: "T".to_string(),
+                    bounds: Vec::new(),
+                    span: crate::lexer::Span::dummy(),
+                }],
             },
         );
         self.functions.insert(
             "println".to_string(),
             FunctionSig {
+                is_declaration: false,
+                is_async: false,
                 is_static: false,
                 params: vec![ParamInfo {
                     name: "value".to_string(),
-                    ty: Type::Unknown,
+                    ty: Type::Named("T".to_string()),
                     is_ref: false,
                     is_mut: false,
-                    has_default: false,
+                    has_default: true,
                 }],
                 hover_doc: Some(
-                    "Prints a value to standard output, followed by a newline.".to_string(),
+                    "Prints a value to standard output followed by a newline.\n\n```flame\nfn println<T>(value: T = \"\")\n```\n\n**Example:**\n```flame\nprintln(\"Hello, Flame!\")\n```".to_string(),
                 ),
                 return_type: Type::Nil,
-                generic_params: Vec::new(),
+                generic_params: vec![crate::parser::GenericParam {
+                    name: "T".to_string(),
+                    bounds: Vec::new(),
+                    span: crate::lexer::Span::dummy(),
+                }],
             },
         );
         self.functions.insert(
             "panic".to_string(),
             FunctionSig {
+                is_declaration: false,
+                is_async: false,
                 is_static: false,
                 params: vec![ParamInfo {
                     name: "message".to_string(),
-                    ty: Type::Unknown,
+                    ty: Type::String,
                     is_ref: false,
                     is_mut: false,
                     has_default: false,
                 }],
                 hover_doc: Some(
-                    "Terminates the program immediately with an error message.".to_string(),
+                    "Terminates the program immediately with an error message.\n\n```flame\nfn panic(message: String)\n```".to_string(),
                 ),
-                return_type: Type::Unknown,
+                return_type: Type::Nil,
                 generic_params: Vec::new(),
             },
         );
         self.functions.insert(
             "assert".to_string(),
             FunctionSig {
+                is_declaration: false,
+                is_async: false,
                 is_static: false,
-                params: vec![ParamInfo {
-                    name: "condition".to_string(),
-                    ty: Type::Bool,
-                    is_ref: false,
-                    is_mut: false,
-                    has_default: false,
-                }],
-                hover_doc: Some("Asserts that a condition is true. Panics if false.".to_string()),
+                params: vec![
+                    ParamInfo {
+                        name: "condition".to_string(),
+                        ty: Type::Bool,
+                        is_ref: false,
+                        is_mut: false,
+                        has_default: false,
+                    },
+                    ParamInfo {
+                        name: "msg".to_string(),
+                        ty: Type::Nullable(Box::new(Type::String)),
+                        is_ref: false,
+                        is_mut: false,
+                        has_default: true,
+                    },
+                ],
+                hover_doc: Some("Asserts that `condition` evaluates to `true`. Terminates execution with an optional error message if false.\n\n```flame\nfn assert(condition: Bool, msg: String? = nil)\n```\n\n**Example:**\n```flame\nassert(x > 0)\nassert(x > 0, \"x must be positive\")\n```".to_string()),
                 return_type: Type::Nil,
                 generic_params: Vec::new(),
             },
@@ -94,6 +125,8 @@ impl TypeChecker {
         self.functions.insert(
             "RustServer".to_string(),
             FunctionSig {
+                is_declaration: false,
+                is_async: false,
                 is_static: false,
                 params: vec![ParamInfo {
                     name: "value".to_string(),
@@ -110,6 +143,8 @@ impl TypeChecker {
         self.functions.insert(
             "input".to_string(),
             FunctionSig {
+                is_declaration: false,
+                is_async: false,
                 is_static: false,
                 params: vec![ParamInfo {
                     name: "prompt".to_string(),
@@ -129,120 +164,137 @@ impl TypeChecker {
         self.functions.insert(
             "assertEq".to_string(),
             FunctionSig {
+                is_declaration: false,
+                is_async: false,
                 is_static: false,
                 params: vec![
                     ParamInfo {
                         name: "actual".to_string(),
-                        ty: Type::Unknown,
+                        ty: Type::Named("T".to_string()),
                         is_ref: false,
                         is_mut: false,
-                    has_default: false,
+                        has_default: false,
                     },
                     ParamInfo {
                         name: "expected".to_string(),
-                        ty: Type::Unknown,
+                        ty: Type::Named("T".to_string()),
                         is_ref: false,
                         is_mut: false,
-                    has_default: false,
+                        has_default: false,
                     },
                     ParamInfo {
                         name: "msg".to_string(),
-                        ty: Type::String,
+                        ty: Type::Nullable(Box::new(Type::String)),
                         is_ref: false,
                         is_mut: false,
-                    has_default: false,
+                        has_default: true,
                     },
                 ],
-                hover_doc: Some("Asserts that two values are equal. Panics with the provided message if they are not.".to_string()),
+                hover_doc: Some("Asserts that `actual` equals `expected`. Terminates execution with an optional error message if values differ.\n\n```flame\nfn assertEq<T>(actual: T, expected: T, msg: String? = nil)\n```\n\n**Example:**\n```flame\nassertEq(status_code, 200)\nassertEq(status_code, 200, \"Status must be 200 OK\")\n```".to_string()),
                 return_type: Type::Nil,
-                generic_params: Vec::new(),
+                generic_params: vec![crate::parser::GenericParam {
+                    name: "T".to_string(),
+                    bounds: Vec::new(),
+                    span: crate::lexer::Span::dummy(),
+                }],
             },
         );
         self.functions.insert(
             "assertNe".to_string(),
             FunctionSig {
+                is_declaration: false,
+                is_async: false,
                 is_static: false,
                 params: vec![
                     ParamInfo {
                         name: "actual".to_string(),
-                        ty: Type::Unknown,
+                        ty: Type::Named("T".to_string()),
                         is_ref: false,
                         is_mut: false,
-                    has_default: false,
+                        has_default: false,
                     },
                     ParamInfo {
-                        name: "expected".to_string(),
-                        ty: Type::Unknown,
+                        name: "unexpected".to_string(),
+                        ty: Type::Named("T".to_string()),
                         is_ref: false,
                         is_mut: false,
-                    has_default: false,
-                    },
-                    ParamInfo {
-                        name: "msg".to_string(),
-                        ty: Type::String,
-                        is_ref: false,
-                        is_mut: false,
-                    has_default: false,
-                    },
-                ],
-                hover_doc: Some("Asserts that two values are not equal. Panics with the provided message if they are.".to_string()),
-                return_type: Type::Nil,
-                generic_params: Vec::new(),
-            },
-        );
-        self.functions.insert(
-            "assert_true".to_string(),
-            FunctionSig {
-                is_static: false,
-                params: vec![
-                    ParamInfo {
-                        name: "cond".to_string(),
-                        ty: Type::Bool,
-                        is_ref: false,
-                        is_mut: false,
-                    has_default: false,
+                        has_default: false,
                     },
                     ParamInfo {
                         name: "msg".to_string(),
-                        ty: Type::String,
+                        ty: Type::Nullable(Box::new(Type::String)),
                         is_ref: false,
                         is_mut: false,
-                    has_default: false,
+                        has_default: true,
                     },
                 ],
-                hover_doc: Some("Asserts that a boolean condition is true. Panics with the provided message if false.".to_string()),
+                hover_doc: Some("Asserts that `actual` does NOT equal `unexpected`. Terminates execution with an optional error message if equal.\n\n```flame\nfn assertNe<T>(actual: T, unexpected: T, msg: String? = nil)\n```\n\n**Example:**\n```flame\nassertNe(result, nil)\nassertNe(result, nil, \"Result must not be nil\")\n```".to_string()),
                 return_type: Type::Nil,
-                generic_params: Vec::new(),
+                generic_params: vec![crate::parser::GenericParam {
+                    name: "T".to_string(),
+                    bounds: Vec::new(),
+                    span: crate::lexer::Span::dummy(),
+                }],
             },
         );
-        self.functions.insert(
-            "assert_false".to_string(),
-            FunctionSig {
-                is_static: false,
-                params: vec![
-                    ParamInfo {
-                        name: "cond".to_string(),
-                        ty: Type::Bool,
-                        is_ref: false,
-                        is_mut: false,
+        let assert_true_sig = FunctionSig {
+                is_declaration: false,
+                is_async: false,
+            is_static: false,
+            params: vec![
+                ParamInfo {
+                    name: "cond".to_string(),
+                    ty: Type::Bool,
+                    is_ref: false,
+                    is_mut: false,
                     has_default: false,
-                    },
-                    ParamInfo {
-                        name: "msg".to_string(),
-                        ty: Type::String,
-                        is_ref: false,
-                        is_mut: false,
+                },
+                ParamInfo {
+                    name: "msg".to_string(),
+                    ty: Type::Nullable(Box::new(Type::String)),
+                    is_ref: false,
+                    is_mut: false,
+                    has_default: true,
+                },
+            ],
+            hover_doc: Some("Asserts that a boolean condition is true. Panics with the optional provided message if false.\n\n```flame\nfn assertTrue(cond: Bool, msg: String? = nil)\n```".to_string()),
+            return_type: Type::Nil,
+            generic_params: Vec::new(),
+        };
+        self.functions.insert("assert_true".to_string(), assert_true_sig.clone());
+        self.functions.insert("assertTrue".to_string(), assert_true_sig);
+
+        let assert_false_sig = FunctionSig {
+                is_declaration: false,
+                is_async: false,
+            is_static: false,
+            params: vec![
+                ParamInfo {
+                    name: "cond".to_string(),
+                    ty: Type::Bool,
+                    is_ref: false,
+                    is_mut: false,
                     has_default: false,
-                    },
-                ],
-                hover_doc: Some("Asserts that a boolean condition is false. Panics with the provided message if true.".to_string()),
-                return_type: Type::Nil,
-                generic_params: Vec::new(),
-            },
-        );
+                },
+                ParamInfo {
+                    name: "msg".to_string(),
+                    ty: Type::Nullable(Box::new(Type::String)),
+                    is_ref: false,
+                    is_mut: false,
+                    has_default: true,
+                },
+            ],
+            hover_doc: Some("Asserts that a boolean condition is false. Panics with the optional provided message if true.\n\n```flame\nfn assertFalse(cond: Bool, msg: String? = nil)\n```".to_string()),
+            return_type: Type::Nil,
+            generic_params: Vec::new(),
+        };
+        self.functions.insert("assert_false".to_string(), assert_false_sig.clone());
+        self.functions.insert("assertFalse".to_string(), assert_false_sig);
         self.functions.insert(
             "mock_api".to_string(),
             FunctionSig {
+                is_declaration: false,
+                is_async: false,
                 is_static: false,
                 params: vec![],
                 hover_doc: Some("Mocks an API endpoint for testing purposes.".to_string()),
@@ -253,6 +305,8 @@ impl TypeChecker {
         self.functions.insert(
             "mock_data".to_string(),
             FunctionSig {
+                is_declaration: false,
+                is_async: false,
                 is_static: false,
                 params: vec![],
                 hover_doc: Some("Returns mock data for testing purposes.".to_string()),
@@ -261,20 +315,111 @@ impl TypeChecker {
             },
         );
         self.functions.insert(
-            "mock_function".to_string(),
+            "mockFunction".to_string(),
             FunctionSig {
+                is_declaration: false,
+                is_async: false,
                 is_static: false,
-                params: vec![],
-                hover_doc: Some("Returns a mock function for testing purposes.".to_string()),
+                params: vec![
+                    ParamInfo {
+                        name: "name".to_string(),
+                        ty: Type::String,
+                        is_ref: false,
+                        is_mut: false,
+                        has_default: false,
+                    },
+                    ParamInfo {
+                        name: "return_value".to_string(),
+                        ty: Type::Named("T".to_string()),
+                        is_ref: false,
+                        is_mut: false,
+                        has_default: false,
+                    },
+                ],
+                hover_doc: Some("Overrides a named function in the current environment to return `return_value` during tests.\n\n```flame\nfn mockFunction<T>(name: String, return_value: T)\n```".to_string()),
                 return_type: Type::Nil,
-                generic_params: Vec::new(),
+                generic_params: vec![crate::parser::GenericParam {
+                    name: "T".to_string(),
+                    bounds: Vec::new(),
+                    span: crate::lexer::Span::dummy(),
+                }],
+            },
+        );
+        self.functions.insert(
+            "mock_function".to_string(),
+            self.functions.get("mockFunction").unwrap().clone(),
+        );
+        self.functions.insert(
+            "len".to_string(),
+            FunctionSig {
+                is_declaration: false,
+                is_async: false,
+                is_static: false,
+                params: vec![ParamInfo {
+                    name: "items".to_string(),
+                    ty: Type::Named("T".to_string()),
+                    is_ref: false,
+                    is_mut: false,
+                    has_default: false,
+                }],
+                hover_doc: Some("Returns the number of elements in an array or collection.\n\n```flame\nfn len<T>(items: T) -> Int\n```\n\n**Example:**\n```flame\nlet count = len(items)\n```".to_string()),
+                return_type: Type::Int,
+                generic_params: vec![crate::parser::GenericParam {
+                    name: "T".to_string(),
+                    bounds: Vec::new(),
+                    span: crate::lexer::Span::dummy(),
+                }],
+            },
+        );
+        self.functions.insert(
+            "length".to_string(),
+            FunctionSig {
+                is_declaration: false,
+                is_async: false,
+                is_static: false,
+                params: vec![ParamInfo {
+                    name: "items".to_string(),
+                    ty: Type::Named("T".to_string()),
+                    is_ref: false,
+                    is_mut: false,
+                    has_default: false,
+                }],
+                hover_doc: Some("Returns the number of elements in an array or collection.\n\n```flame\nfn length<T>(items: T) -> Int\n```\n\n**Example:**\n```flame\nlet count = length(items)\n```".to_string()),
+                return_type: Type::Int,
+                generic_params: vec![crate::parser::GenericParam {
+                    name: "T".to_string(),
+                    bounds: Vec::new(),
+                    span: crate::lexer::Span::dummy(),
+                }],
+            },
+        );
+        self.functions.insert(
+            "isEmpty".to_string(),
+            FunctionSig {
+                is_declaration: false,
+                is_async: false,
+                is_static: false,
+                params: vec![ParamInfo {
+                    name: "items".to_string(),
+                    ty: Type::Named("T".to_string()),
+                    is_ref: false,
+                    is_mut: false,
+                    has_default: false,
+                }],
+                hover_doc: Some("Returns `true` if the collection contains no elements.\n\n```flame\nfn isEmpty<T>(items: T) -> Bool\n```\n\n**Example:**\n```flame\nif isEmpty(items) { print(\"empty\") }\n```".to_string()),
+                return_type: Type::Bool,
+                generic_params: vec![crate::parser::GenericParam {
+                    name: "T".to_string(),
+                    bounds: Vec::new(),
+                    span: crate::lexer::Span::dummy(),
+                }],
             },
         );
 
         // Built-in Enums
         let mut result_variants = HashMap::new();
-        result_variants.insert("Ok".to_string(), VariantInfo { tuple_items: vec![Type::Unknown], struct_fields: vec![], hover_doc: Some("The successful variant of `Result`, containing the value.\n\n### Example\n```flame\nlet res = Ok(42)\n```".to_string()) });
-        result_variants.insert("Err".to_string(), VariantInfo { tuple_items: vec![Type::Unknown], struct_fields: vec![], hover_doc: Some("The error variant of `Result`, containing the error data.\n\n### Example\n```flame\nlet err = Err(\"Something went wrong\")\n```".to_string()) });
+        result_variants.insert("Ok".to_string(), VariantInfo { tuple_items: vec![Type::Named("T".to_string())], struct_fields: vec![], hover_doc: Some("The successful variant of `Result`, containing the value.\n\n### Example\n```flame\nlet res = Ok(42)\n```".to_string()) });
+        result_variants.insert("Err".to_string(), VariantInfo { tuple_items: vec![Type::Named("E".to_string())], struct_fields: vec![], hover_doc: Some("The error variant of `Result`, containing the error data.\n\n### Example\n```flame\nlet err = Err(\"Something went wrong\")\n```".to_string()) });
         self.enums.insert("Result".to_string(), EnumInfo {
             variants: result_variants,
             hover_doc: Some("`Result` is a generic type that represents either success (`Ok`) or failure (`Err`).\nIt is commonly used for error handling instead of exceptions.\n\n### Example\n```flame\nfn divide(a: Int, b: Int) -> Result<Int, Error> {\n    if b == 0 {\n        return Err(Error { code: 1, message: \"Divide by zero\" })\n    }\n    return Ok(a / b)\n}\n```".to_string()),
@@ -285,7 +430,7 @@ impl TypeChecker {
         });
 
         let mut option_variants = HashMap::new();
-        option_variants.insert("Some".to_string(), VariantInfo { tuple_items: vec![Type::Unknown], struct_fields: vec![], hover_doc: Some("Contains a value in an `Option`.\n\n### Example\n```flame\nlet val = Some(\"data\")\n```".to_string()) });
+        option_variants.insert("Some".to_string(), VariantInfo { tuple_items: vec![Type::Named("T".to_string())], struct_fields: vec![], hover_doc: Some("Contains a value in an `Option`.\n\n### Example\n```flame\nlet val = Some(\"data\")\n```".to_string()) });
         option_variants.insert("None".to_string(), VariantInfo { tuple_items: vec![], struct_fields: vec![], hover_doc: Some("Indicates no value in an `Option`.\n\n### Example\n```flame\nlet empty = None\n```".to_string()) });
         self.enums.insert("Option".to_string(), EnumInfo {
             variants: option_variants,
@@ -362,6 +507,7 @@ impl TypeChecker {
                 ("kind".to_string(), Type::String),
                 ("parameters".to_string(), Type::Vector(Box::new(Type::Named("ParameterInfo".to_string())))),
                 ("returnType".to_string(), Type::String),
+                ("return_type".to_string(), Type::String),
                 ("annotations".to_string(), Type::Vector(Box::new(Type::Named("AnnotationInfo".to_string())))),
             ],
             hover_doc: Some("Metadata and callable reference for the annotated declaration.\n\n### Methods\n- `ref()`: Callable reference to the target function\n- `transform(transformer)`: Wraps target function".to_string()),
@@ -372,6 +518,8 @@ impl TypeChecker {
         target_methods.insert(
             "ref".to_string(),
             FunctionSig {
+                is_declaration: false,
+                is_async: false,
                 is_static: true,
                 params: vec![],
                 hover_doc: Some("Returns a callable reference to the annotated target declaration.\n\n### Example\n```flame\nlet handler = ctx.target.ref()\n```".to_string()),
@@ -382,6 +530,8 @@ impl TypeChecker {
         target_methods.insert(
             "transform".to_string(),
             FunctionSig {
+                is_declaration: false,
+                is_async: false,
                 is_static: true,
                 params: vec![ParamInfo {
                     name: "transformer".to_string(),
@@ -409,6 +559,8 @@ impl TypeChecker {
         });
 
         let anno_ctx_sig = FunctionSig {
+                is_declaration: false,
+                is_async: false,
             is_static: false,
             params: vec![],
             hover_doc: Some("Retrieves the active AnnotationContext for the annotated target.\n\nOnly callable inside a custom annotation declaration.\n\n### Example\n```flame\nannotation Route(path: String) {\n    let ctx = annotation.context()\n    let handler = ctx.target.ref()\n}\n```".to_string()),

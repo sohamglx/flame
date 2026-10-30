@@ -64,6 +64,30 @@ pub fn has_test_annotations(stmts: &[Stmt]) -> bool {
 pub fn run_tests(args: &[String]) {
     println!("\x1b[1;36mFlame Test & Benchmark Engine\x1b[0m");
 
+    let mut args_owned: Vec<String> = args.to_vec();
+    if !Path::new("flame.toml").exists() {
+        for arg in &mut args_owned {
+            if arg.ends_with(".fm") {
+                let p = PathBuf::from(&*arg);
+                let mut curr = p.parent().map(|d| d.to_path_buf());
+                while let Some(dir) = curr {
+                    if dir.join("flame.toml").exists() {
+                        if let Ok(rel) = p.strip_prefix(&dir) {
+                            *arg = rel.to_string_lossy().to_string();
+                        }
+                        let _ = std::env::set_current_dir(&dir);
+                        break;
+                    }
+                    curr = dir.parent().map(|d| d.to_path_buf());
+                }
+                if Path::new("flame.toml").exists() {
+                    break;
+                }
+            }
+        }
+    }
+    let args = &args_owned;
+
     let manifest_content = fs::read_to_string("flame.toml").unwrap_or_default();
     let mut pkg_name = "app".to_string();
     for line in manifest_content.lines() {
@@ -122,8 +146,39 @@ pub fn run_tests(args: &[String]) {
         plugins_raw.clear();
     }
 
+    let mut test_filter: Option<String> = None;
+    let mut target_arg: Option<String> = None;
     let is_all = args.iter().skip(2).any(|a| a == "--all" || a == "-a");
-    let target_arg = args.iter().skip(2).find(|a| !a.starts_with('-'));
+
+    let mut idx = 2;
+    while idx < args.len() {
+        let arg = &args[idx];
+        if (arg == "--filter" || arg == "-f" || arg == "--test") && idx + 1 < args.len() {
+            test_filter = Some(args[idx + 1].clone());
+            idx += 2;
+        } else if let Some(val) = arg.strip_prefix("--filter=") {
+            test_filter = Some(val.to_string());
+            idx += 1;
+        } else if let Some(val) = arg.strip_prefix("--test=") {
+            test_filter = Some(val.to_string());
+            idx += 1;
+        } else if arg == "--all" || arg == "-a" || arg == "--debug" {
+            idx += 1;
+        } else if !arg.starts_with('-') {
+            if target_arg.is_none() {
+                if Path::new(arg).exists() || arg.ends_with(".fm") {
+                    target_arg = Some(arg.clone());
+                } else if test_filter.is_none() {
+                    test_filter = Some(arg.clone());
+                }
+            } else if test_filter.is_none() {
+                test_filter = Some(arg.clone());
+            }
+            idx += 1;
+        } else {
+            idx += 1;
+        }
+    }
 
     let mut files_to_test = Vec::new();
     if is_all {
@@ -131,7 +186,7 @@ pub fn run_tests(args: &[String]) {
             collect_fm_files(Path::new("tests"), &mut files_to_test, true);
         }
         collect_fm_files(Path::new("."), &mut files_to_test, true);
-    } else if let Some(target) = target_arg {
+    } else if let Some(ref target) = target_arg {
         let p = PathBuf::from(target);
         if p.exists() {
             if p.is_dir() {
@@ -358,10 +413,11 @@ pub fn run_tests(args: &[String]) {
             .print(&std::fs::read_to_string(&runner.filepath).unwrap_or_default());
         }
 
-        let stats = crate::test_engine::execute_test_suite(
+        let stats = crate::test_engine::execute_test_suite_filtered(
             &mut runner,
             &stmts,
             &path.display().to_string(),
+            test_filter.as_deref(),
         );
         total_passed += stats.passed;
         total_failed += stats.failed;

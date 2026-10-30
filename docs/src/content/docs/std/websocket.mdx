@@ -169,7 +169,7 @@ th.spawn(|| {
 
 In Flame's type system, closure signatures on parameters (such as `(client: ServerClient, bytes: Byte)` or `(msg: String)`) are designed to maximize developer productivity while preserving safety:
 
-- **Type Safety Flexibility**: In terms of strict type safety, closure types are essentially dynamic (`Unknown`) for call-site argument matching. This ensures you can pass any closure `(client, bytes) { ... }` or pre-bound handler without encountering rigid function-pointer type mismatch errors.
+- **Type Safety Flexibility**: In terms of strict type safety, closure types are essentially dynamic for call-site argument matching. This ensures you can pass any closure `(client, bytes) { ... }` or pre-bound handler without encountering rigid function-pointer type mismatch errors.
 - **Hover Docs & Suggestions**: The closure types exist primarily for hover documentation and rich IDE suggestions. Inside the closure body, the LSP automatically provides autocomplete methods for `client.` (`send`, `sendBytes`, `close`, `id`, `address`) and `bytes.` (`len`, `slice`, `toString`, `toHex`).
 - **Implicit Nil Return**: For event listeners and callbacks that do not return a value, there is no need to write `-> Nil`. The runtime and type checker automatically treat void returns as `Nil`.
 

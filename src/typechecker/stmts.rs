@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 impl TypeChecker {
     pub(crate) fn collect_top_level_declarations(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
-            if self.is_importing && !matches!(stmt, Stmt::ExportDecl(_, _)) {
+            if self.is_importing && !matches!(stmt, Stmt::ExportDecl(_, _) | Stmt::ImportDecl { .. }) {
                 continue;
             }
             let check_stmt = if let Stmt::ExportDecl(inner, _) = stmt {
@@ -28,7 +28,18 @@ impl TypeChecker {
                     let gen_str = if generic_params.is_empty() {
                         String::new()
                     } else {
-                        format!("<{}>", generic_params.iter().map(|p| if !p.bounds.is_empty() { format!("{}: {}", p.name, p.bounds.join(" + ")) } else { p.name.clone() }).collect::<Vec<_>>().join(", "))
+                        format!(
+                            "<{}>",
+                            generic_params
+                                .iter()
+                                .map(|p| if !p.bounds.is_empty() {
+                                    format!("{}: {}", p.name, p.bounds.join(" + "))
+                                } else {
+                                    p.name.clone()
+                                })
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
                     };
                     let mut hover_str = format!("```flame\nstruct {}{}\n```", name, gen_str);
                     let hover_doc = self.process_annotations(annotations);
@@ -37,8 +48,15 @@ impl TypeChecker {
                     }
                     self.insert_hover_info(name_span.clone(), hover_str);
                     for p in generic_params {
-                        let bounds_str = if p.bounds.is_empty() { String::new() } else { format!(": {}", p.bounds.join(" + ")) };
-                        let p_hover = format!("```flame\ntype {}{}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}` on struct `{}`.", p.name, bounds_str, p.name, name);
+                        let bounds_str = if p.bounds.is_empty() {
+                            String::new()
+                        } else {
+                            format!(": {}", p.bounds.join(" + "))
+                        };
+                        let p_hover = format!(
+                            "```flame\ntype {}{}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}` on struct `{}`.",
+                            p.name, bounds_str, p.name, name
+                        );
                         self.insert_hover_info(p.span.clone(), p_hover);
                     }
 
@@ -146,7 +164,18 @@ impl TypeChecker {
                     let gen_str = if generic_params.is_empty() {
                         String::new()
                     } else {
-                        format!("<{}>", generic_params.iter().map(|p| if !p.bounds.is_empty() { format!("{}: {}", p.name, p.bounds.join(" + ")) } else { p.name.clone() }).collect::<Vec<_>>().join(", "))
+                        format!(
+                            "<{}>",
+                            generic_params
+                                .iter()
+                                .map(|p| if !p.bounds.is_empty() {
+                                    format!("{}: {}", p.name, p.bounds.join(" + "))
+                                } else {
+                                    p.name.clone()
+                                })
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
                     };
                     let mut hover_str = format!("```flame\nenum {}{}\n```", name, gen_str);
                     let hover_doc = self.process_annotations(annotations);
@@ -155,8 +184,15 @@ impl TypeChecker {
                     }
                     self.insert_hover_info(name_span.clone(), hover_str);
                     for p in generic_params {
-                        let bounds_str = if p.bounds.is_empty() { String::new() } else { format!(": {}", p.bounds.join(" + ")) };
-                        let p_hover = format!("```flame\ntype {}{}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}` on enum `{}`.", p.name, bounds_str, p.name, name);
+                        let bounds_str = if p.bounds.is_empty() {
+                            String::new()
+                        } else {
+                            format!(": {}", p.bounds.join(" + "))
+                        };
+                        let p_hover = format!(
+                            "```flame\ntype {}{}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}` on enum `{}`.",
+                            p.name, bounds_str, p.name, name
+                        );
                         self.insert_hover_info(p.span.clone(), p_hover);
                     }
 
@@ -301,6 +337,8 @@ impl TypeChecker {
                     annotations,
                     span,
                     name_span,
+                    body,
+                    is_async,
                     ..
                 } => {
                     let hover_doc = self.process_annotations(annotations);
@@ -308,9 +346,22 @@ impl TypeChecker {
                     let gen_str = if generic_params.is_empty() {
                         String::new()
                     } else {
-                        format!("<{}>", generic_params.iter().map(|p| if !p.bounds.is_empty() { format!("{}: {}", p.name, p.bounds.join(" + ")) } else { p.name.clone() }).collect::<Vec<_>>().join(", "))
+                        format!(
+                            "<{}>",
+                            generic_params
+                                .iter()
+                                .map(|p| if !p.bounds.is_empty() {
+                                    format!("{}: {}", p.name, p.bounds.join(" + "))
+                                } else {
+                                    p.name.clone()
+                                })
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
                     };
-                    let mut hover_str = format!("```flame\nfn {}{}(", name, gen_str);
+                    let async_prefix = if *is_async { "async " } else { "" };
+                    let mut hover_str =
+                        format!("```flame\n{}fn {}{}(", async_prefix, name, gen_str);
                     for (i, p) in params.iter().enumerate() {
                         if i > 0 {
                             hover_str.push_str(", ");
@@ -334,9 +385,29 @@ impl TypeChecker {
                     }
 
                     self.insert_hover_info(name_span.clone(), hover_str.clone());
+                    for p in params {
+                        let ref_mut = match (p.is_ref, p.is_mut) {
+                            (true, true) => "ref mut ",
+                            (true, false) => "ref ",
+                            (false, true) => "mut ",
+                            _ => "",
+                        };
+                        let p_hover = format!(
+                            "```flame\n(parameter) {}{}: {}\n```\nParameter of function `{}`",
+                            ref_mut, p.name, p.type_name, name
+                        );
+                        self.insert_hover_info(p.span.clone(), p_hover);
+                    }
                     for p in generic_params {
-                        let bounds_str = if p.bounds.is_empty() { String::new() } else { format!(": {}", p.bounds.join(" + ")) };
-                        let p_hover = format!("```flame\ntype {}{}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}` on function `{}`.", p.name, bounds_str, p.name, name);
+                        let bounds_str = if p.bounds.is_empty() {
+                            String::new()
+                        } else {
+                            format!(": {}", p.bounds.join(" + "))
+                        };
+                        let p_hover = format!(
+                            "```flame\ntype {}{}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}` on function `{}`.",
+                            p.name, bounds_str, p.name, name
+                        );
                         self.insert_hover_info(p.span.clone(), p_hover);
                     }
                     if let Some(cmd_info) =
@@ -407,6 +478,7 @@ impl TypeChecker {
                             name.clone(),
                             FunctionSig {
                                 is_static: false,
+                                is_async: *is_async,
                                 params: params
                                     .iter()
                                     .map(|param| ParamInfo {
@@ -424,6 +496,7 @@ impl TypeChecker {
                                     .map(|ret| self.parse_type_name(ret))
                                     .unwrap_or(Type::Nil),
                                 generic_params: generic_params.clone(),
+                                is_declaration: body.is_none() && !self.is_importing,
                             },
                         );
                     }
@@ -462,12 +535,26 @@ impl TypeChecker {
                         hover_str.push_str(&format!("\n\n{}", doc));
                     }
                     self.insert_hover_info(name_span.clone(), hover_str.clone());
+                    for p in params {
+                        let ref_mut = match (p.is_ref, p.is_mut) {
+                            (true, true) => "ref mut ",
+                            (true, false) => "ref ",
+                            (false, true) => "mut ",
+                            _ => "",
+                        };
+                        let p_hover = format!(
+                            "```flame\n(parameter) {}{}: {}\n```\nParameter of annotation `@{}`",
+                            ref_mut, p.name, p.type_name, name
+                        );
+                        self.insert_hover_info(p.span.clone(), p_hover);
+                    }
 
                     self.annotations.insert(name.clone());
                     self.functions.insert(
                         name.clone(),
                         FunctionSig {
                             is_static: false,
+                            is_async: false,
                             params: params
                                 .iter()
                                 .map(|param| ParamInfo {
@@ -485,6 +572,7 @@ impl TypeChecker {
                                 .map(|ret| self.parse_type_name(ret))
                                 .unwrap_or(Type::Nil),
                             generic_params: Vec::new(),
+                            is_declaration: false,
                         },
                     );
                 }
@@ -501,22 +589,41 @@ impl TypeChecker {
                     let gen_str = if generic_params.is_empty() {
                         String::new()
                     } else {
-                        format!("<{}>", generic_params.iter().map(|p| if !p.bounds.is_empty() { format!("{}: {}", p.name, p.bounds.join(" + ")) } else { p.name.clone() }).collect::<Vec<_>>().join(", "))
+                        format!(
+                            "<{}>",
+                            generic_params
+                                .iter()
+                                .map(|p| if !p.bounds.is_empty() {
+                                    format!("{}: {}", p.name, p.bounds.join(" + "))
+                                } else {
+                                    p.name.clone()
+                                })
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
                     };
                     let super_str = if super_traits.is_empty() {
                         String::new()
                     } else {
                         format!(" = {}", super_traits.join(" and "))
                     };
-                    let mut hover_str = format!("```flame\ntrait {}{}{}\n```", name, gen_str, super_str);
+                    let mut hover_str =
+                        format!("```flame\ntrait {}{}{}\n```", name, gen_str, super_str);
                     let hover_doc = self.process_annotations(annotations);
                     if let Some(doc) = &hover_doc {
                         hover_str = format!("{}\n\n{}", hover_str, doc);
                     }
                     self.insert_hover_info(name_span.clone(), hover_str);
                     for p in generic_params {
-                        let bounds_str = if p.bounds.is_empty() { String::new() } else { format!(": {}", p.bounds.join(" + ")) };
-                        let p_hover = format!("```flame\ntype {}{}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}` on trait `{}`.", p.name, bounds_str, p.name, name);
+                        let bounds_str = if p.bounds.is_empty() {
+                            String::new()
+                        } else {
+                            format!(": {}", p.bounds.join(" + "))
+                        };
+                        let p_hover = format!(
+                            "```flame\ntype {}{}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}` on trait `{}`.",
+                            p.name, bounds_str, p.name, name
+                        );
                         self.insert_hover_info(p.span.clone(), p_hover);
                     }
 
@@ -532,15 +639,29 @@ impl TypeChecker {
                             is_default,
                             generic_params: m_generic_params,
                             body,
+                            is_async,
                             ..
                         } = method
                         {
                             let m_gen_str = if m_generic_params.is_empty() {
                                 String::new()
                             } else {
-                                format!("<{}>", m_generic_params.iter().map(|p| if !p.bounds.is_empty() { format!("{}: {}", p.name, p.bounds.join(" + ")) } else { p.name.clone() }).collect::<Vec<_>>().join(", "))
+                                format!(
+                                    "<{}>",
+                                    m_generic_params
+                                        .iter()
+                                        .map(|p| if !p.bounds.is_empty() {
+                                            format!("{}: {}", p.name, p.bounds.join(" + "))
+                                        } else {
+                                            p.name.clone()
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                )
                             };
-                            let mut m_hover_str = format!("```flame\nfn {}{}(", m_name, m_gen_str);
+                            let async_prefix = if *is_async { "async " } else { "" };
+                            let mut m_hover_str =
+                                format!("```flame\n{}fn {}{}(", async_prefix, m_name, m_gen_str);
                             let params_info: Vec<ParamInfo> = params
                                 .iter()
                                 .enumerate()
@@ -583,13 +704,28 @@ impl TypeChecker {
                                 m_hover_str.push_str(&format!("\n\n{}", doc));
                             }
                             self.insert_hover_info(m_name_span.clone(), m_hover_str);
+                            for p in params {
+                                let ref_mut = match (p.is_ref, p.is_mut) {
+                                    (true, true) => "ref mut ",
+                                    (true, false) => "ref ",
+                                    (false, true) => "mut ",
+                                    _ => "",
+                                };
+                                let p_hover = format!(
+                                    "```flame\n(parameter) {}{}: {}\n```\nParameter of trait method `{}::{}`",
+                                    ref_mut, p.name, p.type_name, name, m_name
+                                );
+                                self.insert_hover_info(p.span.clone(), p_hover);
+                            }
 
                             let sig = FunctionSig {
                                 is_static,
+                                is_async: *is_async,
                                 params: params_info,
                                 hover_doc,
                                 return_type: ret_type,
                                 generic_params: m_generic_params.clone(),
+                                is_declaration: false,
                             };
                             if *is_default {
                                 default_methods.insert(
@@ -627,10 +763,26 @@ impl TypeChecker {
                     let gen_str = if generic_params.is_empty() {
                         String::new()
                     } else {
-                        format!("<{}> ", generic_params.iter().map(|p| if !p.bounds.is_empty() { format!("{}: {}", p.name, p.bounds.join(" + ")) } else { p.name.clone() }).collect::<Vec<_>>().join(", "))
+                        format!(
+                            "<{}> ",
+                            generic_params
+                                .iter()
+                                .map(|p| if !p.bounds.is_empty() {
+                                    format!("{}: {}", p.name, p.bounds.join(" + "))
+                                } else {
+                                    p.name.clone()
+                                })
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
                     };
                     let mut hover_str = if !traits.is_empty() {
-                        format!("```flame\nimpl {}{}: {}\n```", gen_str, target_type, traits.join(", "))
+                        format!(
+                            "```flame\nimpl {}{}: {}\n```",
+                            gen_str,
+                            target_type,
+                            traits.join(", ")
+                        )
                     } else {
                         format!("```flame\nimpl {}{}\n```", gen_str, target_type)
                     };
@@ -640,8 +792,15 @@ impl TypeChecker {
                     }
                     self.insert_hover_info(name_span.clone(), hover_str);
                     for p in generic_params {
-                        let bounds_str = if p.bounds.is_empty() { String::new() } else { format!(": {}", p.bounds.join(" + ")) };
-                        let p_hover = format!("```flame\ntype {}{}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}`.", p.name, bounds_str, p.name);
+                        let bounds_str = if p.bounds.is_empty() {
+                            String::new()
+                        } else {
+                            format!(": {}", p.bounds.join(" + "))
+                        };
+                        let p_hover = format!(
+                            "```flame\ntype {}{}\n```\n**Generic Type Parameter**\n\nGeneric type parameter `{}`.",
+                            p.name, bounds_str, p.name
+                        );
                         self.insert_hover_info(p.span.clone(), p_hover);
                     }
 
@@ -660,15 +819,30 @@ impl TypeChecker {
                             annotations,
                             name_span,
                             generic_params: m_generic_params,
+                            body,
+                            is_async,
                             ..
                         } = method
                         {
                             let m_gen_str = if m_generic_params.is_empty() {
                                 String::new()
                             } else {
-                                format!("<{}>", m_generic_params.iter().map(|p| if !p.bounds.is_empty() { format!("{}: {}", p.name, p.bounds.join(" + ")) } else { p.name.clone() }).collect::<Vec<_>>().join(", "))
+                                format!(
+                                    "<{}>",
+                                    m_generic_params
+                                        .iter()
+                                        .map(|p| if !p.bounds.is_empty() {
+                                            format!("{}: {}", p.name, p.bounds.join(" + "))
+                                        } else {
+                                            p.name.clone()
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                )
                             };
-                            let mut m_hover_str = format!("```flame\nfn {}{}(", name, m_gen_str);
+                            let async_prefix = if *is_async { "async " } else { "" };
+                            let mut m_hover_str =
+                                format!("```flame\n{}fn {}{}(", async_prefix, name, m_gen_str);
                             let params_info: Vec<ParamInfo> = params
                                 .iter()
                                 .enumerate()
@@ -689,12 +863,18 @@ impl TypeChecker {
                                     ParamInfo {
                                         name: param.name.clone(),
                                         ty: if param.name == "self" {
-                                            let base_target = target_type.split('<').next().unwrap().trim().to_string();
+                                            let base_target = target_type
+                                                .split('<')
+                                                .next()
+                                                .unwrap()
+                                                .trim()
+                                                .to_string();
                                             let struct_ty = Type::Struct(base_target);
                                             if param.is_ref || param.type_name.starts_with('&') {
                                                 Type::Reference {
                                                     inner: Box::new(struct_ty),
-                                                    mutable: param.is_mut || param.type_name.contains("mut"),
+                                                    mutable: param.is_mut
+                                                        || param.type_name.contains("mut"),
                                                 }
                                             } else {
                                                 struct_ty
@@ -726,15 +906,31 @@ impl TypeChecker {
                                 m_hover_str.push_str(&format!("\n\n{}", doc));
                             }
                             self.insert_hover_info(name_span.clone(), m_hover_str);
-                            let base_target = target_type.split('<').next().unwrap().trim().to_string();
+                            for p in params {
+                                let ref_mut = match (p.is_ref, p.is_mut) {
+                                    (true, true) => "ref mut ",
+                                    (true, false) => "ref ",
+                                    (false, true) => "mut ",
+                                    _ => "",
+                                };
+                                let p_hover = format!(
+                                    "```flame\n(parameter) {}{}: {}\n```\nParameter of method `{}::{}`",
+                                    ref_mut, p.name, p.type_name, target_type, name
+                                );
+                                self.insert_hover_info(p.span.clone(), p_hover);
+                            }
+                            let base_target =
+                                target_type.split('<').next().unwrap().trim().to_string();
                             self.methods.entry(target_type.clone()).or_default().insert(
                                 name.clone(),
                                 FunctionSig {
                                     is_static,
+                                    is_async: *is_async,
                                     params: params_info.clone(),
                                     hover_doc: hover_doc.clone(),
                                     return_type: ret_type.clone(),
                                     generic_params: m_generic_params.clone(),
+                                    is_declaration: body.is_none() && !self.is_importing,
                                 },
                             );
                             if base_target != *target_type {
@@ -742,10 +938,12 @@ impl TypeChecker {
                                     name.clone(),
                                     FunctionSig {
                                         is_static,
+                                        is_async: *is_async,
                                         params: params_info,
                                         hover_doc,
                                         return_type: ret_type,
                                         generic_params: m_generic_params.clone(),
+                                        is_declaration: body.is_none() && !self.is_importing,
                                     },
                                 );
                             }
@@ -901,7 +1099,9 @@ impl TypeChecker {
                                                             return_type: Type::Unknown,
                                                             hover_doc: Some(format!("External JavaScript function in `{}`", actual_file_name)),
                                                             is_static: false,
+                                                            is_async: false,
                                                             generic_params: Vec::new(),
+                                                            is_declaration: false,
                                                         });
                                                     }
                                                 }
@@ -973,6 +1173,7 @@ impl TypeChecker {
                                 }
 
                                 if let Some(fmi) = fmi_path {
+                                    self.load_fmi_file(&fmi, mod_name);
                                     if let Ok(content) = std::fs::read_to_string(&fmi) {
                                         if let Ok(json) =
                                             serde_json::from_str::<serde_json::Value>(&content)
@@ -1042,15 +1243,21 @@ impl TypeChecker {
                                                             .get("docs")
                                                             .and_then(|d| d.as_str())
                                                             .map(|s| s.to_string());
+                                                        let is_async = func
+                                                            .get("is_async")
+                                                            .and_then(|a| a.as_bool())
+                                                            .unwrap_or(false);
 
                                                         p_funcs.insert(
                                                             name.to_string(),
                                                             FunctionSig {
                                                                 is_static: true,
+                                                                is_async,
                                                                 params,
                                                                 return_type: ret_ty,
                                                                 hover_doc: doc,
                                                                 generic_params: Vec::new(),
+                                                                is_declaration: false,
                                                             },
                                                         );
                                                     }
@@ -1140,10 +1347,15 @@ impl TypeChecker {
                                                                         .get("docs")
                                                                         .and_then(|d| d.as_str())
                                                                         .map(|s| s.to_string());
+                                                                    let is_async = m
+                                                                        .get("is_async")
+                                                                        .and_then(|a| a.as_bool())
+                                                                        .unwrap_or(false);
                                                                     struct_methods.insert(
                                                                         m_name.to_string(),
                                                                         FunctionSig {
                                                                             is_static,
+                                                                            is_async,
                                                                             params,
                                                                             return_type: self
                                                                                 .parse_type_name(
@@ -1152,6 +1364,7 @@ impl TypeChecker {
                                                                             hover_doc: doc,
                                                                             generic_params:
                                                                                 Vec::new(),
+                                                                            is_declaration: false,
                                                                         },
                                                                     );
                                                                 }
@@ -1217,10 +1430,43 @@ impl TypeChecker {
                             }
                         } else {
                             self.modules.insert(mod_name.clone());
+                            let mut p = std::path::Path::new(&self.filepath);
+                            let mut fmi_path = None;
+                            while let Some(parent) = p.parent() {
+                                let candidate1 = parent
+                                    .join(".flame")
+                                    .join("pkg")
+                                    .join(mod_name)
+                                    .join(format!("{}.fmi", mod_name));
+                                if candidate1.exists() {
+                                    fmi_path = Some(candidate1);
+                                    break;
+                                }
+                                let candidate2 = parent
+                                    .join(".flame")
+                                    .join("pkg")
+                                    .join(format!("{}.fmi", mod_name));
+                                if candidate2.exists() {
+                                    fmi_path = Some(candidate2);
+                                    break;
+                                }
+                                p = parent;
+                            }
                             if let Some(file_path) = crate::stdlib::locate_import_file(
                                 std::path::Path::new(&self.filepath),
                                 path,
                             ) {
+                                if fmi_path.is_none() {
+                                    if let Some(pkg_dir) = file_path.parent().and_then(|p| p.parent()) {
+                                        let candidate = pkg_dir.join(format!("{}.fmi", mod_name));
+                                        if candidate.exists() {
+                                            fmi_path = Some(candidate);
+                                        }
+                                    }
+                                }
+                                if let Some(ref fmi) = fmi_path {
+                                    self.load_fmi_file(fmi, mod_name);
+                                }
                                 if let Ok(content) = std::fs::read_to_string(&file_path) {
                                     let mut lexer = crate::lexer::Lexer::new(&content);
                                     let mut tokens = Vec::new();
@@ -1545,23 +1791,29 @@ impl TypeChecker {
                             let prev = self.is_importing;
                             self.is_importing = true;
                             for s in &parsed_stmts {
-                                let (inner_stmt, is_exported) = if let Stmt::ExportDecl(inner, _) = s {
-                                    (inner.as_ref(), true)
-                                } else {
-                                    (s, false)
-                                };
+                                let (inner_stmt, is_exported) =
+                                    if let Stmt::ExportDecl(inner, _) = s {
+                                        (inner.as_ref(), true)
+                                    } else {
+                                        (s, false)
+                                    };
 
-                                if !is_exported && !matches!(inner_stmt, Stmt::ImplDecl { .. }) {
+                                if !is_exported && !matches!(inner_stmt, Stmt::ImplDecl { .. } | Stmt::ImportDecl { .. }) {
                                     continue;
                                 }
 
                                 if is_exported {
-                                    if let Stmt::ExprStmt(crate::parser::Expr::Identifier(reexp_name, _)) = inner_stmt {
+                                    if let Stmt::ExprStmt(crate::parser::Expr::Identifier(
+                                        reexp_name,
+                                        _,
+                                    )) = inner_stmt
+                                    {
                                         let q_name = format!("{}.{}", last, reexp_name);
                                         if let Some(sig) = self.functions.get(reexp_name).cloned() {
                                             self.functions.insert(q_name.clone(), sig);
                                         }
-                                        if let Some(s_info) = self.structs.get(reexp_name).cloned() {
+                                        if let Some(s_info) = self.structs.get(reexp_name).cloned()
+                                        {
                                             self.structs.insert(q_name, s_info);
                                         }
                                     }
@@ -1601,6 +1853,7 @@ impl TypeChecker {
                                                 return_type,
                                                 annotations,
                                                 generic_params: m_generic_params,
+                                                is_async,
                                                 ..
                                             } = m
                                             {
@@ -1628,8 +1881,10 @@ impl TypeChecker {
                                                     params: p_info,
                                                     return_type: r_type,
                                                     is_static,
+                                                    is_async: *is_async,
                                                     hover_doc: m_hover_doc,
                                                     generic_params: m_generic_params.clone(),
+                                                    is_declaration: false,
                                                 };
                                                 self.methods
                                                     .entry(prefixed_target.clone())
@@ -1671,6 +1926,7 @@ impl TypeChecker {
                                         return_type,
                                         annotations,
                                         generic_params,
+                                        is_async,
                                         ..
                                     } => {
                                         let hover_doc = self.process_annotations(annotations);
@@ -1693,8 +1949,10 @@ impl TypeChecker {
                                             params: p_info,
                                             return_type: r_type,
                                             is_static: false,
+                                            is_async: *is_async,
                                             hover_doc,
                                             generic_params: generic_params.clone(),
+                                            is_declaration: false,
                                         };
                                         self.functions.insert(name.clone(), sig.clone());
                                         self.functions.insert(format!("{}.{}", last, name), sig);
@@ -1786,6 +2044,43 @@ impl TypeChecker {
                                         self.enums.insert(name.clone(), e_info.clone());
                                         self.enums.insert(format!("{}.{}", last, name), e_info);
                                     }
+                                    Stmt::AnnotationDecl {
+                                        name,
+                                        params,
+                                        return_type,
+                                        annotations,
+                                        ..
+                                    } => {
+                                        let hover_doc = self.process_annotations(annotations);
+                                        let p_info = params
+                                            .iter()
+                                            .map(|p| ParamInfo {
+                                                name: p.name.clone(),
+                                                ty: self.parse_type_name(&p.type_name),
+                                                is_ref: p.is_ref,
+                                                is_mut: p.is_mut,
+                                                has_default: p.default_val.is_some()
+                                                    || p.type_name.ends_with('?'),
+                                            })
+                                            .collect();
+                                        let r_type = return_type
+                                            .as_ref()
+                                            .map(|t| self.parse_type_name(t))
+                                            .unwrap_or(Type::Nil);
+                                        let sig = FunctionSig {
+                                            params: p_info,
+                                            return_type: r_type,
+                                            is_static: false,
+                                            is_async: false,
+                                            hover_doc,
+                                            generic_params: Vec::new(),
+                                            is_declaration: false,
+                                        };
+                                        self.functions.insert(name.clone(), sig.clone());
+                                        self.functions.insert(format!("{}.{}", last, name), sig);
+                                        self.annotations.insert(name.clone());
+                                        self.annotations.insert(format!("{}.{}", last, name));
+                                    }
                                     _ => {}
                                 }
                             }
@@ -1860,15 +2155,7 @@ impl TypeChecker {
                         (None, ty) => ty.clone(),
                     };
 
-                    let type_str = match &stored_ty {
-                        Type::Named(n) => n.clone(),
-                        Type::Int => "Int".to_string(),
-                        Type::Float => "Float".to_string(),
-                        Type::String => "String".to_string(),
-                        Type::Bool => "Bool".to_string(),
-                        Type::Nil => "Nil".to_string(),
-                        t => format!("{:?}", t),
-                    };
+                    let type_str = self.format_type(&stored_ty);
                     let decl_kw = if matches!(stmt, Stmt::ConstDecl { .. }) {
                         "const"
                     } else if *is_mut {
@@ -2054,6 +2341,7 @@ impl TypeChecker {
                 span: _span,
                 name_span,
                 generic_params,
+                is_async,
                 ..
             } => {
                 self.check_generic_param_bounds(generic_params);
@@ -2079,8 +2367,11 @@ impl TypeChecker {
                 } else {
                     "".to_string()
                 };
-                let mut hover_str =
-                    format!("```flame\nfn {}({}){}\n```", name, params_str, ret_str);
+                let async_prefix = if *is_async { "async " } else { "" };
+                let mut hover_str = format!(
+                    "```flame\n{}fn {}({}){}\n```",
+                    async_prefix, name, params_str, ret_str
+                );
                 let hover_doc = self.process_annotations(annotations);
 
                 if let Some(doc) = hover_doc {
@@ -2099,6 +2390,8 @@ impl TypeChecker {
                 );
 
                 let prev_return = self.current_return_type.clone();
+                let prev_async = self.current_function_is_async;
+                self.current_function_is_async = *is_async;
                 self.current_return_type = Some(
                     return_type
                         .as_ref()
@@ -2160,37 +2453,54 @@ impl TypeChecker {
                     );
                 }
                 for Param {
-                    name,
-                    type_name,
-                    is_mut,
-                    is_ref,
+                    name: p_name,
+                    type_name: p_type_name,
+                    is_mut: p_is_mut,
+                    is_ref: p_is_ref,
+                    span: p_span,
                     ..
                 } in params
                 {
-                    let param_ty = if name == "self" {
+                    let param_ty = if p_name == "self" {
                         if let Some(target) = &self.current_impl_target {
                             let base_target = target.split('<').next().unwrap().trim().to_string();
                             let struct_ty = Type::Struct(base_target);
-                            if *is_ref || type_name.starts_with('&') {
+                            if *p_is_ref || p_type_name.starts_with('&') {
                                 Type::Reference {
                                     inner: Box::new(struct_ty),
-                                    mutable: *is_mut || type_name.contains("mut"),
+                                    mutable: *p_is_mut || p_type_name.contains("mut"),
                                 }
                             } else {
                                 struct_ty
                             }
                         } else {
-                            self.parse_type_name(type_name)
+                            self.parse_type_name(p_type_name)
                         }
                     } else {
-                        self.parse_type_name(type_name)
+                        self.parse_type_name(p_type_name)
                     };
+                    let ref_mut = match (*p_is_ref, *p_is_mut) {
+                        (true, true) => "ref mut ",
+                        (true, false) => "ref ",
+                        (false, true) => "mut ",
+                        _ => "",
+                    };
+                    let owner_desc = if let Some(target) = &self.current_impl_target {
+                        format!("method `{}::{}`", target, name)
+                    } else {
+                        format!("function `{}`", name)
+                    };
+                    let p_hover = format!(
+                        "```flame\n(parameter) {}{}: {}\n```\nParameter of {}",
+                        ref_mut, p_name, p_type_name, owner_desc
+                    );
+                    self.insert_hover_info(p_span.clone(), p_hover.clone());
                     self.define_var(
-                        name.clone(),
+                        p_name.clone(),
                         VarInfo {
                             ty: param_ty,
-                            is_mut: *is_mut,
-                            hover_doc: None,
+                            is_mut: *p_is_mut,
+                            hover_doc: Some(p_hover),
                         },
                     );
                 }
@@ -2201,23 +2511,61 @@ impl TypeChecker {
                 {
                     self.in_expect_panic = true;
                 }
+
+                let expected_ret_ty = return_type
+                    .as_ref()
+                    .map(|ret| self.parse_type_name(ret))
+                    .unwrap_or(Type::Nil);
+
+                let initial_diags_len = self.diagnostics.len();
                 if let Some(body_stmts) = body {
-                    for stmt in body_stmts {
-                        self.check_stmt(stmt);
+                    if body_stmts.is_empty() {
+                        if expected_ret_ty != Type::Nil {
+                            self.diagnostics.push(Diagnostic::new_error(
+                                format!(
+                                    "function '{}' with return type '{}' has an empty body and does not return a value",
+                                    name,
+                                    return_type.as_deref().unwrap_or("Nil")
+                                ),
+                                self.filepath.clone(),
+                                name_span.clone(),
+                                None,
+                                None,
+                            ));
+                        }
+                    } else {
+                        self.check_block_stmts(body_stmts, true);
+                        if expected_ret_ty != Type::Nil {
+                            if !block_definitely_returns(body_stmts) {
+                                self.diagnostics.push(Diagnostic::new_error(
+                                    format!(
+                                        "function '{}' is missing a return value of type '{}'",
+                                        name,
+                                        return_type.as_deref().unwrap_or("Nil")
+                                    ),
+                                    self.filepath.clone(),
+                                    name_span.clone(),
+                                    None,
+                                    None,
+                                ));
+                            }
+                        }
                     }
-                    if !self.in_expect_panic {
-                        let mut borrow_checker = crate::typechecker::borrow::BorrowChecker::new(&self.filepath);
-                        borrow_checker.check_function(
-                            name,
-                            params,
-                            return_type,
-                            body_stmts,
-                        );
+
+                    let var_types = self.collect_all_var_types();
+                    let mut borrow_checker =
+                        crate::typechecker::borrow::BorrowChecker::new(&self.filepath)
+                            .with_known_types(var_types);
+                    borrow_checker.check_function(name, params, return_type, body_stmts);
+                    if self.in_expect_panic {
+                        self.diagnostics.truncate(initial_diags_len);
+                    } else {
                         self.diagnostics.extend(borrow_checker.diagnostics);
                     }
                 }
                 self.in_expect_panic = prev_expect_panic;
                 self.pop_scope();
+                self.current_function_is_async = prev_async;
                 self.current_return_type = prev_return;
             }
             Stmt::AnnotationDecl {
@@ -2293,25 +2641,72 @@ impl TypeChecker {
 
                 self.push_scope();
                 for Param {
-                    name,
-                    type_name,
-                    is_mut,
+                    name: p_name,
+                    type_name: p_type_name,
+                    is_mut: p_is_mut,
+                    is_ref: p_is_ref,
+                    span: p_span,
                     ..
                 } in params
                 {
+                    let ref_mut = match (*p_is_ref, *p_is_mut) {
+                        (true, true) => "ref mut ",
+                        (true, false) => "ref ",
+                        (false, true) => "mut ",
+                        _ => "",
+                    };
+                    let p_hover = format!(
+                        "```flame\n(parameter) {}{}: {}\n```\nParameter of annotation `@{}`",
+                        ref_mut, p_name, p_type_name, name
+                    );
+                    self.insert_hover_info(p_span.clone(), p_hover.clone());
                     self.define_var(
-                        name.clone(),
+                        p_name.clone(),
                         VarInfo {
-                            ty: self.parse_type_name(type_name),
-                            is_mut: *is_mut,
-                            hover_doc: None,
+                            ty: self.parse_type_name(p_type_name),
+                            is_mut: *p_is_mut,
+                            hover_doc: Some(p_hover),
                         },
                     );
                 }
+                let expected_ret_ty = return_type
+                    .as_ref()
+                    .map(|ret| self.parse_type_name(ret))
+                    .unwrap_or(Type::Nil);
+
                 let prev_in_anno = self.in_annotation_decl;
                 self.in_annotation_decl = true;
-                for stmt in body {
-                    self.check_stmt(stmt);
+                if body.is_empty() {
+                    if expected_ret_ty != Type::Nil {
+                        self.diagnostics.push(Diagnostic::new_error(
+                            format!(
+                                "annotation '@{}' with return type '{}' has an empty body and does not return a value",
+                                name,
+                                return_type.as_deref().unwrap_or("Nil")
+                            ),
+                            self.filepath.clone(),
+                            name_span.clone(),
+                            None,
+                            None,
+                        ));
+                    }
+                } else {
+                    self.check_block_stmts(body, true);
+                    if expected_ret_ty != Type::Nil {
+                        if !block_definitely_returns(body) {
+                            self.diagnostics.push(Diagnostic::new_error(
+                                format!(
+                                    "annotation '@{}' is missing a return value of type '{}'",
+                                    name,
+                                    return_type.as_deref().unwrap_or("Nil")
+                                ),
+                                self.filepath.clone(),
+                                name_span.clone(),
+                                None,
+                                None,
+                            ));
+                        }
+                    }
                 }
                 self.in_annotation_decl = prev_in_anno;
                 self.pop_scope();
@@ -2327,16 +2722,12 @@ impl TypeChecker {
                 self.expect_assignable(&Type::Bool, &cond_ty, &cond.span(), "if condition");
 
                 self.push_scope();
-                for stmt in then_branch {
-                    self.check_stmt(stmt);
-                }
+                self.check_block_stmts(then_branch, false);
                 self.pop_scope();
 
                 if let Some(else_branch) = else_branch {
                     self.push_scope();
-                    for stmt in else_branch {
-                        self.check_stmt(stmt);
-                    }
+                    self.check_block_stmts(else_branch, false);
                     self.pop_scope();
                 }
             }
@@ -2581,7 +2972,11 @@ impl TypeChecker {
             } => {
                 self.check_generic_param_bounds(generic_params);
                 for method in methods {
-                    if let Stmt::FuncDecl { generic_params: m_gen, .. } = method {
+                    if let Stmt::FuncDecl {
+                        generic_params: m_gen,
+                        ..
+                    } = method
+                    {
                         self.check_generic_param_bounds(m_gen);
                     }
                     if let Stmt::FuncDecl { body: Some(_), .. } = method {
@@ -2599,7 +2994,11 @@ impl TypeChecker {
             } => {
                 self.check_generic_param_bounds(generic_params);
                 for method in methods {
-                    if let Stmt::FuncDecl { generic_params: m_gen, .. } = method {
+                    if let Stmt::FuncDecl {
+                        generic_params: m_gen,
+                        ..
+                    } = method
+                    {
                         self.check_generic_param_bounds(m_gen);
                     }
                 }
@@ -2645,15 +3044,21 @@ impl TypeChecker {
                             .map(|m| format!("`{}`", m))
                             .collect::<Vec<_>>()
                             .join(", ");
-                        self.diagnostics.push(crate::diagnostics::Diagnostic::new_error(
-                            format!("not all trait items implemented, missing: {}", missing_str),
-                            self.filepath.clone(),
-                            span.clone(),
-                            None,
-                            Some(format!("implement the missing trait method(s) for '{}'", tr)),
-                        ));
+                        self.diagnostics
+                            .push(crate::diagnostics::Diagnostic::new_error(
+                                format!(
+                                    "not all trait items implemented, missing: {}",
+                                    missing_str
+                                ),
+                                self.filepath.clone(),
+                                span.clone(),
+                                None,
+                                Some(format!(
+                                    "implement the missing trait method(s) for '{}'",
+                                    tr
+                                )),
+                            ));
                     }
-
 
                     let base_target = target_type.split('<').next().unwrap().trim().to_string();
                     for (def_name, def_sig) in default_to_inherit {
@@ -2686,4 +3091,98 @@ impl TypeChecker {
             }
         }
     }
+
+    pub(crate) fn check_block_stmts(&mut self, stmts: &[Stmt], is_function_body: bool) {
+        let expected_ret_ty = self.current_return_type.clone().unwrap_or(Type::Nil);
+        for (idx, stmt) in stmts.iter().enumerate() {
+            let is_last = idx + 1 == stmts.len();
+            if is_last && is_function_body {
+                if let Stmt::ExprStmt(expr) = stmt {
+                    let is_assign = matches!(
+                        expr,
+                        Expr::Binary(_, op, _, _)
+                            if matches!(
+                                op,
+                                BinaryOp::Assign
+                                    | BinaryOp::PlusAssign
+                                    | BinaryOp::MinusAssign
+                                    | BinaryOp::MulAssign
+                                    | BinaryOp::DivAssign
+                                    | BinaryOp::ModAssign
+                                    | BinaryOp::BitAndAssign
+                                    | BinaryOp::BitOrAssign
+                                    | BinaryOp::BitXorAssign
+                                    | BinaryOp::ShlAssign
+                                    | BinaryOp::ShrAssign
+                            )
+                    );
+                    let actual_ty = self.infer_expr_type(expr);
+                    if !is_assign {
+                        if expected_ret_ty != Type::Nil {
+                            self.expect_assignable(
+                                &expected_ret_ty,
+                                &actual_ty,
+                                &expr.span(),
+                                "return value",
+                            );
+                        } else {
+                            let is_effect_stmt = match expr {
+                                Expr::Call(..) | Expr::Await(..) | Expr::ThreadSpawn(..) => true,
+                                _ => false,
+                            };
+                            if !is_effect_stmt
+                                && actual_ty != Type::Nil
+                                && actual_ty != Type::Unknown
+                            {
+                                self.expect_assignable(
+                                    &Type::Nil,
+                                    &actual_ty,
+                                    &expr.span(),
+                                    "return value",
+                                );
+                            }
+                        }
+                    }
+                    continue;
+                }
+            }
+            self.check_stmt(stmt);
+        }
+    }
+}
+
+fn block_definitely_returns(stmts: &[Stmt]) -> bool {
+    for (idx, stmt) in stmts.iter().enumerate() {
+        let is_last = idx + 1 == stmts.len();
+        match stmt {
+            Stmt::ReturnStmt(..) => return true,
+            Stmt::ExprStmt(..) if is_last => return true,
+            Stmt::IfStmt {
+                then_branch,
+                else_branch: Some(else_branch),
+                ..
+            } => {
+                if block_definitely_returns(then_branch) && block_definitely_returns(else_branch) {
+                    return true;
+                }
+            }
+            Stmt::MatchStmt { arms, .. } => {
+                if !arms.is_empty()
+                    && arms.iter().all(|arm| match &arm.body {
+                        Expr::Block(block_stmts, _) => block_definitely_returns(block_stmts),
+                        _ => true,
+                    })
+                {
+                    return true;
+                }
+            }
+            Stmt::ExportDecl(inner, _) => {
+                if block_definitely_returns(&[inner.as_ref().clone()]) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
 }

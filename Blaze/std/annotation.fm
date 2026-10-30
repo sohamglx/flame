@@ -35,16 +35,16 @@ export struct TargetMetadata {
     name: String
     kind: String
     parameters: [ParameterInfo]
-    return_type: String
+    returnType: String
     annotations: [AnnotationInfo]
 }
 
 impl TargetMetadata {
     @Docs("Returns a callable reference to the annotated target declaration.\n\n### Example\n```flame\nlet handler = ctx.target.ref()\n```")
-    fn ref() -> Unknown {}
+    fn ref<T>() -> T;
 
-    @Docs("Wraps the target function with the provided transformer callback.\n\n### Examples\n```flame\nctx.target.transform((handler, text: String) {\n    let res = handler(text)\n    return prefix + \": \" + res\n})\n```")
-    fn transform(transformer: Unknown) -> Unknown {}
+    @Docs("Wraps the target declaration with the provided transformer closure, passing the annotated target handler as a parameter.\n\n### Examples\n```flame\nctx.target.transform((handler) {\n    let res = handler()\n    return res\n})\n```")
+    fn transform<F, R>(transformer: F) -> R;
 }
 
 export struct AnnotationContext {
@@ -55,4 +55,4 @@ export struct AnnotationContext {
 }
 
 @Docs("Retrieves the active AnnotationContext for the annotated target.\n\nOnly callable inside a custom annotation declaration.\n\n### Example\n```flame\nannotation Route(path: String) {\n    let ctx = annotation.context()\n    let handler = ctx.target.ref()\n}\n```")
-export fn context() -> AnnotationContext {}
+export fn context() -> AnnotationContext;

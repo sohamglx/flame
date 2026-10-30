@@ -33,6 +33,9 @@ pub struct TypeChecker {
     pub traits: HashMap<String, TraitInfo>,
     pub trait_impls: HashMap<String, HashSet<String>>,
     pub(crate) current_impl_target: Option<String>,
+    pub all_vars: HashMap<String, VarInfo>,
+    pub in_await: bool,
+    pub current_function_is_async: bool,
 }
 
 
@@ -137,6 +140,9 @@ impl TypeChecker {
             traits: HashMap::new(),
             trait_impls: HashMap::new(),
             current_impl_target: None,
+            all_vars: HashMap::new(),
+            in_await: false,
+            current_function_is_async: false,
         };
         checker.register_builtins();
         checker
@@ -193,16 +199,29 @@ impl TypeChecker {
         self
     }
 
+    pub fn collect_all_var_types(&self) -> HashMap<String, Type> {
+        let mut map = HashMap::new();
+        for (name, var_info) in &self.all_vars {
+            map.insert(name.clone(), var_info.ty.clone());
+        }
+        for scope in &self.scopes {
+            for (name, var_info) in scope {
+                map.insert(name.clone(), var_info.ty.clone());
+            }
+        }
+        map
+    }
+
     pub fn check_program(mut self, stmts: &[Stmt]) -> (Result<(), Vec<Diagnostic>>, Self) {
         self.collect_top_level_declarations(stmts);
         for stmt in stmts {
             self.check_stmt(stmt);
         }
-        if !self.in_expect_panic {
-            let mut borrow_checker = crate::typechecker::borrow::BorrowChecker::new(&self.filepath);
-            borrow_checker.check_block(stmts);
-            self.diagnostics.extend(borrow_checker.diagnostics);
-        }
+        let var_types = self.collect_all_var_types();
+        let mut borrow_checker = crate::typechecker::borrow::BorrowChecker::new(&self.filepath)
+            .with_known_types(var_types);
+        borrow_checker.check_block(stmts);
+        self.diagnostics.extend(borrow_checker.diagnostics);
 
         let mut unique: Vec<Diagnostic> = Vec::new();
         for d in self.diagnostics {

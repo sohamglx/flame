@@ -96,6 +96,7 @@ impl Runner {
                                 default_val: None,
                                 is_ref: false,
                                 is_mut: false,
+                                span: crate::lexer::Span::dummy(),
                             })
                             .collect(),
                         body: vec![],

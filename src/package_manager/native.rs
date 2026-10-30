@@ -242,24 +242,29 @@ pub fn generate_package_fmi(target: &str, target_dir: &Path, is_release: bool) -
                         crate::parser::Parser::new(tokens, path.to_string_lossy().to_string());
                     if let Ok(stmts) = parser.parse() {
                         for stmt in stmts {
-                            match stmt {
+                            let unwrapped = match &stmt {
+                                crate::parser::Stmt::ExportDecl(inner, _) => &**inner,
+                                other => other,
+                            };
+                            match unwrapped {
                                 crate::parser::Stmt::FuncDecl {
                                     name,
                                     params,
                                     return_type,
+                                    is_async,
                                     ..
                                 } => {
                                     functions.push(FlameFunctionMeta {
                                         name: name.clone(),
-                                        flame_name: name,
+                                        flame_name: name.clone(),
                                         params: params
-                                            .into_iter()
+                                            .iter()
                                             .map(|p| FlameParamMeta {
-                                                name: p.name,
+                                                name: p.name.clone(),
                                                 type_name: if p.type_name.is_empty() {
                                                     "any".to_string()
                                                 } else {
-                                                    p.type_name
+                                                    p.type_name.clone()
                                                 },
                                                 is_callback: false,
                                                 is_ref: p.is_ref,
@@ -267,10 +272,11 @@ pub fn generate_package_fmi(target: &str, target_dir: &Path, is_release: bool) -
                                             })
                                             .collect(),
                                         return_type: return_type
+                                            .clone()
                                             .unwrap_or_else(|| "void".to_string()),
                                         is_static: false,
                                         is_generic: false,
-                                        is_async: false,
+                                        is_async: *is_async,
                                         is_constructor: false,
                                         persistent_runtime: false,
                                         receiver: None,
@@ -282,16 +288,16 @@ pub fn generate_package_fmi(target: &str, target_dir: &Path, is_release: bool) -
                                 crate::parser::Stmt::StructDecl { name, fields, .. } => {
                                     structs.push(FlameStructMeta {
                                         name: name.clone(),
-                                        flame_name: name,
+                                        flame_name: name.clone(),
                                         methods: Vec::new(),
                                         fields: fields
-                                            .into_iter()
+                                            .iter()
                                             .map(|(f_name, f_type)| FlameStructFieldMeta {
-                                                name: f_name,
+                                                name: f_name.clone(),
                                                 type_name: if f_type.is_empty() {
                                                     "any".to_string()
                                                 } else {
-                                                    f_type
+                                                    f_type.clone()
                                                 },
                                                 docs: None,
                                             })

@@ -1,69 +1,56 @@
 package std
+
 @Docs("Prints a value to standard output followed by a newline.\n\n**Example:**\n```flame\nprintln(\"Hello, Flame!\")\n```")
-export fn println(value: Unknown) {
-}
+export fn println<T>(value: T = "");
 
 @Docs("Prints a value to standard output without a trailing newline.\n\n**Example:**\n```flame\nprint(\"Processing...\")\n```")
-export fn print(value: Unknown) {
-}
+export fn print<T>(value: T = "");
 
 @Docs("Prints a value to standard error.\n\n**Example:**\n```flame\neprint(\"Error: operation failed\")\n```")
-export fn eprint(value: Unknown) {
-}
+export fn eprint<T>(value: T = "");
 
-@Docs("Asserts that condition evaluates to `true`. Terminates execution with an error if false.\n\n**Example:**\n```flame\nassert(x > 0, \"x must be positive\")\n```")
-export fn assert(condition: Bool, message: String = "") {
-}
+@Docs("Asserts that condition evaluates to `true`. Terminates execution with an optional error message if false.\n\n**Example:**\n```flame\nassert(x > 0)\nassert(x > 0, \"x must be positive\")\n```")
+export fn assert(condition: Bool, message: String? = nil);
 
-@Docs("Asserts that `actual` equals `expected`. Terminates execution with an error if values differ.\n\n**Example:**\n```flame\nassertEq(status_code, 200)\n```")
-export fn assertEq(actual: Unknown, expected: Unknown, message: String = "") {
-}
+@Docs("Asserts that `actual` equals `expected`. Terminates execution with an optional error message if values differ.\n\n**Example:**\n```flame\nassertEq(status_code, 200)\nassertEq(status_code, 200, \"Status must be 200 OK\")\n```")
+export fn assertEq<T>(actual: T, expected: T, message: String? = nil);
 
-@Docs("Asserts that `actual` does NOT equal `unexpected`.\n\n**Example:**\n```flame\nassertNe(result, nil)\n```")
-export fn assertNe(actual: Unknown, unexpected: Unknown, message: String = "") {
-}
+@Docs("Asserts that `actual` does NOT equal `unexpected`.\n\n**Example:**\n```flame\nassertNe(result, nil)\nassertNe(result, nil, \"Result must not be nil\")\n```")
+export fn assertNe<T>(actual: T, unexpected: T, message: String? = nil);
 
-@Docs("Asserts that `condition` is `true`.\n\n**Example:**\n```flame\nassertTrue(list.isEmpty())\n```")
-export fn assertTrue(condition: Bool, message: String = "") {
-}
+@Docs("Asserts that `condition` is `true`.\n\n**Example:**\n```flame\nassertTrue(list.isEmpty())\nassertTrue(is_ready, \"Worker must be ready\")\n```")
+export fn assertTrue(condition: Bool, message: String? = nil);
 
-@Docs("Asserts that `condition` is `false`.\n\n**Example:**\n```flame\nassertFalse(file.exists())\n```")
-export fn assertFalse(condition: Bool, message: String = "") {
-}
+@Docs("Asserts that `condition` is `false`.\n\n**Example:**\n```flame\nassertFalse(file.exists())\nassertFalse(has_errors, \"No errors permitted\")\n```")
+export fn assertFalse(condition: Bool, message: String? = nil);
 
 @Docs("Terminates program execution immediately with an unrecoverable error message and diagnostic line trace.\n\n**Example:**\n```flame\npanic(\"Invalid state\")\n```")
-export fn panic(message: String) {
-}
+export fn panic(message: String);
 
 @Docs("Generates a vector of integers from `start` up to `end`.\n\n**Example:**\n```flame\nfor i in range(0, 5) { print(i) }\n```")
-export fn range(start: Int, end: Int, step: Int = 1) -> [Int] {
-}
+export fn range(start: Int, end: Int, step: Int = 1) -> [Int];
 
 @Docs("Generates mock object data for testing. Supported schemas: `\"user\"`, `\"post\"`, `\"product\"`.\n\n**Example:**\n```flame\nlet user = mockData(\"user\")\n```")
-export fn mockData(schema: String = "default") -> Formula {
-}
+export fn mockData(schema: String = "default") -> Formula;
 
 @Docs("Configures mock responses for API endpoints during tests.\n\n**Example:**\n```flame\nlet res = mockApi(\"/api/v1/users\", \"{\\\"id\\\": 1}\", 200)\n```")
-export fn mockApi(url: String = "*", body: String = "{}", status: Int = 200) -> Formula {
-}
+export fn mockApi(url: String = "*", body: String = "{}", status: Int = 200) -> Formula;
 
 @Docs("Overrides a named function in the current environment to return `return_value` during tests.\n\n**Example:**\n```flame\nmockFunction(\"fetch_user\", formula { name: \"Alex\" })\n```")
-export fn mockFunction(name: String, return_value: Unknown) {
-}
+export fn mockFunction<T>(name: String, return_value: T);
 
 @Docs("Takes a line of text input from standard input.\n\n**Example:**\n```flame\nlet name = input(\"Name: \")\n```")
-export fn input(prompt: String = "") -> String {
-}
+export fn input(prompt: String = "") -> String;
 
 @Docs("`Result` represents either success (`Ok`) or failure (`Err`).")
-export enum Result {
-    Ok(Unknown),
-    Err(Unknown),
+export enum Result<T, E> {
+    Ok(T),
+    Err(E),
 }
 
 @Docs("`Option` represents an optional value: every `Option` is either `Some` and contains a value, or `None`.")
-export enum Option {
-    Some(Unknown),
+export enum Option<T> {
+    Some(T),
     None,
 }
 
@@ -74,14 +61,10 @@ export struct Error {
 }
 
 @Docs("Returns the number of elements in an array or collection.\n\n**Example:**\n```flame\nlet count = len(items)\n```")
-export fn len(items: Unknown) -> Int {
-}
+export fn len<T>(items: T) -> Int;
 
 @Docs("Returns the number of elements in an array or collection.\n\n**Example:**\n```flame\nlet count = length(items)\n```")
-export fn length(items: Unknown) -> Int {
-}
+export fn length<T>(items: T) -> Int;
 
 @Docs("Returns `true` if the collection contains no elements.\n\n**Example:**\n```flame\nif isEmpty(items) { print(\"empty\") }\n```")
-export fn isEmpty(items: Unknown) -> Bool {
-}
-
+export fn isEmpty<T>(items: T) -> Bool;

@@ -1,4 +1,20 @@
+struct User {
+    name: String
+}
 
+struct Profile {
+    user: User,
+    username: String,
+    bio: String
+}
 
-println("Hello, world!")
+fn getProfile() -> Profile {
+    return Profile {
+        user: User {name: "soham"},
+        username: "riki",
+        bio: "hello"
+    }
+}
 
+let p = getProfile()
+p.user.name

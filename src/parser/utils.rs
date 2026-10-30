@@ -134,7 +134,12 @@ pub fn is_test_annotation(name: &str) -> bool {
 }
 
 pub fn is_test_statement(stmt: &Stmt) -> bool {
-    match stmt {
+    let check_stmt = if let Stmt::ExportDecl(inner, _) = stmt {
+        inner.as_ref()
+    } else {
+        stmt
+    };
+    match check_stmt {
         Stmt::FuncDecl { annotations, .. } => {
             annotations.iter().any(|a| is_test_annotation(&a.name))
         }

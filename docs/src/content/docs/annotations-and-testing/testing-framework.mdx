@@ -56,24 +56,161 @@ fn tear_down() {
 
 ## Built-in Test Assertions & Mock Helpers
 
-- `assert(condition, message = "assertion failed")`
-- `assertTrue(condition, message = "assertion failed")`
-- `assertFalse(condition, message = "assertion failed")`
-- `assertEq(actual, expected, message = "")`
-- `assertNe(actual, unexpected, message = "")`
+Flame includes built-in test assertion primitives. All assertion functions accept an optional diagnostic message parameter declared using Flame's Optional Type syntax (`String? = nil`):
+
+- `assert(condition: Bool, message: String? = nil)`
+- `assertTrue(condition: Bool, message: String? = nil)`
+- `assertFalse(condition: Bool, message: String? = nil)`
+- `assertEq<T>(actual: T, expected: T, message: String? = nil)`
+- `assertNe<T>(actual: T, unexpected: T, message: String? = nil)`
 - `mockData(schema: String) -> Formula`
 - `mockApi(url: String, body: String = "{\"status\": \"ok\"}", status: Int = 200) -> Formula`
-- `mockFunction(function_name: String, return_value: Any)`
+- `mockFunction<T>(name: String, return_value: T)`
+
+### Optional Assertion Messages
+
+Because the message parameter is declared as an Optional Type (`message: String? = nil`), callers can omit the message for clean, concise assertions or supply a custom diagnostic string for detailed failure diagnostics:
+
+```flame
+@Test
+fn test_assertions() {
+    let count = 100
+
+    // 1. Omitted message parameter
+    assertEq(count, 100)
+
+    // 2. Custom descriptive message
+    assertEq(count, 100, "Counter should initialize to 100")
+
+    // 3. Explicit nil message parameter
+    assertEq(count, 100, nil)
+
+    // Boolean assertions
+    assertTrue(count > 0, "Counter must be positive")
+    assertFalse(count < 0)
+}
+```
 
 ```flame
 @Test
 fn test_mocking() {
     let user = mockData("user")
-    assertEq(user.id, 1001)
+    assertEq(user.id, 1001, "Mock user ID should be generated")
 
     let api_res = mockApi("/v1/health")
     assertTrue(api_res.ok)
 }
+```
+
+---
+
+## Negative Testing with `@ExpectPanic`
+
+When validating invariant enforcement, error-handling paths, or borrow checker rules, you write negative test cases that verify a routine properly panics or rejects invalid operations.
+
+Decorate the test function with both `@Test` and **`@ExpectPanic`**:
+
+```flame
+@Test
+@ExpectPanic
+fn test_use_after_move() {
+    let a = "heavy_payload"
+    let b = a  // Ownership moves to b
+
+    // Attempting to read a after move triggers a memory safety error
+    println(a)
+}
+
+@Test
+@ExpectPanic
+fn test_conflicting_mutable_borrows() {
+    let mut x = 42
+    let r1 = &mut x
+    let r2 = &mut x  // Second mutable borrow triggers borrow checker error
+
+    r1 += 1
+    r2 += 1
+}
+```
+
+<Aside type="tip" title="Deterministic Safety Validation">
+Under `@ExpectPanic`, Flame's test runner expects an unrecoverable error or panic to occur:
+- If the function panics as expected, the test **[PASSES]** with the exact panic reason and duration.
+- If the function completes normally without an error, the runner marks the test as **[FAILED]** (`function completed without expected error/panic!`).
+</Aside>
+
+---
+
+## Testing Libraries and Packages
+
+Flame makes testing standalone libraries (`--lib`) as ergonomic as testing full executables.
+
+### 1. Creating a Library Package
+
+```bash
+fmp new my_crypto --lib
+cd my_crypto
+```
+
+The resulting library layout separates exported API definitions from unit and integration tests:
+
+```text
+my_crypto/
+├── flame.toml          # Package manifest declaring [package] name, version, edition
+├── src/
+│   └── lib.fm          # Main library entry point exporting package public API
+└── tests/
+    └── test_crypto.fm  # Unit and integration test suites
+```
+
+### 2. Exporting Library Functions (`src/lib.fm`)
+
+```flame
+package my_crypto
+
+export fn hash_bytes(input: String) -> String {
+    // Return hash digest
+    return "hash_" + input
+}
+
+export struct KeyPair {
+    public_key: String,
+    private_key: String,
+}
+```
+
+### 3. Writing Library Tests (`tests/test_crypto.fm`)
+
+In test files under `tests/`, simply import your package by name:
+
+```flame
+import my_crypto
+
+@Test
+fn test_hash_computation() {
+    let digest = hash_bytes("payload")
+    assertEq(digest, "hash_payload", "Hash digest should match expected prefix")
+}
+
+@Test
+fn test_keypair_creation() {
+    let kp = KeyPair {
+        public_key: "pub_123",
+        private_key: "priv_456",
+    }
+    assertEq(kp.public_key, "pub_123")
+    assertNe(kp.public_key, kp.private_key, "Keys must never collide")
+}
+```
+
+### 4. Running Library Tests
+
+```bash
+# Execute all tests inside the tests/ directory
+fmp test
+
+# Run a specific test suite directly
+flame test tests/test_crypto.fm
 ```
 
 ---

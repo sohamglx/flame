@@ -22,8 +22,8 @@ pub fn register_global_builtins(env: Arc<Mutex<Env>>) {
         Value::EnumMeta(
             "Result".to_string(),
             vec![
-                EnumVariant::Tuple("Ok".to_string(), vec!["Any".to_string()]),
-                EnumVariant::Tuple("Err".to_string(), vec!["Any".to_string()]),
+                EnumVariant::Tuple("Ok".to_string(), vec!["Unknown".to_string()]),
+                EnumVariant::Tuple("Err".to_string(), vec!["Unknown".to_string()]),
             ],
         ),
         false,
@@ -34,7 +34,7 @@ pub fn register_global_builtins(env: Arc<Mutex<Env>>) {
         Value::EnumMeta(
             "Option".to_string(),
             vec![
-                EnumVariant::Tuple("Some".to_string(), vec!["Any".to_string()]),
+                EnumVariant::Tuple("Some".to_string(), vec!["Unknown".to_string()]),
                 EnumVariant::Unit("None".to_string()),
             ],
         ),
