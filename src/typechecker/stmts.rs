@@ -2391,7 +2391,11 @@ impl TypeChecker {
 
                 let prev_return = self.current_return_type.clone();
                 let prev_async = self.current_function_is_async;
+                let prev_is_test = self.current_function_is_test;
                 self.current_function_is_async = *is_async;
+                self.current_function_is_test = annotations
+                    .iter()
+                    .any(|a| a.name == "Test" || a.name == "Benchmark");
                 self.current_return_type = Some(
                     return_type
                         .as_ref()
@@ -2566,6 +2570,7 @@ impl TypeChecker {
                 self.in_expect_panic = prev_expect_panic;
                 self.pop_scope();
                 self.current_function_is_async = prev_async;
+                self.current_function_is_test = prev_is_test;
                 self.current_return_type = prev_return;
             }
             Stmt::AnnotationDecl {

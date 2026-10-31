@@ -875,6 +875,35 @@ fn check_source(src: &str) -> Result<(), Vec<crate::diagnostics::Diagnostic>> {
         assert_eq!(tc.format_type(&ty), "std::io::Result<()>");
     }
 
+    #[test]
+    fn test_await_thread_and_await_in_thread_succeeds() {
+        let src = r#"
+        async fn get_data() -> Int {
+            100
+        }
+
+        fn run_sync() {
+            await thread {
+                let d = await get_data()
+            }
+        }
+
+        @Test
+        fn test_runner() {
+            await thread {
+                let x = 1
+            }
+        }
+        "#;
+        let res = check_source(src);
+        assert!(
+            res.is_ok(),
+            "Awaiting thread tasks and awaiting inside thread blocks must succeed: {:?}",
+            res.err()
+        );
+    }
+
+
 
     #[test]
     fn test_impl_method_with_docs_and_body_checks_return_type() {

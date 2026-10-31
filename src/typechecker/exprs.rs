@@ -340,7 +340,20 @@ impl TypeChecker {
                 mutable: *is_mut,
             },
             Expr::Await(inner, span) => {
-                if self.current_return_type.is_some() && !self.current_function_is_async {
+                let prev_in_await = self.in_await;
+                self.in_await = true;
+                let ty = self.infer_expr_type(inner);
+                self.in_await = prev_in_await;
+
+                let is_thread_task = matches!(&**inner, Expr::ThreadSpawn(..))
+                    || matches!(&ty, Type::Named(name) if name == "ThreadHandler");
+
+                if self.current_return_type.is_some()
+                    && !self.current_function_is_async
+                    && !self.current_function_is_test
+                    && !self.in_thread
+                    && !is_thread_task
+                {
                     self.error(
                         "'await' is only allowed in 'async' functions or at the top level of a file".to_string(),
                         span.clone(),
@@ -348,13 +361,19 @@ impl TypeChecker {
                         Some("add 'async' to the function signature".to_string()),
                     );
                 }
-                let prev_in_await = self.in_await;
-                self.in_await = true;
-                let ty = self.infer_expr_type(inner);
-                self.in_await = prev_in_await;
-                ty
+                if is_thread_task {
+                    Type::Unknown
+                } else {
+                    ty
+                }
             }
-            Expr::ThreadSpawn(_, _) => Type::Named("ThreadHandler".to_string()),
+            Expr::ThreadSpawn(inner, _) => {
+                let prev_in_thread = self.in_thread;
+                self.in_thread = true;
+                self.infer_expr_type(inner);
+                self.in_thread = prev_in_thread;
+                Type::Named("ThreadHandler".to_string())
+            }
             Expr::Block(stmts, _) => {
                 self.push_scope();
                 let mut block_ty = Type::Nil;
@@ -391,7 +410,18 @@ impl TypeChecker {
                 }
                 UnaryOp::NonNullAssert => {
                     let ty = self.infer_expr_type(inner);
-                    ty
+                    if let Type::Nullable(inner_ty) = ty {
+                        *inner_ty
+                    } else if let Type::Union(variants) = ty {
+                        let non_nil: Vec<_> = variants.into_iter().filter(|t| !matches!(t, Type::Nil)).collect();
+                        if non_nil.len() == 1 {
+                            non_nil.into_iter().next().unwrap()
+                        } else {
+                            Type::Union(non_nil)
+                        }
+                    } else {
+                        ty
+                    }
                 }
                 UnaryOp::PreInc | UnaryOp::PreDec | UnaryOp::PostInc | UnaryOp::PostDec => {
                     let ty = self.infer_expr_type(inner);
@@ -833,8 +863,10 @@ impl TypeChecker {
                     } else {
                         Type::Int
                     }
-                } else if (matches!(left_ty, Type::String) || matches!(left_ty, Type::Union(ref u) if u.iter().any(|t| matches!(t, Type::String))))
-                    && (matches!(right_ty, Type::String) || matches!(right_ty, Type::Union(ref u) if u.iter().any(|t| matches!(t, Type::String))))
+                } else if matches!(left_ty, Type::String)
+                    || matches!(right_ty, Type::String)
+                    || matches!(left_ty, Type::Union(ref u) if u.iter().any(|t| matches!(t, Type::String)))
+                    || matches!(right_ty, Type::Union(ref u) if u.iter().any(|t| matches!(t, Type::String)))
                 {
                     Type::String
                 } else if let (Type::Quantity(m1), Type::Quantity(m2)) = (&left_ty, &right_ty) {
@@ -1039,6 +1071,17 @@ impl TypeChecker {
             BinaryOp::NilCoalesce => {
                 if matches!(left_ty, Type::Nil) {
                     right_ty
+                } else if let Type::Nullable(inner) = left_ty {
+                    *inner
+                } else if let Type::Union(variants) = left_ty {
+                    let non_nil: Vec<_> = variants.into_iter().filter(|t| !matches!(t, Type::Nil)).collect();
+                    if non_nil.len() == 1 {
+                        non_nil.into_iter().next().unwrap()
+                    } else if non_nil.is_empty() {
+                        right_ty
+                    } else {
+                        Type::Union(non_nil)
+                    }
                 } else {
                     left_ty
                 }
@@ -1146,6 +1189,7 @@ impl TypeChecker {
             }
             Type::String => Type::String,
             Type::Byte => Type::Byte,
+            Type::Named(ref name) if name == "Bytes" => Type::Byte,
             Type::Unknown => Type::Unknown,
             Type::Reference {
                 inner: ref_inner, ..
@@ -1226,12 +1270,17 @@ impl TypeChecker {
             }
         }
 
+        let mut is_nullable = false;
         let mut inner_ty = self.infer_expr_type(inner);
         if let Type::Reference {
             inner: ref_inner, ..
         } = inner_ty
         {
             inner_ty = *ref_inner;
+        }
+        if let Type::Nullable(inner_box) = inner_ty {
+            inner_ty = *inner_box;
+            is_nullable = true;
         }
 
         if let Type::Struct(struct_name) | Type::Named(struct_name) = &inner_ty {
@@ -1246,7 +1295,10 @@ impl TypeChecker {
                         .find(|(name, _)| name == member)
                         .map(|(_, ty)| ty.clone())
                 });
-            if let Some(ty) = found_field {
+            if let Some(mut ty) = found_field {
+                if is_nullable && !matches!(ty, Type::Nullable(_)) {
+                    ty = Type::Nullable(Box::new(ty));
+                }
                 let formatted_ty = self.format_type(&ty);
                 let member_span = Span {
                     start: span.end.saturating_sub(member.len()),
@@ -1278,21 +1330,24 @@ impl TypeChecker {
         match member {
             "toString" | "toChar" | "trim" | "toUpperCase" | "toLowerCase" | "replace" | "join"
             | "push_str" | "push" | "pop" | "clear" | "remove" | "insert" | "slice"
-            | "substring" | "toJson" => return Type::String,
-            "toInt" | "tryInt" | "len" => return Type::Int,
+            | "substring" | "toJson" | "toHex" | "to_hex" | "toBase64" | "to_base64" | "toUtf8" | "to_utf8" => return Type::String,
+            "toInt" | "tryInt" | "len" | "length" => return Type::Int,
             "toFloat" | "tryFloat" => return Type::Float,
-            "toBool" | "tryBool" | "contains" | "startsWith" | "endsWith" | "isEmpty" => {
+            "toBool" | "tryBool" | "contains" | "startsWith" | "endsWith" | "isEmpty" | "is_empty" => {
                 return Type::Bool;
             }
             "toByte" | "to_byte" => {
                 return Type::Byte;
             }
-            "split" | "keys" | "values" => {
+            "split" | "keys" | "values" | "toList" | "toArray" => {
                 return Type::Vector(Box::new(Type::Unknown));
             }
             "clone" => return inner_ty.clone(),
-            "assertEq" => return Type::Nil,
+            "assertEq" | "save" | "write" | "append" => return Type::Nil,
             _ => {}
+        }
+        if member == "get" && (matches!(inner_ty, Type::Named(ref n) if n == "Bytes") || matches!(inner_ty, Type::Byte)) {
+            return Type::Function(vec![Type::Int], Box::new(Type::Byte));
         }
         match inner_ty {
             Type::Named(name) if name.starts_with("plugin:") || name.starts_with("module:") => {
@@ -1367,13 +1422,13 @@ impl TypeChecker {
                     let ret_ty = match (prefix, member) {
                         ("fs", "read") => Type::String,
                         ("fs", "readDir") => Type::Vector(Box::new(Type::String)),
-                        ("fs", "readBytes") => Type::Byte,
+                        ("fs", "readBytes") => Type::Named("Bytes".to_string()),
                         ("fs", "open") => Type::Unknown,
                         ("thread", "sleep") => Type::Nil,
                         ("thread", "yield") | ("thread", "yield_now") => Type::Nil,
                         ("thread", "id") => Type::String,
                         ("thread", "channel") => Type::Tuple(vec![Type::Unknown, Type::Unknown]),
-                        ("byte", "readBytes") => Type::Byte,
+                        ("byte", "readBytes") => Type::Named("Bytes".to_string()),
                         ("byte", "readByte") => Type::Byte,
                         ("byte", "readByteAt") => Type::Byte,
                         _ => Type::Unknown,
@@ -1457,7 +1512,10 @@ impl TypeChecker {
                     .get(struct_name)
                     .or_else(|| self.structs.get(base_name))
                     .and_then(|info| info.fields.iter().find(|(name, _)| name == member).map(|(_, ty)| ty.clone()));
-                if let Some(ty) = found_field {
+                if let Some(mut ty) = found_field {
+                    if is_nullable && !matches!(ty, Type::Nullable(_)) {
+                        ty = Type::Nullable(Box::new(ty));
+                    }
                     let formatted_ty = self.format_type(&ty);
                     let member_span = Span {
                         start: span.end.saturating_sub(member.len()),
@@ -1622,9 +1680,8 @@ impl TypeChecker {
             | Type::Bool
             | Type::Tuple(_)
             | Type::Byte
-            | Type::Union(_)
-            | Type::Nullable(_) => Type::Named("Function".into()),
-            Type::Unknown | Type::Named(_) => Type::Unknown,
+            | Type::Union(_) => Type::Named("Function".into()),
+            Type::Nullable(_) | Type::Unknown | Type::Named(_) => Type::Unknown,
             other => {
                 self.error(
                     format!(
@@ -2310,7 +2367,7 @@ impl TypeChecker {
                         let ret_ty = match (prefix, member.as_str()) {
                             ("fs", "read") => Type::String,
                             ("fs", "readDir") => Type::Vector(Box::new(Type::String)),
-                            ("fs", "readBytes") => Type::Byte,
+                            ("fs", "readBytes") => Type::Named("Bytes".to_string()),
                             ("fs", "open") => Type::Unknown,
                             ("thread", "sleep") => Type::Nil,
                             ("thread", "yield") | ("thread", "yield_now") => Type::Nil,
@@ -2318,7 +2375,7 @@ impl TypeChecker {
                             ("thread", "channel") => {
                                 Type::Tuple(vec![Type::Unknown, Type::Unknown])
                             }
-                            ("byte", "readBytes") => Type::Byte,
+                            ("byte", "readBytes") => Type::Named("Bytes".to_string()),
                             ("byte", "readByte") => Type::Byte,
                             ("byte", "readByteAt") => Type::Byte,
                             _ => Type::Unknown,
@@ -2450,12 +2507,20 @@ impl TypeChecker {
                     col: callee_span.col + (callee_span.end - callee_span.start).saturating_sub(member.len()),
                 };
                 let (hover_sig, hover_desc) = match member.as_str() {
-                    "toHex" => ("fn toHex(&self) -> String".to_string(), "Formats binary bytes as a hexadecimal string."),
-                    "toBase64" => ("fn toBase64(&self) -> String".to_string(), "Encodes binary bytes into Base64 ASCII string."),
-                    "toUtf8" => ("fn toUtf8(&self) -> String".to_string(), "Decodes binary bytes into a UTF-8 string. Panics if invalid UTF-8."),
-                    "tryUtf8" => ("fn tryUtf8(&self) -> String?".to_string(), "Attempts to decode binary bytes into a UTF-8 string, returning nil if invalid."),
+                    "toHex" | "to_hex" => ("fn toHex(&self) -> String".to_string(), "Formats binary bytes as a hexadecimal string."),
+                    "toBase64" | "to_base64" => ("fn toBase64(&self) -> String".to_string(), "Encodes binary bytes into Base64 ASCII string."),
+                    "toUtf8" | "to_utf8" => ("fn toUtf8(&self) -> String".to_string(), "Decodes binary bytes into a UTF-8 string. Panics if invalid UTF-8."),
+                    "tryUtf8" | "try_utf8" => ("fn tryUtf8(&self) -> String?".to_string(), "Attempts to decode binary bytes into a UTF-8 string, returning nil if invalid."),
+                    "toString" | "to_string" => ("fn toString(&self) -> String".to_string(), "Converts bytes to a UTF-8 string."),
                     "concat" => ("fn concat(&self, other: Bytes) -> Bytes".to_string(), "Concatenates two byte buffers into a new Bytes buffer."),
                     "len" | "length" => ("fn len(&self) -> Int".to_string(), "Returns the number of bytes."),
+                    "isEmpty" | "is_empty" => ("fn isEmpty(&self) -> Bool".to_string(), "Returns true if the byte buffer is empty."),
+                    "get" => ("fn get(&self, index: Int) -> Byte".to_string(), "Gets the byte at the specified index."),
+                    "slice" => ("fn slice(&self, start: Int, end: Int = len) -> Bytes".to_string(), "Returns a sub-slice of bytes from start to end."),
+                    "toList" | "toArray" => ("fn toList(&self) -> (Int...)".to_string(), "Converts bytes to a list of integer byte values."),
+                    "save" | "write" => ("fn save(&self, path: String) -> Nil".to_string(), "Writes the byte buffer to a file."),
+                    "append" => ("fn append(&self, path: String) -> Nil".to_string(), "Appends the byte buffer to a file."),
+                    "toInt" | "to_int" => ("fn toInt(&self) -> Int".to_string(), "Converts byte to its integer value (0-255)."),
                     "type" => ("fn type(&self) -> String".to_string(), "Returns the runtime type name (\"Bytes\" or \"Byte\")."),
                     _ => (format!("fn {}(...)", member), "Byte/Bytes method."),
                 };
@@ -2463,13 +2528,13 @@ impl TypeChecker {
                 self.insert_hover_info(dot_member_span, hover_doc);
 
                 match member.as_str() {
-                    "toHex" | "toBase64" | "toUtf8" | "tryUtf8" => {
+                    "toHex" | "to_hex" | "toBase64" | "to_base64" | "toUtf8" | "to_utf8" | "toString" | "to_string" => {
                         self.check_call_args(&[], args, span, member);
-                        return match member.as_str() {
-                            "toHex" | "toBase64" | "toUtf8" => Type::String,
-                            "tryUtf8" => Type::Named("String?".to_string()),
-                            _ => Type::Unknown,
-                        };
+                        return Type::String;
+                    }
+                    "tryUtf8" | "try_utf8" => {
+                        self.check_call_args(&[], args, span, member);
+                        return Type::Named("String?".to_string());
                     }
                     "concat" => {
                         self.check_call_args(
@@ -2486,7 +2551,52 @@ impl TypeChecker {
                         );
                         return Type::Named("Bytes".to_string());
                     }
-                    "len" => {
+                    "len" | "length" => {
+                        self.check_call_args(&[], args, span, member);
+                        return Type::Int;
+                    }
+                    "isEmpty" | "is_empty" => {
+                        self.check_call_args(&[], args, span, member);
+                        return Type::Bool;
+                    }
+                    "get" => {
+                        self.check_call_args(
+                            &[ParamInfo {
+                                name: "index".into(),
+                                ty: Type::Int,
+                                is_ref: false,
+                                is_mut: false,
+                                has_default: false,
+                            }],
+                            args,
+                            span,
+                            member,
+                        );
+                        return Type::Byte;
+                    }
+                    "slice" => {
+                        return Type::Named("Bytes".to_string());
+                    }
+                    "toList" | "toArray" => {
+                        self.check_call_args(&[], args, span, member);
+                        return Type::Tuple(vec![Type::Int]);
+                    }
+                    "save" | "write" | "append" => {
+                        self.check_call_args(
+                            &[ParamInfo {
+                                name: "path".into(),
+                                ty: Type::String,
+                                is_ref: false,
+                                is_mut: false,
+                                has_default: false,
+                            }],
+                            args,
+                            span,
+                            member,
+                        );
+                        return Type::Nil;
+                    }
+                    "toInt" | "to_int" => {
                         self.check_call_args(&[], args, span, member);
                         return Type::Int;
                     }
@@ -2495,8 +2605,9 @@ impl TypeChecker {
                         return Type::String;
                     }
                     _ => {
+                        let ty_name = if matches!(&inner_ty, Type::Byte) { "Byte" } else { "Bytes" };
                         self.error(
-                            format!("Bytes has no method '{}'", member),
+                            format!("{} has no method '{}'", ty_name, member),
                             span.clone(),
                             None,
                             None,

@@ -36,6 +36,8 @@ pub struct TypeChecker {
     pub all_vars: HashMap<String, VarInfo>,
     pub in_await: bool,
     pub current_function_is_async: bool,
+    pub in_thread: bool,
+    pub current_function_is_test: bool,
 }
 
 
@@ -143,6 +145,8 @@ impl TypeChecker {
             all_vars: HashMap::new(),
             in_await: false,
             current_function_is_async: false,
+            in_thread: false,
+            current_function_is_test: false,
         };
         checker.register_builtins();
         checker

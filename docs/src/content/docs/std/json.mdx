@@ -178,6 +178,6 @@ Flame includes engine-level zero-copy optimizations for JSON data structures:
 | `json.parse` | `text: String` | `Object \| Tuple \| Value` | Parses a JSON string into native Flame values. |
 | `json.fromJson` | `data: String \| Bytes` | `Object \| Tuple \| Value` | Parses JSON from a string or binary byte buffer. |
 | `json.read` | `filepath: String` | `Object \| Tuple \| Value` | Streams and parses a JSON file directly from disk with a 256 KB buffer. |
-| `json.stringify` | `value: Any, [pretty: Bool]` | `String` | Serializes any Flame value to a JSON string. Set `pretty` to `true` for formatted output. |
-| `json.write` | `filepath: String, value: Any, [pretty: Bool]` | `Bool` | Serializes and streams a Flame value directly into a file on disk. |
+| `json.stringify` | `value: T, [pretty: Bool]` | `String` | Serializes any Flame value to a JSON string. Set `pretty` to `true` for formatted output. |
+| `json.write` | `filepath: String, value: T, [pretty: Bool]` | `Bool` | Serializes and streams a Flame value directly into a file on disk. |
 | `json.valid` | `text: String` | `Bool` | Returns `true` if the string is valid JSON syntax without building data structures. |

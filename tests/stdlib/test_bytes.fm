@@ -4,8 +4,6 @@ import std.thread as th
 import std.byte
 import std.fs
 
-
-
 fn test_param(a: Int | String | Nil) -> Int | String | Nil {
     let aType = a.type()
 
@@ -17,7 +15,6 @@ fn test_param(a: Int | String | Nil) -> Int | String | Nil {
         String => a + "s"
         _ => nil
     }
-
 }
 
 @Test
@@ -34,7 +31,6 @@ fn test_json_alias() {
     let from_j = j.fromJson("{\"status\": \"ok\"}")
 
     println("FromJson status: " + from_j.status)
-
 }
 
 @Test
@@ -54,10 +50,8 @@ fn test_nil() {
 
     if n != nil {
         println("Value is not nil")
-
     } else {
         println("Value is nil")
-
     }
 
     assert(n == nil)
@@ -188,7 +182,7 @@ fn test_raw_binary_disk_format() {
     // Test buffer and numeric conversion
     let buf = byte.buffer(4, 0)
     assert(buf.len() == 4)
-    let num_bytes = byte.fromInt32(305419896, false) // 0x12345678
+    let num_bytes = byte.fromInt32(305419896, false)// 0x12345678
     assert(num_bytes.toHex() == "12345678")
     assert(byte.toInt32(num_bytes, 0, false) == 305419896)
 
@@ -196,4 +190,3 @@ fn test_raw_binary_disk_format() {
     assert(!fs.exists(bin_path))
     println("Raw binary disk format & File handle verified successfully.")
 }
-

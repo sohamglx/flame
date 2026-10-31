@@ -2,6 +2,61 @@
 
 All pre-release versions in the `0.x.x` series carry the official codename **Flame Spark**, reflecting the fast, evolving, and multithreaded foundation of the language toolchain. Upon reaching the stable `1.0.0` milestone, Flame will transition to its canonical **Final Spark** release codename.
 
+## [0.7.3] - 2026-10-31 (Codename: *Seventh Spark*)
+
+### 🧪 Test Engine Static Validation & Pre-Execution Type Safety
+
+- **Static Type Checking in `fmp test` Pipeline**:
+  - Integrated `TypeChecker::check_program` directly into the CLI test engine ([src/cli/commands/test.rs](src/cli/commands/test.rs)).
+  - Previously, `fmp test` evaluated AST statements through the dynamic interpreter runtime without compile-time type verification, allowing files with static type mismatches to run undetected.
+  - Test suites now strictly run typechecker validation prior to test execution. Any type diagnostics are rendered with precise line and column annotations, failing the test run immediately if errors exist.
+
+### 📦 Comprehensive `Bytes` & `Byte` Native API Support
+
+- **Native Method Resolution on `Bytes` & `Byte`**:
+  - Added complete method checking and hover signatures in [src/typechecker/exprs.rs](src/typechecker/exprs.rs) for `Bytes` (byte buffer) and `Byte` (u8 scalar):
+    - `Bytes.get(index: Int) -> Byte`: retrieves individual byte at index as a `Byte`.
+    - `Bytes.slice(start: Int, end: Int = len) -> Bytes`: extracts sub-slices.
+    - `Bytes.toString() -> String`: decodes binary bytes to a UTF-8 string.
+    - `Bytes.toHex() -> String`: formats bytes as a hexadecimal string.
+    - `Bytes.toList() / toArray() -> (Int...)`: converts byte buffer into a list of byte integers.
+    - `Bytes.save(path: String) / write(path) -> Nil`: writes byte buffer directly to disk.
+    - `Bytes.append(path: String) -> Nil`: appends byte buffer to a file.
+    - `Bytes.isEmpty() -> Bool` and `Bytes.len() -> Int`.
+    - `Byte.toInt() -> Int`: converts scalar byte to integer value (0-255).
+    - `Bytes[index]` indexing syntax resolves to `Type::Byte`.
+  - Corrected return types in `infer_dot_type` and `infer_call_type` for `fs.readBytes()` and `byte.readBytes()` from `Type::Byte` to `Type::Named("Bytes")`.
+  - Fixed IDE hover signature fallback where methods displayed generic `fn get(...) Byte/Bytes method.` while triggering `Bytes has no method 'get'`.
+
+### 🔤 String Concatenation Ergonomics (`String + T` / `T + String`)
+
+- **Universal String Concatenation Support**:
+  - Updated `BinaryOp::Add` in [src/typechecker/exprs.rs](src/typechecker/exprs.rs) to permit string concatenation whenever either operand is `Type::String` or a `Type::Union` containing `String`.
+  - Aligns static type analysis with the runtime interpreter, allowing expressions like `println("Received: " + msg)` with generic or unknown operands without throwing `operator Add cannot be applied to String and T`.
+
+### 🧵 Dynamic Context-Aware `await` in Threads & Tests
+
+- **Thread-Scoped & Test Function `await`**:
+  - Enhanced `Expr::Await` type validation in [src/typechecker/exprs.rs](src/typechecker/exprs.rs):
+    - Permitted `await` expressions within thread bodies (`await thread { ... }` and `thread { await ... }`) without requiring an explicit outer `async fn`.
+    - Permitted `await` expressions within `@Test` and `@Benchmark` annotated functions.
+    - Supported awaiting thread task handles (`ThreadHandler` and `Expr::ThreadSpawn`).
+
+### ❓ Nullable Member Navigation (`?.`), Non-Null Assertions (`!`) & Nil-Coalescing (`?:`)
+
+- **Unwrapping of `Type::Nullable` on Struct Property Access**:
+  - Resolved bug where safe member navigation on nullable struct references (e.g. `rover.current_telemetry?.obstacle_distance_cm` or `bot.motor?.speed`) fell through to `Type::Named("Function")`.
+  - Struct fields accessed via safe navigation are now typed as `Type::Nullable(FieldType)`.
+  - `BinaryOp::NilCoalesce` (`expr ?: fallback`) unwraps `Type::Nullable(T)` to `T` and filters `Nil` from union variants, allowing downstream arithmetic and comparison operators (`<`, `>`, `!=`, `==`) to evaluate against concrete scalar types.
+  - `UnaryOp::NonNullAssert` (`expr!`) unwraps `Type::Nullable(T)` into `T`.
+
+### 🎯 Annotation Context Reflection & WASM Runtime Synchronization
+
+- **Target Reflection Compatibility (`returnType`)**:
+  - Updated [src/runner/core.rs](src/runner/core.rs) to provide both `returnType` (camelCase) and `return_type` (snake_case) on `ctx.target` reflection metadata.
+- **WebAssembly Runtime Bundle**:
+  - Rebuilt `wasm/` release target and synchronized `docs/public/flame_runtime.wasm` for web-based IDE playground execution.
+
 ## [0.7.2] - 2026-10-30 (Codename: *Seventh Spark*)
 
 ### 🛡️ Advanced Borrow Checker, Sub-Path Tracking & Memory Safety System

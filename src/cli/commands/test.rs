@@ -388,6 +388,21 @@ pub fn run_tests(args: &[String]) {
             continue;
         }
 
+        let (tc_res, tc) = TypeChecker::new(path.to_string_lossy().to_string())
+            .check_program(&stmts);
+        for diag in &tc.diagnostics {
+            if diag.severity == crate::diagnostics::DiagnosticSeverity::Warning {
+                diag.print(&content);
+            }
+        }
+        if let Err(diags) = tc_res {
+            for diag in diags {
+                diag.print(&content);
+            }
+            total_failed += 1;
+            continue;
+        }
+
         let mut runner = crate::runner::Runner::new(path.clone());
         if let Ok(content) = fs::read_to_string("flame.toml") {
             runner.granted_permissions =

@@ -25,7 +25,7 @@ export annotation Route(path: String, method: String = "GET") {
     registered_method = method
     registered_target_name = ctx.target.name
     registered_target_kind = ctx.target.kind
-    registered_target_ret = ctx.target.return_type
+    registered_target_ret = ctx.target.returnType
 
     // Extract callable reference to the annotated function
     registered_handler = ctx.target.ref()

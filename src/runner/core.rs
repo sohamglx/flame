@@ -85,7 +85,8 @@ pub fn build_target_metadata(
     target_map.insert("parameters".to_string(), Value::Tuple(param_vals));
 
     let ret_str = return_type_opt.unwrap_or("Nil").to_string();
-    target_map.insert("return_type".to_string(), Value::String(ret_str));
+    target_map.insert("return_type".to_string(), Value::String(ret_str.clone()));
+    target_map.insert("returnType".to_string(), Value::String(ret_str));
 
     let mut anno_vals = Vec::new();
     for a in annotations {
