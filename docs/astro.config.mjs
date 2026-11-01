@@ -113,7 +113,7 @@ export default defineConfig({
             },
         },
         logo: {
-            src: './src/assets/flame.jpg',
+            src: './src/assets/flame.png',
             alt: 'Flame Logo',
         },
         head: [
